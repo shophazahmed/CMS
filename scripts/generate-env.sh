@@ -37,9 +37,9 @@ N8N_PORT=5678
 N8N_BIND_IP=127.0.0.1
 N8N_VERSION=latest
 # Public HTTPS hostname. Telegram webhooks will NOT work without it.
-N8N_DOMAIN=n8n.example.com
+N8N_DOMAIN=n8n.seenu.online
 N8N_PROTOCOL=https
-WEBHOOK_URL=https://n8n.example.com/
+WEBHOOK_URL=https://n8n.seenu.online/
 N8N_SECURE_COOKIE=true
 # Your local timezone (IANA name) - the 08:00 cron uses it, e.g. Asia/Dhaka, Europe/London
 TZ=UTC
@@ -47,8 +47,8 @@ TZ=UTC
 # ---- NocoDB (CMS UI) -------------------------------------------------------
 NOCODB_PORT=8080
 NOCODB_BIND_IP=127.0.0.1
-NOCODB_DOMAIN=cms.example.com
-NOCODB_PUBLIC_URL=https://cms.example.com
+NOCODB_DOMAIN=cms.seenu.online
+NOCODB_PUBLIC_URL=https://cms.seenu.online
 NOCODB_JWT_SECRET=$(rand 32)
 
 # ---- Caddy (only with: docker compose --profile https up -d) ---------------
