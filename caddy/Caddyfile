@@ -1,6 +1,5 @@
-{
-	email {$ACME_EMAIL}
-}
+# No ACME email configured: Caddy obtains Let's Encrypt certificates without one
+# (you just won't get expiry warning emails, and Caddy renews automatically).
 
 # n8n editor + webhooks (Telegram needs this to be valid public HTTPS)
 {$N8N_DOMAIN} {

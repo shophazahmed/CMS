@@ -51,9 +51,6 @@ NOCODB_DOMAIN=cms.seenu.online
 NOCODB_PUBLIC_URL=https://cms.seenu.online
 NOCODB_JWT_SECRET=$(rand 32)
 
-# ---- Caddy (only with: docker compose --profile https up -d) ---------------
-ACME_EMAIL=you@example.com
-
 # ---- Telegram --------------------------------------------------------------
 # From @BotFather. Send /id to the bot in your approval group to get the chat ID.
 TELEGRAM_BOT_TOKEN=REPLACE_ME_123456789:AAxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx

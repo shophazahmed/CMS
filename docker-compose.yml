@@ -139,7 +139,6 @@ services:
     environment:
       N8N_DOMAIN: ${N8N_DOMAIN}
       NOCODB_DOMAIN: ${NOCODB_DOMAIN}
-      ACME_EMAIL: ${ACME_EMAIL}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

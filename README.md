@@ -64,7 +64,7 @@ git clone <this repo> /opt/social-automation-hub && cd /opt/social-automation-hu
 
 # 2. Task 1: environment file with generated secrets + placeholders
 scripts/generate-env.sh            # writes .env (chmod 600)
-nano .env                          # fill every REPLACE_ME_*, set domains, TZ, ACME_EMAIL
+nano .env                          # fill every REPLACE_ME_*, check domains and TZ
 
 # 3. Tasks 2-3: start containers, wait for health, load credentials + workflows
 scripts/bootstrap.sh --https --activate
@@ -135,7 +135,7 @@ Required (Task 1): `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`,
 `TWITTER_BEARER_TOKEN`, `TWITTER_API_KEY`, `TWITTER_API_SECRET`,
 `TWITTER_ACCESS_TOKEN`, `TWITTER_ACCESS_SECRET`.
 
-Also needed: `N8N_DOMAIN`, `WEBHOOK_URL`, `NOCODB_DOMAIN`, `ACME_EMAIL`,
+Also needed: `N8N_DOMAIN`, `WEBHOOK_URL`, `NOCODB_DOMAIN`,
 `TWITTER_USER_ID`, `TZ`. Tunables: `ANTHROPIC_MODEL_COPY` (default
 `claude-sonnet-5`), `ANTHROPIC_MODEL_CLASSIFIER` (default `claude-haiku-4-5`),
 `MENTION_MIN_SCORE` (default 7), `FB_GRAPH_VERSION`, `N8N_VERSION`,
