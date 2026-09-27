@@ -1,0 +1,1322 @@
+{
+  "id": "shTgApproval0002",
+  "name": "02 - Telegram Approval & Team Input",
+  "active": false,
+  "nodes": [
+    {
+      "id": "e9816991-ea41-5218-a340-90f22389aca9",
+      "name": "Telegram Trigger",
+      "type": "n8n-nodes-base.telegramTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        600
+      ],
+      "parameters": {
+        "updates": [
+          "message",
+          "callback_query"
+        ],
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "webhookId": "73f16975-9e6c-5936-999e-9e87f71e0aa4"
+    },
+    {
+      "id": "995f1825-6371-5c9b-8d80-ba9e568d787c",
+      "name": "Parse Update",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        600
+      ],
+      "parameters": {
+        "jsCode": "// Telegram allows ONE webhook per bot, so this workflow is the single entry\n// point for every button (drafts from 01 and mentions from 03) and message.\nconst u = $input.first().json;\nconst adminChat = String($env.TELEGRAM_ADMIN_CHAT_ID || '');\nconst allowedUsers = String($env.TELEGRAM_ALLOWED_USER_IDS || '')\n  .split(',').map((s) => s.trim()).filter(Boolean);\nconst ROUTES = [\"approve\", \"regen\", \"reject\", \"edit\", \"retweet\", \"ignore\", \"edit_reply\", \"new_content\", \"help\", \"drop\"];\nconst out = { route: 'drop' };\n\nif (u.callback_query) {\n  const q = u.callback_query;\n  Object.assign(out, {\n    kind: 'callback',\n    callback_query_id: q.id,\n    chat_id: String(q.message?.chat?.id ?? ''),\n    message_id: String(q.message?.message_id ?? ''),\n    original_text: q.message?.text || '',\n    user_id: String(q.from?.id ?? ''),\n    user_name: q.from?.username ? '@' + q.from.username : (q.from?.first_name || 'someone'),\n  });\n  const [cmd, a, b] = String(q.data || '').split(':');\n  if (cmd === 'a')  Object.assign(out, { route: 'approve', target_id: b,\n      target_platform: a === 'fb' ? 'FACEBOOK_ONLY' : a === 'tw' ? 'TWITTER_ONLY' : 'ALL' });\n  if (cmd === 'rg') Object.assign(out, { route: 'regen',   target_id: a });\n  if (cmd === 'rj') Object.assign(out, { route: 'reject',  target_id: a });\n  if (cmd === 'ed') Object.assign(out, { route: 'edit',    target_id: a });\n  if (cmd === 'rt') Object.assign(out, { route: 'retweet', target_id: a });\n  if (cmd === 'ig') Object.assign(out, { route: 'ignore',  target_id: a });\n} else if (u.message) {\n  const m = u.message;\n  const text = (m.text || m.caption || '').trim();\n  const photos = m.photo || [];\n  Object.assign(out, {\n    kind: 'message',\n    chat_id: String(m.chat?.id ?? ''),\n    message_id: String(m.message_id ?? ''),\n    user_id: String(m.from?.id ?? ''),\n    user_name: m.from?.username ? '@' + m.from.username : (m.from?.first_name || 'someone'),\n    text,\n    photo_file_id: photos.length ? photos[photos.length - 1].file_id : '',  // largest size\n    reply_to_message_id: m.reply_to_message ? String(m.reply_to_message.message_id) : '',\n  });\n  if (/^\\/(start|help|id)(@\\w+)?$/i.test(text)) out.route = 'help';\n  else if (m.from?.is_bot) out.route = 'drop';\n  else if (out.reply_to_message_id && text) out.route = 'edit_reply';\n  else if (text.startsWith('/')) out.route = 'drop';\n  else if (text || out.photo_file_id) out.route = 'new_content';\n}\n\n// Security: only the admin chat may act (/help and /id answer anywhere so you\n// can discover the chat ID during setup).\nconst authorized = out.chat_id && out.chat_id === adminChat &&\n  (!allowedUsers.length || allowedUsers.includes(out.user_id));\nif (!authorized && out.route !== 'help') out.route = 'drop';\nout.authorized = !!authorized;\nout.route_index = ROUTES.indexOf(out.route);\nreturn [{ json: out }];\n"
+      }
+    },
+    {
+      "id": "4c968020-841f-5347-8d9a-7612dd832735",
+      "name": "Route Action",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        480,
+        600
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 10,
+        "output": "={{ $json.route_index }}"
+      }
+    },
+    {
+      "id": "e5bedd57-1793-52b1-8918-2fb199856317",
+      "name": "Answer: Publishing",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        -400
+      ],
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $('Parse Update').item.json.callback_query_id }}",
+        "additionalFields": {
+          "text": "🚀 Publishing…"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "2913862a-ebcd-5d13-90ee-81248bdfda5c",
+      "name": "Claim Post for Publishing",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1000,
+        -400
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH r AS (\nUPDATE content_queue\n   SET status = 'APPROVED', target_platform = $2, approved_by = $3\n WHERE id = $1::int AND status = 'PENDING_APPROVAL'\nRETURNING id AS post_id, target_platform\n)\nSELECT * FROM r;",
+        "options": {
+          "queryReplacement": "={{ [$('Parse Update').item.json.target_id, $('Parse Update').item.json.target_platform, $('Parse Update').item.json.user_name] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "1a44ccf2-7651-5321-bef0-ba8b355606b2",
+      "name": "Run Publisher (04)",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1240,
+        -400
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "shPublisher00004"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": true
+        }
+      }
+    },
+    {
+      "id": "8b8e6f1f-bfe6-550d-915e-6ee7176adb2b",
+      "name": "Format Publish Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        -400
+      ],
+      "parameters": {
+        "jsCode": "const esc = (s) => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');\n\nconst r = $input.first().json;\nconst p = $('Parse Update').first().json;\nconst handle = $env.TWITTER_USERNAME || 'i';\nconst lines = [];\nif (r.fb_post_id) lines.push(`📘 FB post: ${esc(r.fb_post_id)}`);\nif (r.tweet_id) lines.push(`🐦 X: https://x.com/${handle}/status/${r.tweet_id}`);\nconst head = r.status === 'PUBLISHED'\n  ? `✅ <b>Published</b> by ${esc(p.user_name)}`\n  : `⚠️ <b>Publishing failed</b> (draft #${r.id}): ${esc(r.error_message || 'unknown error')}`;\nreturn [{ json: { text: esc(p.original_text) + '\\n\\n' + head + (lines.length ? '\\n' + lines.join('\\n') : '') } }];\n"
+      }
+    },
+    {
+      "id": "23252cbb-2b43-598c-9188-05d8c1142131",
+      "name": "Mark Published",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1720,
+        -400
+      ],
+      "parameters": {
+        "operation": "editMessageText",
+        "messageType": "message",
+        "chatId": "={{ $('Parse Update').item.json.chat_id }}",
+        "messageId": "={{ $('Parse Update').item.json.message_id }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "a292f1ca-d4df-5175-b07f-b82a07b58c62",
+      "name": "Answer: Regenerating",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        -140
+      ],
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $('Parse Update').item.json.callback_query_id }}",
+        "additionalFields": {
+          "text": "♻️ Writing a new version…"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "b0fa16e1-c23b-586c-90f2-e0afcdcfbd63",
+      "name": "Claim Post for Regen",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1000,
+        -140
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH r AS (\nUPDATE content_queue SET status = 'DRAFT'\n WHERE id = $1::int AND status = 'PENDING_APPROVAL'\nRETURNING id AS post_id, 'regen' AS mode\n)\nSELECT * FROM r;",
+        "options": {
+          "queryReplacement": "={{ [$('Parse Update').item.json.target_id] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "28542868-7335-56cf-9641-e80b7f2d896c",
+      "name": "Mark Regenerating",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1240,
+        -140
+      ],
+      "parameters": {
+        "operation": "editMessageText",
+        "messageType": "message",
+        "chatId": "={{ $('Parse Update').item.json.chat_id }}",
+        "messageId": "={{ $('Parse Update').item.json.message_id }}",
+        "text": "={{ $('Parse Update').item.json.original_text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }}\n\n♻️ <i>Regenerating… new draft below.</i>",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "89de3bf7-728a-5f55-a232-ce73fc46e299",
+      "name": "Regen Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        -140
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { post_id: $('Claim Post for Regen').first().json.post_id, mode: 'regen' } }];\n"
+      }
+    },
+    {
+      "id": "257742e8-75e0-5cb2-84e8-2a0f584de0b7",
+      "name": "Run Generator (01) - Regen",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1720,
+        -140
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "shDailyAiGen0001"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      }
+    },
+    {
+      "id": "5484976b-a60a-5732-87e1-13f94d4129bf",
+      "name": "Answer: Rejected",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        120
+      ],
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $('Parse Update').item.json.callback_query_id }}",
+        "additionalFields": {
+          "text": "❌ Rejected"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "edef35e5-2fe1-5eaa-82fb-b6100527ded0",
+      "name": "Mark Post Rejected",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1000,
+        120
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH r AS (\nUPDATE content_queue SET status = 'REJECTED', approved_by = $2\n WHERE id = $1::int AND status IN ('PENDING_APPROVAL', 'DRAFT')\nRETURNING id\n)\nSELECT * FROM r;",
+        "options": {
+          "queryReplacement": "={{ [$('Parse Update').item.json.target_id, $('Parse Update').item.json.user_name] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "132ed7e5-3a32-55c5-8e20-f037f4b7a0c7",
+      "name": "Edit Msg: Rejected",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1240,
+        120
+      ],
+      "parameters": {
+        "operation": "editMessageText",
+        "messageType": "message",
+        "chatId": "={{ $('Parse Update').item.json.chat_id }}",
+        "messageId": "={{ $('Parse Update').item.json.message_id }}",
+        "text": "={{ $('Parse Update').item.json.original_text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }}\n\n❌ <b>Rejected</b> by {{ $('Parse Update').item.json.user_name }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "02fd8b78-5d6a-574b-80f4-ff6b4190e28d",
+      "name": "Answer: Edit",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        380
+      ],
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $('Parse Update').item.json.callback_query_id }}",
+        "additionalFields": {
+          "text": "✏️ Reply with the new copy"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "5d2166d4-61d1-55dc-aa49-7d79134fee72",
+      "name": "Ask for New Copy",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1000,
+        380
+      ],
+      "parameters": {
+        "chatId": "={{ $('Parse Update').item.json.chat_id }}",
+        "text": "=✏️ <b>Editing draft #{{ $('Parse Update').item.json.target_id }}</b>\nReply to <u>this</u> message with the new copy.\n\n• Plain text → used for both platforms (X gets the first 280 chars)\n• Or separate them:\n<code>TW: short tweet text\nFB: longer facebook text</code>",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        },
+        "replyMarkup": "forceReply",
+        "forceReply": {
+          "force_reply": true,
+          "selective": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "bdb58299-853f-59da-a899-e3fd93f0a84e",
+      "name": "Save Edit Prompt ID",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1240,
+        380
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH r AS (\nUPDATE content_queue SET edit_prompt_message_id = $2\n WHERE id = $1::int AND status = 'PENDING_APPROVAL'\nRETURNING id\n)\nSELECT * FROM r;",
+        "options": {
+          "queryReplacement": "={{ [$('Parse Update').item.json.target_id, String($json.result.message_id)] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "b15255ad-e8c8-5e9a-89f7-46fc70bfe1d0",
+      "name": "Answer: Retweeting",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        640
+      ],
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $('Parse Update').item.json.callback_query_id }}",
+        "additionalFields": {
+          "text": "🔁 Retweeting…"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "3c8f1f20-b09b-5828-bf32-f3d69ab5107c",
+      "name": "Claim Mention",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1000,
+        640
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH r AS (\nUPDATE mentions SET status = 'RETWEETING'\n WHERE id = $1::int AND status = 'NOTIFIED'\nRETURNING id, tweet_id\n)\nSELECT * FROM r;",
+        "options": {
+          "queryReplacement": "={{ [$('Parse Update').item.json.target_id] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "daee10e3-acaf-54d1-ab69-5751cc373134",
+      "name": "X: Retweet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1240,
+        640
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TWITTER_API_BASE_URL }}/2/users/{{ $env.TWITTER_USER_ID }}/retweets",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth1Api",
+        "options": {
+          "timeout": 120000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ tweet_id: $json.tweet_id }) }}"
+      },
+      "credentials": {
+        "oAuth1Api": {
+          "id": "shCredXOAuth1001",
+          "name": "X OAuth1 User Context"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "745a145c-8519-58c7-bf64-07d75b96c238",
+      "name": "Check Retweet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        640
+      ],
+      "parameters": {
+        "jsCode": "const r = $input.first().json;\nconst ok = r?.data?.retweeted === true;\nconst err = ok ? '' : (r?.error?.message || r?.detail || JSON.stringify(r).slice(0, 300));\nreturn [{ json: { ok, err, mention_id: String($('Claim Mention').first().json.id) } }];\n"
+      }
+    },
+    {
+      "id": "befb9c19-4d26-5d28-ac73-f337f157863a",
+      "name": "Update Mention Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1720,
+        640
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE mentions SET status = CASE WHEN $2 = 'true' THEN 'RETWEETED' ELSE 'FAILED' END,\n       error_message = NULLIF($3, '')\n WHERE id = $1::int\nRETURNING status, error_message;",
+        "options": {
+          "queryReplacement": "={{ [$json.mention_id, String($json.ok), $json.err] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "fc468a06-4b1a-5627-b8cc-8177bb3e58da",
+      "name": "Edit Msg: Retweet Result",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1960,
+        640
+      ],
+      "parameters": {
+        "operation": "editMessageText",
+        "messageType": "message",
+        "chatId": "={{ $('Parse Update').item.json.chat_id }}",
+        "messageId": "={{ $('Parse Update').item.json.message_id }}",
+        "text": "={{ $('Parse Update').item.json.original_text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }}\n\n{{ $json.status === 'RETWEETED' ? '🔁 <b>Retweeted</b> by ' + $('Parse Update').item.json.user_name : '⚠️ <b>Retweet failed:</b> ' + ($json.error_message || '').replace(/</g,'&lt;') }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "e661411b-97fc-5f2a-8676-a3d212289cc2",
+      "name": "Answer: Ignored",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        900
+      ],
+      "parameters": {
+        "resource": "callback",
+        "operation": "answerQuery",
+        "queryId": "={{ $('Parse Update').item.json.callback_query_id }}",
+        "additionalFields": {
+          "text": "🙈 Ignored"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "7c6e7e70-61c1-5ca5-bf00-dd3fde778b91",
+      "name": "Mark Mention Ignored",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1000,
+        900
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH r AS (\nUPDATE mentions SET status = 'IGNORED' WHERE id = $1::int AND status = 'NOTIFIED' RETURNING id\n)\nSELECT * FROM r;",
+        "options": {
+          "queryReplacement": "={{ [$('Parse Update').item.json.target_id] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "15d86811-1b0d-5a47-9b19-f88a85b61fc2",
+      "name": "Edit Msg: Ignored",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1240,
+        900
+      ],
+      "parameters": {
+        "operation": "editMessageText",
+        "messageType": "message",
+        "chatId": "={{ $('Parse Update').item.json.chat_id }}",
+        "messageId": "={{ $('Parse Update').item.json.message_id }}",
+        "text": "={{ $('Parse Update').item.json.original_text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;') }}\n\n🙈 Ignored by {{ $('Parse Update').item.json.user_name }}",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "7d62f673-3bb8-5674-938a-06d752e4521c",
+      "name": "Parse Edited Copy",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        1160
+      ],
+      "parameters": {
+        "jsCode": "const t = $input.first().json.text;\nconst tw = t.match(/^\\s*TW:\\s*([\\s\\S]*?)(?=^\\s*FB:|$(?![\\s\\S]))/m);\nconst fb = t.match(/^\\s*FB:\\s*([\\s\\S]*?)(?=^\\s*TW:|$(?![\\s\\S]))/m);\nlet twitter = tw ? tw[1].trim() : '';\nlet facebook = fb ? fb[1].trim() : '';\nif (!tw && !fb) { twitter = t; facebook = t; }\nif ([...twitter].length > 280) twitter = [...twitter].slice(0, 279).join('').replace(/\\s+\\S*$/, '') + '…';\nreturn [{ json: { reply_to: $input.first().json.reply_to_message_id, twitter, facebook } }];\n"
+      }
+    },
+    {
+      "id": "99a0f97e-5b30-5613-b28f-20be086f8a47",
+      "name": "Apply Edit",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1000,
+        1160
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "WITH r AS (\nUPDATE content_queue\n   SET twitter_copy = COALESCE(NULLIF($2, ''), twitter_copy),\n       fb_copy      = COALESCE(NULLIF($3, ''), fb_copy),\n       edit_prompt_message_id = NULL\n WHERE edit_prompt_message_id = $1 AND status = 'PENDING_APPROVAL'\nRETURNING id AS post_id, 'preview' AS mode, telegram_chat_id, telegram_message_id\n)\nSELECT * FROM r;",
+        "options": {
+          "queryReplacement": "={{ [$json.reply_to, $json.twitter, $json.facebook] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "adb26532-10cd-59d9-86fe-1366b957adc0",
+      "name": "Retire Old Preview",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1240,
+        1160
+      ],
+      "parameters": {
+        "operation": "editMessageText",
+        "messageType": "message",
+        "chatId": "={{ $json.telegram_chat_id }}",
+        "messageId": "={{ $json.telegram_message_id }}",
+        "text": "=✏️ Draft #{{ $json.post_id }} was edited, see the updated preview below.",
+        "additionalFields": {
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "9ec11b71-eb20-53e3-859c-4a492371d1d4",
+      "name": "Preview Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        1160
+      ],
+      "parameters": {
+        "jsCode": "return [{ json: { post_id: $('Apply Edit').first().json.post_id, mode: 'preview' } }];\n"
+      }
+    },
+    {
+      "id": "2241f494-f519-54d9-bfd6-5e9920dba7c0",
+      "name": "Run Generator (01) - Preview",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1720,
+        1160
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "shDailyAiGen0001"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      }
+    },
+    {
+      "id": "a9db8406-0bad-5dbb-aad9-8ee204b9015f",
+      "name": "Build Adapt Request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        760,
+        1420
+      ],
+      "parameters": {
+        "jsCode": "const m = $input.first().json;\nconst raw = m.text.startsWith('!raw');\nconst text = raw ? m.text.replace(/^!raw\\s*/, '') : m.text;\nreturn [{ json: {\n  raw, text, photo_file_id: m.photo_file_id,\n  claude_request: {\n    model: $env.ANTHROPIC_MODEL_COPY || 'claude-sonnet-5',\n    max_tokens: 4000,\n    system: \"You are the social media copywriter for a brand. You write one Twitter/X post and one Facebook post per request.\\nTwitter/X: max 260 characters (hard limit 280 incl. hashtags and links), a strong hook in the first line, at most 2 hashtags, no links unless provided.\\nFacebook: 60-180 words, story-driven, conversational, short paragraphs, ends with a clear call to action that includes the CTA link when one is given.\\nFollow the brand's tone guidelines exactly. Never invent facts, prices, statistics, customer names or quotes. Do not repeat the angle of the recent posts you are shown.\",\n    messages: [{ role: 'user', content:\n      'A team member sent this content to publish' + (m.photo_file_id ? ' (with a photo)' : '') +\n      '. Adapt it into one X post and one Facebook post. Keep their facts, names and links exactly; ' +\n      'improve structure and hook only.\\n\\n<team_content>\\n' + (text || '(no text, write short copy for the photo)') + '\\n</team_content>' }],\n    output_config: { format: { type: 'json_schema', schema: {\"type\": \"object\", \"properties\": {\"twitter_copy\": {\"type\": \"string\", \"description\": \"X/Twitter post, max 280 characters\"}, \"fb_copy\": {\"type\": \"string\", \"description\": \"Facebook post, story-driven, ends with CTA\"}, \"image_idea\": {\"type\": \"string\", \"description\": \"One-line idea for a matching image\"}}, \"required\": [\"twitter_copy\", \"fb_copy\", \"image_idea\"], \"additionalProperties\": false} } },\n  },\n}}];\n"
+      }
+    },
+    {
+      "id": "7fbadf0f-3b43-5707-b472-1cb6835113bd",
+      "name": "Use Raw Text?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1000,
+        1420
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.raw ? 1 : 0 }}"
+      }
+    },
+    {
+      "id": "3409e183-a763-5530-a1cd-cb0688845615",
+      "name": "Claude: Adapt Team Copy",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1240,
+        1360
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.CLAUDE_API_BASE_URL }}/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "timeout": 120000
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.claude_request) }}"
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "shCredAnthropic1",
+          "name": "Anthropic API Key"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "0e0e3396-2b52-5bbc-896c-b8368a792f3a",
+      "name": "Prepare Team Draft",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1480,
+        1420
+      ],
+      "parameters": {
+        "jsCode": "function claudeJson(resp) {\n  if (resp.error) throw new Error('Claude API error: ' + JSON.stringify(resp.error).slice(0, 500));\n  if (resp.stop_reason === 'refusal') throw new Error('Claude declined this request (refusal).');\n  if (resp.stop_reason === 'max_tokens') throw new Error('Claude output was cut off (max_tokens).');\n  const block = (resp.content || []).find((b) => b.type === 'text');\n  if (!block) throw new Error('No text block in Claude response');\n  return JSON.parse(block.text);\n}\n\nconst src = $('Build Adapt Request').first().json;\nlet tw, fb;\nif (src.raw) { tw = src.text; fb = src.text; }\nelse { const o = claudeJson($input.first().json); tw = o.twitter_copy; fb = o.fb_copy; }\ntw = String(tw || '').trim();\nif ([...tw].length > 280) tw = [...tw].slice(0, 279).join('').replace(/\\s+\\S*$/, '') + '…';\nreturn [{ json: {\n  twitter: tw, facebook: String(fb || '').trim(),\n  media_url: src.photo_file_id ? 'tg://' + src.photo_file_id : '',\n}}];\n"
+      }
+    },
+    {
+      "id": "65ca6a1c-816e-5507-a64a-b4fafa7a2bd1",
+      "name": "Create Team Draft",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        1720,
+        1420
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO content_queue (campaign_id, created_by, source, fb_copy, twitter_copy, media_url, status)\nVALUES ((SELECT id FROM campaigns WHERE is_active ORDER BY priority DESC, id LIMIT 1),\n        'TEAM_MEMBER', 'MANUAL_TEAM', $1, $2, NULLIF($3, ''), 'PENDING_APPROVAL')\nRETURNING id AS post_id, 'preview' AS mode;",
+        "options": {
+          "queryReplacement": "={{ [$json.facebook, $json.twitter, $json.media_url] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "302497ac-ba26-5392-8f09-9a5f43f0647c",
+      "name": "Run Generator (01) - Team Preview",
+      "type": "n8n-nodes-base.executeWorkflow",
+      "typeVersion": 1.2,
+      "position": [
+        1960,
+        1420
+      ],
+      "parameters": {
+        "source": "database",
+        "workflowId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "shDailyAiGen0001"
+        },
+        "mode": "each",
+        "options": {
+          "waitForSubWorkflow": false
+        }
+      }
+    },
+    {
+      "id": "57c418fd-ea88-5f0a-93f9-7e89fb163485",
+      "name": "Send Help",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        760,
+        1680
+      ],
+      "parameters": {
+        "chatId": "={{ $json.chat_id }}",
+        "text": "=🤖 <b>Social Hub bot</b>\nThis chat ID: <code>{{ $json.chat_id }}</code>{{ $json.authorized ? ' ✅ (admin chat)' : ' ⛔ (not the admin chat, set TELEGRAM_ADMIN_CHAT_ID to this value)' }}\n\n• Send text and/or a photo → I draft FB + X posts for approval\n• Start with <code>!raw</code> to post your text exactly as written\n• Daily AI drafts arrive at 08:00 with approval buttons",
+        "additionalFields": {
+          "appendAttribution": false,
+          "parse_mode": "HTML",
+          "disable_web_page_preview": true
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Telegram Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Update",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Update": {
+      "main": [
+        [
+          {
+            "node": "Route Action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route Action": {
+      "main": [
+        [
+          {
+            "node": "Answer: Publishing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Answer: Regenerating",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Answer: Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Answer: Edit",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Answer: Retweeting",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Answer: Ignored",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Parse Edited Copy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Adapt Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Help",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer: Publishing": {
+      "main": [
+        [
+          {
+            "node": "Claim Post for Publishing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Post for Publishing": {
+      "main": [
+        [
+          {
+            "node": "Run Publisher (04)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run Publisher (04)": {
+      "main": [
+        [
+          {
+            "node": "Format Publish Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Publish Result": {
+      "main": [
+        [
+          {
+            "node": "Mark Published",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer: Regenerating": {
+      "main": [
+        [
+          {
+            "node": "Claim Post for Regen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Post for Regen": {
+      "main": [
+        [
+          {
+            "node": "Mark Regenerating",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Regenerating": {
+      "main": [
+        [
+          {
+            "node": "Regen Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Regen Payload": {
+      "main": [
+        [
+          {
+            "node": "Run Generator (01) - Regen",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer: Rejected": {
+      "main": [
+        [
+          {
+            "node": "Mark Post Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Post Rejected": {
+      "main": [
+        [
+          {
+            "node": "Edit Msg: Rejected",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer: Edit": {
+      "main": [
+        [
+          {
+            "node": "Ask for New Copy",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Ask for New Copy": {
+      "main": [
+        [
+          {
+            "node": "Save Edit Prompt ID",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer: Retweeting": {
+      "main": [
+        [
+          {
+            "node": "Claim Mention",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claim Mention": {
+      "main": [
+        [
+          {
+            "node": "X: Retweet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X: Retweet": {
+      "main": [
+        [
+          {
+            "node": "Check Retweet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Retweet": {
+      "main": [
+        [
+          {
+            "node": "Update Mention Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Mention Status": {
+      "main": [
+        [
+          {
+            "node": "Edit Msg: Retweet Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answer: Ignored": {
+      "main": [
+        [
+          {
+            "node": "Mark Mention Ignored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark Mention Ignored": {
+      "main": [
+        [
+          {
+            "node": "Edit Msg: Ignored",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Edited Copy": {
+      "main": [
+        [
+          {
+            "node": "Apply Edit",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Apply Edit": {
+      "main": [
+        [
+          {
+            "node": "Retire Old Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Retire Old Preview": {
+      "main": [
+        [
+          {
+            "node": "Preview Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preview Payload": {
+      "main": [
+        [
+          {
+            "node": "Run Generator (01) - Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Adapt Request": {
+      "main": [
+        [
+          {
+            "node": "Use Raw Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Use Raw Text?": {
+      "main": [
+        [
+          {
+            "node": "Claude: Adapt Team Copy",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Team Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Claude: Adapt Team Copy": {
+      "main": [
+        [
+          {
+            "node": "Prepare Team Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Team Draft": {
+      "main": [
+        [
+          {
+            "node": "Create Team Draft",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Team Draft": {
+      "main": [
+        [
+          {
+            "node": "Run Generator (01) - Team Preview",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

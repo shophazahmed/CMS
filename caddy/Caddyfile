@@ -1,0 +1,15 @@
+{
+	email {$ACME_EMAIL}
+}
+
+# n8n editor + webhooks (Telegram needs this to be valid public HTTPS)
+{$N8N_DOMAIN} {
+	encode gzip
+	reverse_proxy n8n:5678
+}
+
+# NocoDB CMS UI
+{$NOCODB_DOMAIN} {
+	encode gzip
+	reverse_proxy nocodb:8080
+}
