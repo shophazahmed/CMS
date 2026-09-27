@@ -1,0 +1,26 @@
+# Override for servers that already run a shared Traefik on 80/443 (e.g. a
+# Hostinger VPS with Docker Manager: host network, entrypoint "websecure",
+# cert resolver "letsencrypt"). Use instead of the Caddy "https" profile:
+#
+#   echo 'COMPOSE_FILE=docker-compose.yml:docker-compose.traefik.yml' >> .env
+#   scripts/bootstrap.sh --activate
+#
+# Traefik reaches the containers on their bridge IP; traefik.docker.network pins
+# which one, because both services sit on two networks.
+services:
+  n8n:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=social-hub_frontend"
+      - "traefik.http.routers.social-hub-n8n.rule=Host(`${N8N_DOMAIN}`)"
+      - "traefik.http.routers.social-hub-n8n.entrypoints=websecure"
+      - "traefik.http.routers.social-hub-n8n.tls.certresolver=letsencrypt"
+      - "traefik.http.services.social-hub-n8n.loadbalancer.server.port=5678"
+  nocodb:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=social-hub_frontend"
+      - "traefik.http.routers.social-hub-cms.rule=Host(`${NOCODB_DOMAIN}`)"
+      - "traefik.http.routers.social-hub-cms.entrypoints=websecure"
+      - "traefik.http.routers.social-hub-cms.tls.certresolver=letsencrypt"
+      - "traefik.http.services.social-hub-cms.loadbalancer.server.port=8080"

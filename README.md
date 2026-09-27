@@ -32,9 +32,9 @@ n8n UI and export.
    already runs an n8n container, usually with Traefik holding ports 80/443 and
    SQLite storage. Running this stack next to it gives two n8n instances and a
    port fight. Recommended: export anything you built there (Workflows →
-   Download), stop that project in Hostinger's Docker Manager, and deploy
-   `deploy/hostinger/docker-compose.yml`, which plugs into Hostinger's shared
-   Traefik. Use `--https` (Caddy) only on a server where nothing else uses 80/443.
+   Download) and delete that project. On Hostinger, deploy with the shared
+   Traefik (see "Deploy on a Hostinger VPS"). Use `--https` (Caddy) only on a
+   server where nothing else uses 80/443.
    Check what's on the box first: `docker ps` and `ss -tlnp | grep -E ':(80|443|5678|8080)\b'`.
 2. **Telegram needs public HTTPS.** Point a DNS A record (e.g. `n8n.yourdomain.com`,
    `cms.yourdomain.com`) at the VPS before deploying. No domain means no buttons.
@@ -67,7 +67,7 @@ scripts/generate-env.sh            # writes .env (chmod 600)
 nano .env                          # fill every REPLACE_ME_*, check domains and TZ
 
 # 3. Tasks 2-3: start containers, wait for health, load credentials + workflows
-scripts/bootstrap.sh --https --activate
+scripts/bootstrap.sh --https --activate   # bare server; on Hostinger see below
 
 # 4. Task 5: verification report
 scripts/verify.sh
@@ -77,29 +77,26 @@ scripts/verify.sh
 update the n8n credentials). Without `--activate` the workflows are imported but
 left unpublished so you can review them in the UI first.
 
-## Deploy with Hostinger Docker Manager (no SSH)
+## Deploy on a Hostinger VPS (shared Traefik)
 
-`deploy/hostinger/docker-compose.yml` is a single-file version of the stack for
-hPanel's Docker Manager (or the Hostinger API), which deploys a compose file
-without the rest of the repo. The DB scripts and workflows are embedded in it,
-and a one-shot `n8n-setup` container imports the credentials and workflows,
-then publishes them before n8n starts.
+Hostinger VPSs using Docker Manager already run one Traefik (project `traefik`,
+host network, ports 80/443, resolver `letsencrypt`) that serves HTTPS for every
+app on the server. `docker-compose.traefik.yml` gives n8n and NocoDB matching
+labels, so **don't** use `--https`/Caddy there, and don't free 80/443.
 
-HTTPS comes from the **shared Traefik** that Hostinger's Docker Manager already
-runs on the server (project `traefik`, ports 80/443, resolver `letsencrypt`).
-n8n and NocoDB carry Traefik labels, just like Hostinger's own templates, so
-other apps on the same VPS keep working. Don't add Caddy or anything else on
-80/443 there.
+Deploy from the VPS **Web console** (or SSH) with real `docker compose`, not
+Docker Manager's "Compose an application" import. That importer rewrites the
+file and drops labels, `configs` and bind-mounted files, which breaks the
+stack.
 
-1. Create DNS A records `n8n` and `cms` pointing to the VPS IP.
-2. Deploy the compose file and set the project environment to the contents of
-   a `.env` made with `scripts/generate-env.sh` (all variables from the
-   Configuration reference).
-3. Put real tokens in the project environment and redeploy. `n8n-setup` re-runs,
-   updates the stored credentials, and n8n re-registers the Telegram webhook.
-
-Regenerate the file after changing workflows, the schema or docker-compose.yml:
-`python3 deploy/hostinger/build_compose.py`.
+```bash
+git clone -b claude/inspiring-darwin-muw57u https://github.com/shophazahmed/CMS /opt/social-hub
+cd /opt/social-hub
+scripts/generate-env.sh            # includes COMPOSE_FILE=...:docker-compose.traefik.yml
+nano .env                          # tokens, TZ; domains default to n8n./cms.seenu.online
+scripts/bootstrap.sh --activate
+scripts/verify.sh
+```
 
 ### First-time setup checklist
 

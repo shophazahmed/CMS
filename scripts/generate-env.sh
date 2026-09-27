@@ -25,6 +25,12 @@ cat > "$ENV_FILE" <<EOF
 # chmod 600. Never commit this file.
 # ---------------------------------------------------------------------------
 
+# ---- Compose files ---------------------------------------------------------
+# docker-compose.traefik.yml adds labels for a shared Traefik on 80/443 (Hostinger
+# Docker Manager servers have one). Harmless without Traefik; on a bare server
+# run scripts/bootstrap.sh --https to use the bundled Caddy instead.
+COMPOSE_FILE=docker-compose.yml:docker-compose.traefik.yml
+
 # ---- PostgreSQL ------------------------------------------------------------
 POSTGRES_USER=socialhub
 POSTGRES_PASSWORD=$(rand 24)
