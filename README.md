@@ -77,6 +77,25 @@ scripts/verify.sh
 update the n8n credentials). Without `--activate` the workflows are imported but
 left unpublished so you can review them in the UI first.
 
+## Deploy with Hostinger Docker Manager (no SSH)
+
+`deploy/hostinger/docker-compose.yml` is a single-file version of the stack for
+hPanel's Docker Manager (or the Hostinger API), which deploys a compose file
+without the rest of the repo. The DB scripts, Caddyfile and workflows are
+embedded in it, and a one-shot `n8n-setup` container imports the credentials
+and workflows, then publishes them before n8n starts.
+
+1. Create DNS A records `n8n` and `cms` pointing to the VPS IP.
+2. Free ports 80/443: stop the template n8n project if it runs Traefik.
+3. Deploy the compose file and set the project environment to the contents of
+   a `.env` made with `scripts/generate-env.sh` (all variables from the
+   Configuration reference).
+4. Put real tokens in the project environment and redeploy. `n8n-setup` re-runs,
+   updates the stored credentials, and n8n re-registers the Telegram webhook.
+
+Regenerate the file after changing workflows, the schema or docker-compose.yml:
+`python3 deploy/hostinger/build_compose.py`.
+
 ### First-time setup checklist
 
 - **n8n owner account:** open `https://n8n.yourdomain.com` and create the owner user.
