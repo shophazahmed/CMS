@@ -115,6 +115,19 @@ scripts/verify.sh
   to `media_assets` to have one attached automatically.
 - **X user ID:** `TWITTER_USER_ID` is the number before the `-` in your access token.
 
+### Setting tokens without an editor
+
+Browser consoles grab keys like Ctrl+W, so use the helpers. Input is hidden and
+never saved to shell history:
+
+```bash
+scripts/set-env.sh TELEGRAM_BOT_TOKEN ANTHROPIC_API_KEY      # any .env variables
+scripts/set-env.sh TWITTER_API_KEY TWITTER_API_SECRET TWITTER_BEARER_TOKEN \
+                   TWITTER_ACCESS_TOKEN TWITTER_ACCESS_SECRET # also fills TWITTER_USER_ID
+scripts/setup-facebook.sh      # System User token -> Page ID + Page token
+scripts/bootstrap.sh           # apply
+```
+
 ### Using it from Telegram
 
 | You do | Result |
