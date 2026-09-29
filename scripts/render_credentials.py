@@ -51,6 +51,11 @@ def main():
             "data": {"name": "Authorization", "value": "Bearer " + g("TWITTER_BEARER_TOKEN")},
         },
         {
+            # Shared secret between the portal container and workflow 05's webhook.
+            "id": "shCredPortalHook", "name": "Portal Webhook Secret", "type": "httpHeaderAuth",
+            "data": {"name": "X-Portal-Secret", "value": g("PORTAL_WEBHOOK_SECRET")},
+        },
+        {
             # OAuth 1.0a user context (needed to post, upload media and retweet).
             # The access token/secret from the X developer portal are injected as
             # already-authorized token data, so no browser OAuth dance is needed.

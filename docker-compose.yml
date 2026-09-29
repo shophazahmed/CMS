@@ -127,18 +127,47 @@ services:
       retries: 10
       start_period: 40s
 
+  portal:
+    <<: *restart
+    build: ./portal
+    image: social-hub-portal:local
+    container_name: social-hub-portal
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${PORTAL_BIND_IP:-127.0.0.1}:${PORTAL_PORT:-3000}:3000"
+    environment:
+      PGHOST: postgres
+      PGUSER: ${POSTGRES_USER}
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGDATABASE: ${POSTGRES_DB}
+      N8N_INTERNAL_URL: http://n8n:5678
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_ADMIN_CHAT_ID: ${TELEGRAM_ADMIN_CHAT_ID}
+      TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
+      TELEGRAM_API_BASE_URL: ${TELEGRAM_API_BASE_URL:-https://api.telegram.org}
+      PORTAL_SESSION_SECRET: ${PORTAL_SESSION_SECRET}
+      PORTAL_WEBHOOK_SECRET: ${PORTAL_WEBHOOK_SECRET}
+      PORTAL_COOKIE_SECURE: ${PORTAL_COOKIE_SECURE:-true}
+      FACEBOOK_PAGE_ID: ${FACEBOOK_PAGE_ID}
+      TWITTER_USERNAME: ${TWITTER_USERNAME:-}
+      TZ: ${TZ:-UTC}
+    networks: [backend, frontend]
+
   caddy:
     <<: *restart
     image: caddy:2-alpine
     container_name: social-hub-caddy
     profiles: ["https"]
-    depends_on: [n8n, nocodb]
+    depends_on: [n8n, nocodb, portal]
     ports:
       - "80:80"
       - "443:443"
     environment:
       N8N_DOMAIN: ${N8N_DOMAIN}
       NOCODB_DOMAIN: ${NOCODB_DOMAIN}
+      PORTAL_DOMAIN: ${PORTAL_DOMAIN}
     volumes:
       - ./caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data

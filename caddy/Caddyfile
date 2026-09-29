@@ -12,3 +12,9 @@
 	encode gzip
 	reverse_proxy nocodb:8080
 }
+
+# Portal (dashboard + Telegram Mini App)
+{$PORTAL_DOMAIN} {
+	encode gzip
+	reverse_proxy portal:3000
+}

@@ -21,6 +21,30 @@ is the CMS, and approved posts go to a **Facebook Page** (Graph API) and **X**
 | 02 Telegram Approval & Team Input | `n8n/workflows/02-telegram-approval-handler.json` | Telegram webhook | The single entry point for every button and message: Approve All / FB only / X only, Regenerate, Edit (ForceReply), Reject, Retweet, Ignore, and team-submitted text/photos. Only the admin chat can act. |
 | 03 Twitter Mention Listener | `n8n/workflows/03-twitter-mention-listener.json` | Every 15 min | Polls `/2/users/:id/mentions` (since_id cursor), de-dupes, Claude classifies (score, spam, sentiment, safety), high-value ones go to Telegram with a Retweet button. |
 | 04 Multi-Channel Publisher | `n8n/workflows/04-publisher.json` | Called by 02 | Publishes one approved post: text → `/feed`, photo → `/photos` (multipart); X media upload + `/2/tweets`. Records IDs or the exact API error. |
+| 05 Portal Actions | `n8n/workflows/05-portal-actions.json` | Internal webhook (shared secret) | Approve / reject / regenerate / send-to-Telegram / AI-adapt for the portal, reusing the same publisher and generator as the Telegram buttons. |
+
+## Portal (dashboard + Telegram Mini App)
+
+`portal/` is a small Node service served at `PORTAL_DOMAIN` (e.g. `cms.seenu.online`):
+**Dashboard** (status counts, 14-day chart, per-platform success/failures,
+mentions, system health), **Queue** (approve / FB only / X only / edit /
+regenerate / reject), **Compose** (text + photo → ✨ AI versions → send to
+Telegram for approval or publish now), **History**, **Campaigns** (website
+source, tone, topics, CTA) and **System** (workflows on/off, last runs, n8n
+errors, connected accounts). NocoDB, the raw table editor, lives at
+`NOCODB_DOMAIN` (e.g. `db.seenu.online`).
+
+Sign-in is Telegram only: inside Telegram the Mini App's signed `initData` is
+verified with the bot token; in a browser the Telegram Login Widget is used.
+Access is limited to `TELEGRAM_ALLOWED_USER_IDS`, or if that is empty, to
+members of the approval group (`getChatMember`).
+
+Set it up in @BotFather once the portal is live:
+1. `/mybots` → your bot → **Bot Settings → Menu Button** → URL `https://cms.seenu.online`, title `Portal`.
+2. `/setdomain` → your bot → `cms.seenu.online` (enables browser login).
+3. Optional: **Bot Settings → Configure Mini App** → same URL, so `t.me/<bot>?startapp` opens it.
+
+Open the bot in a private chat and tap **Portal** next to the message box.
 
 Workflows are generated from `n8n/src/build_workflows.py` (readable source,
 fixed IDs). Edit that and run `python3 n8n/src/build_workflows.py`, or edit in the
@@ -36,8 +60,9 @@ n8n UI and export.
    Traefik (see "Deploy on a Hostinger VPS"). Use `--https` (Caddy) only on a
    server where nothing else uses 80/443.
    Check what's on the box first: `docker ps` and `ss -tlnp | grep -E ':(80|443|5678|8080)\b'`.
-2. **Telegram needs public HTTPS.** Point a DNS A record (e.g. `n8n.yourdomain.com`,
-   `cms.yourdomain.com`) at the VPS before deploying. No domain means no buttons.
+2. **Telegram needs public HTTPS.** Point DNS A records (e.g. `n8n.yourdomain.com`,
+   `cms.yourdomain.com` for the portal, `db.yourdomain.com` for NocoDB) at the VPS
+   before deploying. No domain means no buttons.
 3. **X (Twitter) API Basic tier (~$100/mo) is required** to post, upload media and
    read mentions. The access token must be generated **after** setting the app to
    *Read and Write*, or posting returns 403.

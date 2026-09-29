@@ -312,7 +312,129 @@ sm = calls(rq, lambda r: r.get("tg_method") == "sendMessage")
 check(sm and "📰 Source: http://mock:9000/site/clean-beach-day" in sm[-1]["body"]["text"], "preview shows source")
 sql("update campaigns set source_url = null")
 
-print("\n[14] No workflow execution ended in error")
+print("\n[14] Portal: Telegram Mini App auth")
+import base64, hashlib, hmac, http.cookiejar, urllib.error, urllib.parse
+PORTAL = "http://127.0.0.1:3000"
+BOT_TOKEN = "123456:TESTTOKEN"
+jar = http.cookiejar.CookieJar()
+opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar), urllib.request.ProxyHandler({}))
+
+
+def portal(method, path, body=None, headers=None, raw=False):
+    h = {"x-requested-with": "social-hub", "content-type": "application/json", **(headers or {})}
+    req = urllib.request.Request(PORTAL + path, method=method, headers=h,
+                                 data=json.dumps(body).encode() if body is not None else None)
+    try:
+        with opener.open(req, timeout=200) as r:
+            data = r.read()
+            return r.status, (data if raw else json.loads(data or b"null")), r.headers
+    except urllib.error.HTTPError as e:
+        data = e.read()
+        try:
+            return e.code, json.loads(data), e.headers
+        except ValueError:
+            return e.code, data, e.headers
+
+
+def init_data(user_id, token=BOT_TOKEN):
+    fields = {"user": json.dumps({"id": user_id, "first_name": "Ana", "username": "ana_ops"}),
+              "auth_date": str(int(time.time())), "query_id": "AAQ"}
+    dcs = "\n".join(f"{k}={v}" for k, v in sorted(fields.items()))
+    secret = hmac.new(b"WebAppData", token.encode(), hashlib.sha256).digest()
+    fields["hash"] = hmac.new(secret, dcs.encode(), hashlib.sha256).hexdigest()
+    return urllib.parse.urlencode(fields)
+
+
+st, _, _ = portal("GET", "/healthz")
+check(st == 200, "portal /healthz")
+st, _, _ = portal("GET", "/api/summary")
+check(st == 401, "API needs a session", st)
+st, body, _ = portal("POST", "/api/auth/webapp", {"initData": init_data(7).replace("ana_ops", "eve")})
+check(st == 401, "tampered initData rejected", st)
+st, body, _ = portal("POST", "/api/auth/webapp", {"initData": init_data(7, "999:OTHER")})
+check(st == 401, "initData signed by another bot rejected", st)
+st, body, _ = portal("POST", "/api/auth/webapp", {"initData": init_data(999)})
+check(st == 403, "valid signature but not in approval group -> 403", st)
+st, body, hdr = portal("POST", "/api/auth/webapp", {"initData": init_data(7)})
+check(st == 200 and body.get("user", {}).get("name") == "@ana_ops", "group member signs in", (st, body))
+check("HttpOnly" in (hdr.get("set-cookie") or ""), "session cookie is HttpOnly")
+st, _, _ = portal("POST", "/api/ai/adapt", {"text": "x"}, headers={"x-requested-with": "evil"})
+check(st == 403, "writes without the portal header are refused (CSRF)", st)
+
+print("\n[15] Portal: dashboard, system, campaigns")
+st, s, _ = portal("GET", "/api/summary")
+check(st == 200 and "PUBLISHED" in s["status"] and len(s["daily"]) == 14, "summary with 14-day series", st)
+st, sysinfo, _ = portal("GET", "/api/system")
+names = sorted(w["name"] for w in sysinfo.get("workflows", []))
+check(sysinfo.get("n8n_healthy") is True and len(names) == 5 and all(w["active"] for w in sysinfo["workflows"]),
+      "system shows n8n healthy and 5 active workflows", names)
+check(sysinfo.get("telegram", {}).get("bot") == "@mock_hub_bot", "bot identity via getMe", sysinfo.get("telegram"))
+st, camps, _ = portal("GET", "/api/campaigns")
+cid = camps[0]["id"]
+st, c, _ = portal("PUT", f"/api/campaigns/{cid}", {"tone_guidelines": "Warm & hopeful", "source_url": "https://example.org/"})
+check(st == 200 and c["tone_guidelines"] == "Warm & hopeful", "campaign updated")
+st, _, _ = portal("PUT", f"/api/campaigns/{cid}", {"source_url": "javascript:alert(1)"})
+check(st == 400, "non-http campaign URL rejected", st)
+portal("PUT", f"/api/campaigns/{cid}", {"source_url": ""})
+
+print("\n[16] Portal: compose with image -> Telegram approval -> publish to Facebook")
+m0 = mark()
+st, r, _ = portal("POST", "/api/ai/adapt", {"text": "Clean Beach Day this Saturday", "has_photo": True})
+check(st == 200 and r.get("twitter_copy") and r.get("fb_copy"), "AI adapt via workflow 05", (st, r))
+png = base64.b64encode(base64.b64decode(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")).decode()
+st, r, _ = portal("POST", "/api/posts", {"twitter_copy": "Portal tweet <b>", "fb_copy": "Portal FB post\nline 2",
+                                         "image": {"name": "a.png", "type": "image/png", "data": png},
+                                         "then": "telegram"})
+pid6 = r.get("post", {}).get("id")
+check(st == 200 and r["post"]["status"] == "PENDING_APPROVAL" and r["post"]["media_url"] == "tg://PORTAL_UPLOADED",
+      "draft created with uploaded photo", (st, r))
+rq = requests(m0)
+check(calls(rq, lambda x: x.get("tg_method") == "sendPhoto" and "photo" in x["body"].get("_multipart_fields", [])),
+      "photo uploaded to the approval chat")
+prev = calls(rq, lambda x: x.get("tg_method") == "sendMessage" and f"a:all:{pid6}" in json.dumps(x["body"]))
+check(bool(prev), "approval preview with buttons sent to Telegram")
+st, img, hdr = portal("GET", f"/api/posts/{pid6}/media", raw=True)
+check(st == 200 and img[:4] == b"\x89PNG", "portal proxies the Telegram image", st)
+m0 = mark()
+st, r, _ = portal("PATCH", f"/api/posts/{pid6}", {"twitter_copy": "Edited in portal", "resend_to_telegram": True})
+check(st == 200 and r["twitter_copy"] == "Edited in portal", "edit saved")
+time.sleep(1)
+rq = requests(m0)
+check(calls(rq, lambda x: x.get("tg_method") == "editMessageText" and "updated in the portal" in x["body"].get("text", "")),
+      "old Telegram preview retired")
+check(calls(rq, lambda x: x.get("tg_method") == "sendMessage" and "Edited in portal" in x["body"].get("text", "")),
+      "fresh preview sent")
+m0 = mark()
+st, r, _ = portal("POST", f"/api/posts/{pid6}/approve", {"target": "fb"})
+check(st == 200 and r.get("ok") and r["post"]["status"] == "PUBLISHED" and r["post"]["fb_post_id"],
+      "approve (FB only) from portal publishes", (st, r))
+rq = requests(m0)
+check(calls(rq, lambda x: x["path"].endswith("/photos")), "FB /photos used for the image post")
+check(not calls(rq, lambda x: x["path"] == "/2/tweets"), "FB-only approval did not tweet")
+check(calls(rq, lambda x: x.get("tg_method") == "editMessageText" and "from the portal" in x["body"].get("text", "")),
+      "Telegram message marked published from the portal")
+st, r, _ = portal("POST", f"/api/posts/{pid6}/approve", {"target": "all"})
+check(st == 409, "cannot approve twice", st)
+
+print("\n[17] Portal: publish now (X), save + regenerate + reject")
+m0 = mark()
+st, r, _ = portal("POST", "/api/posts", {"twitter_copy": "Straight to X", "fb_copy": "unused", "then": "publish", "target": "tw"})
+check(st == 200 and r["post"]["status"] == "PUBLISHED" and r["post"]["tweet_id"], "publish-now to X", (st, r))
+check(calls(requests(m0), lambda x: x["path"] == "/2/tweets" and x.get("oauth1") == "ok"), "tweet signed with OAuth 1.0a")
+st, r, _ = portal("POST", "/api/posts", {"twitter_copy": "save me", "fb_copy": "save me", "then": "save"})
+pid7 = r["post"]["id"]
+st, r, _ = portal("POST", f"/api/posts/{pid7}/regenerate", {})
+check(st == 200 and r["post"]["status"] == "PENDING_APPROVAL" and r["post"]["regen_count"] == 1, "regenerate from portal", (st, r))
+st, r, _ = portal("POST", f"/api/posts/{pid7}/reject", {})
+check(st == 200 and r["post"]["status"] == "REJECTED", "reject from portal", (st, r))
+st, lst, _ = portal("GET", "/api/posts?status=PUBLISHED&limit=5")
+check(st == 200 and any(p["id"] == pid6 for p in lst), "history lists published posts")
+st, _, _ = portal("POST", "/api/auth/logout", {})
+st, _, _ = portal("GET", "/api/me")
+check(st == 401, "logout clears the session", st)
+
+print("\n[18] No workflow execution ended in error")
 time.sleep(3)
 errs, total = (lambda r: (r.stdout.strip() or "0|0").split("|"))(sh(
     "docker", "exec", "social-hub-postgres", "psql", "-U", "socialhub", "-d", "n8n", "-tAc",

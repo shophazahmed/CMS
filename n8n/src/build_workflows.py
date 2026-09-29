@@ -22,6 +22,7 @@ WF_GENERATOR = "shDailyAiGen0001"
 WF_APPROVAL = "shTgApproval0002"
 WF_LISTENER = "shTwListener0003"
 WF_PUBLISHER = "shPublisher00004"
+WF_PORTAL = "shPortalActn0005"
 
 CRED = {
     "postgres": {"postgres": {"id": "shCredPostgres01", "name": "Social Hub DB"}},
@@ -30,6 +31,7 @@ CRED = {
     "facebook": {"httpQueryAuth": {"id": "shCredFbPage0001", "name": "Facebook Page Token"}},
     "x_bearer": {"httpHeaderAuth": {"id": "shCredXBearer001", "name": "X Bearer Token"}},
     "x_oauth1": {"oAuth1Api": {"id": "shCredXOAuth1001", "name": "X OAuth1 User Context"}},
+    "portal": {"httpHeaderAuth": {"id": "shCredPortalHook", "name": "Portal Webhook Secret"}},
 }
 
 
@@ -1110,7 +1112,14 @@ return [{ json: { tweet_body: body, media_error: mediaError } }];
 
     code(wf, "Collect Results", r"""
 const plan = $('Media Ready').first().json;
-const errMsg = (r) => r?.error?.message || r?.error?.description || r?.detail || JSON.stringify(r).slice(0, 300);
+// n8n wraps API errors as '400 - "{\"error\":{\"message\":\"...\"}}"'; keep the
+// status code and pull out the API's own message so Telegram/portal show plain text.
+const errMsg = (r) => {
+  const m = String(r?.error?.message || r?.error?.description || r?.detail || JSON.stringify(r).slice(0, 300));
+  const inner = m.match(/\\?"(?:message|detail)\\?"\s*:\s*\\?"((?:[^"\\]|\\[^"])+)/);
+  const code = (m.match(/^(\d{3})\b/) || [])[1];
+  return inner ? `${code ? code + ' - ' : ''}${inner[1].replace(/\\/g, '')}` : m;
+};
 const res = { post_id: String(plan.post.id), fb_post_id: '', tweet_id: '', errors: [] };
 
 if (plan.do_fb) {
@@ -1167,11 +1176,169 @@ RETURNING id, status, fb_post_id, tweet_id, error_message, published_at;
     wf.dump("04-publisher.json")
 
 
+# ==========================================================================
+# Workflow 5: Portal actions (internal webhook used by the web portal)
+# ==========================================================================
+PORTAL_ACTIONS = ["approve", "reject", "regen", "preview", "adapt"]
+
+
+def respond(wf, name, body_expr, pos, code=200):
+    return wf.node(
+        name, "n8n-nodes-base.respondToWebhook", 1.1,
+        {"respondWith": "json", "responseBody": body_expr, "options": {"responseCode": code}},
+        pos,
+    )
+
+
+def build_portal():
+    wf = WF(WF_PORTAL, "05 - Portal Actions", ["social-hub"])
+    wf.node(
+        "Portal Webhook", "n8n-nodes-base.webhook", 2,
+        {"httpMethod": "POST", "path": "portal-action", "authentication": "headerAuth",
+         "responseMode": "responseNode", "options": {}},
+        (0, 600), CRED["portal"], webhookId=_id("portal-action-webhook"),
+    )
+    code(wf, "Validate Action", r"""
+// Called only by the portal container (shared secret header). The portal has
+// already authenticated the Telegram user; `user` is their display name.
+const b = $input.first().json.body || {};
+const ACTIONS = %s;
+const action = String(b.action || '');
+const idx = ACTIONS.indexOf(action);
+const target = { all: 'ALL', fb: 'FACEBOOK_ONLY', tw: 'TWITTER_ONLY' }[b.target] || 'ALL';
+return [{ json: {
+  action, idx: idx < 0 ? ACTIONS.length : idx,
+  post_id: b.post_id ? String(parseInt(b.post_id, 10)) : '',
+  target, user: String(b.user || 'portal').slice(0, 60),
+  text: String(b.text || '').slice(0, 6000), has_photo: !!b.has_photo,
+}}];
+""" % json.dumps(PORTAL_ACTIONS), (240, 600))
+    switch(wf, "Route Portal Action", len(PORTAL_ACTIONS) + 1, "={{ $json.idx }}", (480, 600))
+    rx, y = 760, lambda i: i * 240 + 120
+    V = "$('Validate Action').first().json"
+
+    # ---- approve -> publish now ------------------------------------------------
+    pg(wf, "Portal: Claim Post", """
+UPDATE content_queue
+   SET status = 'APPROVED', target_platform = $2, approved_by = $3
+ WHERE id = $1::int AND status = 'PENDING_APPROVAL'
+RETURNING id AS post_id, target_platform, telegram_chat_id, telegram_message_id, twitter_copy;
+""", "={{ [%s.post_id, %s.target, %s.user + ' (portal)'] }}" % (V, V, V), (rx, y(0)), stop_if_empty=True)
+    exec_wf(wf, "Portal: Run Publisher", WF_PUBLISHER, (rx + 240, y(0)))
+    code(wf, "Portal: Publish Summary", JS_ESC + r"""
+const r = $input.first().json;
+const c = $('Portal: Claim Post').first().json;
+const handle = $env.TWITTER_USERNAME || 'i';
+const links = [];
+if (r.fb_post_id) links.push(`📘 FB post: ${esc(r.fb_post_id)}`);
+if (r.tweet_id) links.push(`🐦 X: https://x.com/${handle}/status/${r.tweet_id}`);
+const who = esc($('Validate Action').first().json.user);
+const head = r.status === 'PUBLISHED' ? `✅ <b>Published</b> from the portal by ${who}`
+  : `⚠️ <b>Publishing failed</b> (draft #${r.id}): ${esc(r.error_message || 'unknown error')}`;
+return [{ json: {
+  result: { ok: r.status === 'PUBLISHED', post_id: r.id, status: r.status,
+            fb_post_id: r.fb_post_id || null, tweet_id: r.tweet_id || null, error: r.error_message || null },
+  chat: c.telegram_chat_id, msg: c.telegram_message_id,
+  text: `📝 Draft #${r.id}\n\n${esc(c.twitter_copy || '')}\n\n${head}` + (links.length ? '\n' + links.join('\n') : ''),
+}}];
+""", (rx + 480, y(0)))
+    tg_edit(wf, "Portal: Update TG (published)", "={{ $json.chat }}", "={{ $json.msg }}", "={{ $json.text }}",
+            (rx + 720, y(0)))
+    respond(wf, "Respond: Published", "={{ JSON.stringify($('Portal: Publish Summary').first().json.result) }}",
+            (rx + 960, y(0)))
+
+    # ---- reject ---------------------------------------------------------------
+    pg(wf, "Portal: Reject Post", """
+UPDATE content_queue SET status = 'REJECTED', approved_by = $2
+ WHERE id = $1::int AND status IN ('PENDING_APPROVAL', 'DRAFT')
+RETURNING id AS post_id, telegram_chat_id, telegram_message_id;
+""", "={{ [%s.post_id, %s.user + ' (portal)'] }}" % (V, V), (rx, y(1)), stop_if_empty=True)
+    tg_edit(wf, "Portal: Update TG (rejected)", "={{ $json.telegram_chat_id }}", "={{ $json.telegram_message_id }}",
+            "=📝 Draft #{{ $json.post_id }}\\n\\n❌ <b>Rejected</b> from the portal by {{ $('Validate Action').first().json.user }}",
+            (rx + 240, y(1)))
+    respond(wf, "Respond: Rejected", "={{ JSON.stringify({ ok: true, post_id: $('Portal: Reject Post').first().json.post_id, status: 'REJECTED' }) }}",
+            (rx + 480, y(1)))
+
+    # ---- regenerate -------------------------------------------------------------
+    pg(wf, "Portal: Claim for Regen", """
+UPDATE content_queue SET status = 'DRAFT'
+ WHERE id = $1::int AND status = 'PENDING_APPROVAL'
+RETURNING id AS post_id, 'regen' AS mode, telegram_chat_id, telegram_message_id;
+""", "={{ [%s.post_id] }}" % V, (rx, y(2)), stop_if_empty=True)
+    tg_edit(wf, "Portal: Update TG (regen)", "={{ $json.telegram_chat_id }}", "={{ $json.telegram_message_id }}",
+            "=♻️ Draft #{{ $json.post_id }} is being regenerated from the portal, new version below.",
+            (rx + 240, y(2)))
+    code(wf, "Portal: Regen Payload", r"""
+return [{ json: { post_id: $('Portal: Claim for Regen').first().json.post_id, mode: 'regen' } }];
+""", (rx + 480, y(2)))
+    exec_wf(wf, "Portal: Run Generator (regen)", WF_GENERATOR, (rx + 720, y(2)))
+    respond(wf, "Respond: Regenerated", "={{ JSON.stringify({ ok: true, post_id: $('Portal: Claim for Regen').first().json.post_id, status: 'PENDING_APPROVAL' }) }}",
+            (rx + 960, y(2)))
+
+    # ---- preview: (re)send a draft to Telegram for approval ---------------------
+    pg(wf, "Portal: Load Draft", """
+SELECT id AS post_id, 'preview' AS mode, telegram_chat_id, telegram_message_id
+  FROM content_queue WHERE id = $1::int AND status = 'PENDING_APPROVAL';
+""", "={{ [%s.post_id] }}" % V, (rx, y(3)))
+    tg_edit(wf, "Portal: Retire Old Preview", "={{ $json.telegram_chat_id }}", "={{ $json.telegram_message_id }}",
+            "=✏️ Draft #{{ $json.post_id }} was updated in the portal, see the new preview below.",
+            (rx + 240, y(3)))
+    code(wf, "Portal: Preview Payload", r"""
+return [{ json: { post_id: $('Portal: Load Draft').first().json.post_id, mode: 'preview' } }];
+""", (rx + 480, y(3)))
+    exec_wf(wf, "Portal: Run Generator (preview)", WF_GENERATOR, (rx + 720, y(3)))
+    respond(wf, "Respond: Sent to Telegram", "={{ JSON.stringify({ ok: true, post_id: $('Portal: Load Draft').first().json.post_id, status: 'PENDING_APPROVAL' }) }}",
+            (rx + 960, y(3)))
+
+    # ---- adapt: Claude polishes raw text into FB + X copy (no DB writes) --------
+    code(wf, "Portal: Build Adapt Request", r"""
+const v = $('Validate Action').first().json;
+return [{ json: { claude_request: {
+  model: $env.ANTHROPIC_MODEL_COPY || 'claude-sonnet-5',
+  max_tokens: 4000,
+  system: %s,
+  messages: [{ role: 'user', content:
+    'A team member wants to publish this' + (v.has_photo ? ' (with a photo)' : '') +
+    '. Adapt it into one X post and one Facebook post. Keep their facts, names and links exactly; ' +
+    'improve structure and hook only.\n\n<team_content>\n' + (v.text || '(no text, write short copy for the photo)') + '\n</team_content>' }],
+  output_config: { format: { type: 'json_schema', schema: %s } },
+}}}];
+""" % (json.dumps(COPY_SYSTEM), json.dumps(COPY_SCHEMA)), (rx, y(4)))
+    claude_call(wf, "Portal: Claude Adapt", (rx + 240, y(4)))
+    code(wf, "Portal: Parse Adapt", JS_CLAUDE_TEXT + r"""
+const o = claudeJson($input.first().json);
+let tw = String(o.twitter_copy || '').trim();
+if ([...tw].length > 280) tw = [...tw].slice(0, 279).join('').replace(/\s+\S*$/, '') + '…';
+return [{ json: { ok: true, twitter_copy: tw, fb_copy: String(o.fb_copy || '').trim() } }];
+""", (rx + 480, y(4)))
+    respond(wf, "Respond: Adapted", "={{ JSON.stringify($json) }}", (rx + 720, y(4)))
+
+    # ---- unknown action / nothing to do -----------------------------------------
+    respond(wf, "Respond: Bad Action", '={{ JSON.stringify({ ok: false, error: "unknown action" }) }}',
+            (rx, y(5)), code=400)
+
+    wf.chain("Portal Webhook", "Validate Action", "Route Portal Action")
+    firsts = ["Portal: Claim Post", "Portal: Reject Post", "Portal: Claim for Regen",
+              "Portal: Load Draft", "Portal: Build Adapt Request", "Respond: Bad Action"]
+    for i, n in enumerate(firsts):
+        wf.link("Route Portal Action", n, i)
+    wf.chain("Portal: Claim Post", "Portal: Run Publisher", "Portal: Publish Summary",
+             "Portal: Update TG (published)", "Respond: Published")
+    wf.chain("Portal: Reject Post", "Portal: Update TG (rejected)", "Respond: Rejected")
+    wf.chain("Portal: Claim for Regen", "Portal: Update TG (regen)", "Portal: Regen Payload",
+             "Portal: Run Generator (regen)", "Respond: Regenerated")
+    wf.chain("Portal: Load Draft", "Portal: Retire Old Preview", "Portal: Preview Payload",
+             "Portal: Run Generator (preview)", "Respond: Sent to Telegram")
+    wf.chain("Portal: Build Adapt Request", "Portal: Claude Adapt", "Portal: Parse Adapt", "Respond: Adapted")
+    wf.dump("05-portal-actions.json")
+
+
 if __name__ == "__main__":
     OUT.mkdir(parents=True, exist_ok=True)
     build_generator()
     build_approval()
     build_listener()
     build_publisher()
+    build_portal()
     for f in sorted(OUT.glob("*.json")):
         print("wrote", f.relative_to(OUT.parent.parent))

@@ -13,7 +13,7 @@ warn() { printf '⚠️ '; }
 
 echo "## 1. Containers"
 printf '%-24s %-12s %-10s %s\n' CONTAINER STATE HEALTH PORTS
-for c in social-hub-postgres social-hub-n8n social-hub-nocodb social-hub-caddy; do
+for c in social-hub-postgres social-hub-n8n social-hub-nocodb social-hub-portal social-hub-caddy; do
   if docker inspect "$c" >/dev/null 2>&1; then
     st=$(docker inspect -f '{{.State.Status}}' "$c")
     hl=$(docker inspect -f '{{if .State.Health}}{{.State.Health.Status}}{{else}}n/a{{end}}' "$c")
@@ -35,6 +35,8 @@ check "GET /healthz/readiness"  "http://127.0.0.1:$PORT/healthz/readiness" "200"
 check "Editor UI /"             "http://127.0.0.1:$PORT/" "200"
 check "Public API /api/v1 (needs X-N8N-API-KEY)" "http://127.0.0.1:$PORT/api/v1/workflows" "401 200"
 check "NocoDB /api/v1/health"   "http://127.0.0.1:${NOCODB_PORT:-8080}/api/v1/health" "200"
+check "Portal /healthz"         "http://127.0.0.1:${PORTAL_PORT:-3000}/healthz" "200"
+check "Portal API needs login"  "http://127.0.0.1:${PORTAL_PORT:-3000}/api/summary" "401"
 
 echo
 echo "## 3. Workflows in n8n"

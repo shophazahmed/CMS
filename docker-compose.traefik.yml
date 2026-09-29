@@ -20,7 +20,15 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=social-hub_frontend"
-      - "traefik.http.routers.social-hub-cms.rule=Host(`${NOCODB_DOMAIN}`)"
-      - "traefik.http.routers.social-hub-cms.entrypoints=websecure"
-      - "traefik.http.routers.social-hub-cms.tls.certresolver=letsencrypt"
-      - "traefik.http.services.social-hub-cms.loadbalancer.server.port=8080"
+      - "traefik.http.routers.social-hub-db.rule=Host(`${NOCODB_DOMAIN}`)"
+      - "traefik.http.routers.social-hub-db.entrypoints=websecure"
+      - "traefik.http.routers.social-hub-db.tls.certresolver=letsencrypt"
+      - "traefik.http.services.social-hub-db.loadbalancer.server.port=8080"
+  portal:
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=social-hub_frontend"
+      - "traefik.http.routers.social-hub-portal.rule=Host(`${PORTAL_DOMAIN}`)"
+      - "traefik.http.routers.social-hub-portal.entrypoints=websecure"
+      - "traefik.http.routers.social-hub-portal.tls.certresolver=letsencrypt"
+      - "traefik.http.services.social-hub-portal.loadbalancer.server.port=3000"

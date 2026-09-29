@@ -1,0 +1,11 @@
+{
+  "name": "social-hub-portal",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Social Hub portal: dashboard, approval queue and composer (web + Telegram Mini App)",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": { "start": "node server.js", "test": "node --test" },
+  "engines": { "node": ">=20" },
+  "dependencies": { "pg": "^8.13.0" }
+}

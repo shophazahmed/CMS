@@ -14,7 +14,8 @@ vals = {
     "TWITTER_API_KEY": "test-consumer-key", "TWITTER_API_SECRET": "test-consumer-secret",
     "TWITTER_ACCESS_TOKEN": "42-test-token", "TWITTER_ACCESS_SECRET": "test-token-secret",
     "TWITTER_USER_ID": "42", "WEBHOOK_URL": "http://localhost:5678/", "N8N_SECURE_COOKIE": "false",
-    "N8N_PROTOCOL": "http", "N8N_DOMAIN": "localhost",
+    "N8N_PROTOCOL": "http", "N8N_DOMAIN": "localhost", "PORTAL_COOKIE_SECURE": "false",
+    "COMPOSE_FILE": "docker-compose.yml:docker-compose.traefik.yml:tests/docker-compose.test.yml",
 }
 for k, v in vals.items():
     s = re.sub(rf"^{k}=.*$", f"{k}={v}", s, flags=re.M)
@@ -25,5 +26,5 @@ p.write_text(s)
 PY
 mkdir -p tests/.work && chmod 777 tests/.work
 echo "Test .env written. Now:"
-echo "  export COMPOSE_FILE=docker-compose.yml:tests/docker-compose.test.yml"
+echo "  (COMPOSE_FILE in .env already includes the test override)"
 echo "  scripts/bootstrap.sh --activate && python3 tests/run_e2e.py"

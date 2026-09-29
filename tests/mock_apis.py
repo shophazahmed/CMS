@@ -142,12 +142,23 @@ class H(BaseHTTPRequestHandler):
             rec["tg_method"] = method
             if method == "getFile":
                 return (200, {"ok": True, "result": {"file_id": params.get("file_id"), "file_path": "photos/f.png"}})
+            if method == "getChatMember":
+                uid = str(params.get("user_id"))
+                return (200, {"ok": True, "result": {"status": "member" if uid == "7" else "left",
+                                                     "user": {"id": int(uid or 0)}}})
+            if method == "getMe":
+                return (200, {"ok": True, "result": {"id": 123456, "is_bot": True, "username": "mock_hub_bot"}})
             if method in ("sendMessage", "sendPhoto", "editMessageText"):
                 msg_counter[0] += 1
-                return (200, {"ok": True, "result": {
+                result = {
                     "message_id": int(params.get("message_id") or msg_counter[0]),
                     "chat": {"id": int(params.get("chat_id", 0) or 0)},
-                    "text": params.get("text", "")}})
+                    "text": params.get("text", "")}
+                if method == "sendPhoto":
+                    # multipart uploads (portal) get a fresh file_id; URL/file_id sends echo it
+                    fid = params.get("photo") if isinstance(params.get("photo"), str) else "PORTAL_UPLOADED"
+                    result["photo"] = [{"file_id": fid + "_small", "width": 90}, {"file_id": fid, "width": 1280}]
+                return (200, {"ok": True, "result": result})
             return (200, {"ok": True, "result": True})
         if re.match(r"^/file/bot[^/]+/", p):
             return (200, PNG, "image/png")

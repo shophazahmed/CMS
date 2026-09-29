@@ -50,11 +50,19 @@ N8N_SECURE_COOKIE=true
 # Your local timezone (IANA name) - the 08:00 cron uses it, e.g. Asia/Dhaka, Europe/London
 TZ=UTC
 
-# ---- NocoDB (CMS UI) -------------------------------------------------------
+# ---- Portal (dashboard + Telegram Mini App) -------------------------------
+PORTAL_DOMAIN=cms.seenu.online
+PORTAL_PORT=3000
+PORTAL_BIND_IP=127.0.0.1
+PORTAL_SESSION_SECRET=$(rand 32)
+PORTAL_WEBHOOK_SECRET=$(rand 32)
+PORTAL_COOKIE_SECURE=true
+
+# ---- NocoDB (raw database editor) ------------------------------------------
 NOCODB_PORT=8080
 NOCODB_BIND_IP=127.0.0.1
-NOCODB_DOMAIN=cms.seenu.online
-NOCODB_PUBLIC_URL=https://cms.seenu.online
+NOCODB_DOMAIN=db.seenu.online
+NOCODB_PUBLIC_URL=https://db.seenu.online
 NOCODB_JWT_SECRET=$(rand 32)
 
 # ---- Telegram --------------------------------------------------------------
