@@ -291,7 +291,28 @@ ed = calls(rq, lambda r: r.get("tg_method") == "editMessageText")
 check(ed and "failed" in ed[-1]["body"].get("text", ""), "Telegram shows the failure")
 sh("docker", "compose", "up", "-d", "--force-recreate", "mock", env={**__import__("os").environ, "MOCK_FAIL_FB": "0"})
 
-print("\n[13] No workflow execution ended in error")
+print("\n[13] Website-aware generation (campaign source_url)")
+sql("update campaigns set source_url = 'http://mock:9000/site/'")
+m0 = mark()
+run_cli("shDailyAiGen0001")
+pid5 = int(sql("select max(id) from content_queue")[0][0])
+rq = requests(m0)
+check(calls(rq, lambda r: r["path"] == "/site/" and "SocialHubBot" in r["headers"].get("user-agent", "")),
+      "fetched the campaign website")
+check(calls(rq, lambda r: r["path"] == "/wp-json/wp/v2/posts"), "fetched recent WordPress articles")
+cl = calls(rq, lambda r: r["path"] == "/v1/messages")
+prompt = cl[0]["body"]["messages"][0]["content"] if cl else ""
+check("Together for a greener island" in prompt and "120 volunteers" in prompt, "page text in prompt")
+check("Clean Beach Day - 28 September" in prompt and "300 volunteers" in prompt, "article title+excerpt in prompt")
+check("IGNORE_ME" not in prompt and "Copyright footer" not in prompt and "Home | About" not in prompt,
+      "scripts/nav/footer stripped")
+check(sql(f"select source_link from content_queue where id={pid5}") == [["http://mock:9000/site/clean-beach-day"]],
+      "source_link saved on draft")
+sm = calls(rq, lambda r: r.get("tg_method") == "sendMessage")
+check(sm and "📰 Source: http://mock:9000/site/clean-beach-day" in sm[-1]["body"]["text"], "preview shows source")
+sql("update campaigns set source_url = null")
+
+print("\n[14] No workflow execution ended in error")
 time.sleep(3)
 errs, total = (lambda r: (r.stdout.strip() or "0|0").split("|"))(sh(
     "docker", "exec", "social-hub-postgres", "psql", "-U", "socialhub", "-d", "n8n", "-tAc",

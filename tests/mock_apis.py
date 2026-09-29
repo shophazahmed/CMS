@@ -27,6 +27,18 @@ PNG = base64.b64decode(
 )
 msg_counter = [1000]
 
+SITE_HTML = """<!doctype html><html><head><title>Mock Org &amp; Friends</title>
+<style>.x{color:red}</style><script>var tracking = 'IGNORE_ME';</script></head>
+<body><nav>Home | About | Donate</nav>
+<h1>Together for a greener island</h1>
+<p>We run weekly reef clean-ups with 120 volunteers.</p>
+<footer>Copyright footer text</footer></body></html>"""
+SITE_POSTS = [
+    {"date": "2026-09-20T10:00:00", "link": "http://mock:9000/site/clean-beach-day",
+     "title": {"rendered": "Clean Beach Day &#8211; 28 September"},
+     "excerpt": {"rendered": "<p>Join 300 volunteers at Hulhumale beach.</p>"}},
+]
+
 
 def pct(s):
     return urllib.parse.quote(str(s), safe="~-._")
@@ -60,7 +72,8 @@ def claude_reply(body):
     else:
         out = {"twitter_copy": "Mock tweet: small steps, big wins. #YourBrand",
                "fb_copy": "Mock Facebook story <with> & special chars.\n\nLearn more: https://example.com",
-               "image_idea": "A sunrise over a desk"}
+               "image_idea": "A sunrise over a desk",
+               "source_link": ("http://mock:9000/site/clean-beach-day" if "Clean Beach Day" in user else "")}
     return {"id": "msg_mock", "type": "message", "role": "assistant", "model": body.get("model"),
             "content": [{"type": "thinking", "thinking": "", "signature": "x"},
                         {"type": "text", "text": json.dumps(out)}],
@@ -106,6 +119,11 @@ class H(BaseHTTPRequestHandler):
     def route(self, rec, query):
         p, b, h = rec["path"], rec["body"], rec["headers"]
         # ---- test helpers ----
+        # ---- a fake organisation website (WordPress-like) ----
+        if p == "/site/":
+            return (200, SITE_HTML.encode(), "text/html; charset=utf-8")
+        if p == "/wp-json/wp/v2/posts":
+            return (200, SITE_POSTS)
         if p == "/img.png":
             return (200, PNG, "image/png")
         if p == "/health":

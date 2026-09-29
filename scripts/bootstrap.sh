@@ -52,6 +52,15 @@ for svc in postgres n8n nocodb; do
   done
 done
 
+set -a; . ./.env; set +a
+
+echo "==> Applying database migrations"
+for f in db/migrations/*.sql; do
+  [[ -e "$f" ]] || continue
+  "${COMPOSE[@]}" exec -T postgres psql -q -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB" < "$f"
+  echo "   $(basename "$f")"
+done
+
 echo "==> Importing n8n credentials (encrypted with N8N_ENCRYPTION_KEY)"
 # Rendered to stdout and streamed into the container, so the plaintext never
 # touches the host disk or the container's environment.
@@ -61,7 +70,6 @@ python3 "$ROOT/scripts/render_credentials.py" "$ROOT/.env" \
 
 # Importing unpublishes a workflow, so remember which ones were live and
 # re-publish them; otherwise a re-run (e.g. to rotate a token) takes the bot offline.
-set -a; . ./.env; set +a
 WAS_ACTIVE=$("${COMPOSE[@]}" exec -T postgres psql -U "$POSTGRES_USER" -d n8n -tAc \
   "select id from workflow_entity where active and id like 'sh%'" 2>/dev/null | tr -d '\r' || true)
 

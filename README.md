@@ -110,6 +110,10 @@ scripts/verify.sh
   *Create Base → Connect External Data Source → PostgreSQL*: host `postgres`,
   port `5432`, database `social_hub`, user/password from `.env`. You now edit
   `campaigns`, `media_assets`, `content_queue`, `mentions` in a spreadsheet UI.
+- **Website source:** set `source_url` on a campaign (e.g. `https://bodubadhalu.org/`).
+  Each run, workflow 01 reads that page plus the site's latest WordPress articles
+  (if any) and Claude writes about one specific item, linking to it. The draft
+  preview shows `📰 Source:`.
 - **Campaigns:** edit the seeded "Default Brand Campaign" (tone, topics, CTA).
   The highest-`priority` active campaign drives the 08:00 draft. Add image URLs
   to `media_assets` to have one attached automatically.
