@@ -24,6 +24,13 @@ done
 [[ -f .env ]] || { echo "No .env - run scripts/generate-env.sh first."; exit 1; }
 command -v python3 >/dev/null || { echo "python3 is required (apt install python3)."; exit 1; }
 
+TZ_VALUE=$(grep -E '^TZ=' .env | tail -1 | cut -d= -f2-)
+if [[ -n "$TZ_VALUE" && -d /usr/share/zoneinfo && ! -f "/usr/share/zoneinfo/$TZ_VALUE" ]]; then
+  echo "TZ=$TZ_VALUE in .env is not a valid timezone (n8n workflows would fail)."
+  echo "Use an IANA name such as Asia/Dhaka, Europe/London, UTC."
+  exit 1
+fi
+
 COMPOSE=(docker compose)  # honours COMPOSE_FILE if set
 [[ $HTTPS -eq 1 ]] && COMPOSE+=(--profile https)
 
