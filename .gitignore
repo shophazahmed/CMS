@@ -1,0 +1,4 @@
+# Real secrets never go to git
+.env
+*.rendered.json
+tests/.work/

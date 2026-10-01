@@ -1,0 +1,641 @@
+{
+  "id": "shPublisher00004",
+  "name": "04 - Multi-Channel Publisher",
+  "active": false,
+  "nodes": [
+    {
+      "id": "a6451fa4-6749-5e44-9c2a-3495ae996988",
+      "name": "Called with post_id",
+      "type": "n8n-nodes-base.executeWorkflowTrigger",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        300
+      ],
+      "parameters": {
+        "inputSource": "passthrough"
+      }
+    },
+    {
+      "id": "7efd681a-b1be-5ca4-beee-e1bf20d29975",
+      "name": "Load Approved Post",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        220,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM content_queue WHERE id = $1::int AND status = 'APPROVED';",
+        "options": {
+          "queryReplacement": "={{ [String($json.post_id)] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    },
+    {
+      "id": "08adeafa-d72a-5b88-9e83-b8d4e442e72f",
+      "name": "Plan Publish",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const p = $input.first().json;\nconst m = p.media_url || '';\nreturn [{ json: {\n  post: p,\n  do_fb: p.target_platform !== 'TWITTER_ONLY',\n  do_tw: p.target_platform !== 'FACEBOOK_ONLY',\n  media_kind: !m ? 0 : m.startsWith('tg://') ? 1 : 2,   // 0 none, 1 telegram file, 2 url\n  tg_file_id: m.startsWith('tg://') ? m.slice(5) : '',\n  media_url: m.startsWith('tg://') ? '' : m,\n}}];\n"
+      }
+    },
+    {
+      "id": "f8a48971-d5f0-56c4-9dcd-ab62da1c7490",
+      "name": "Media Source",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        660,
+        300
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 3,
+        "output": "={{ $json.media_kind }}"
+      }
+    },
+    {
+      "id": "de2b8395-429b-54f4-b9d1-8f0fb75b012c",
+      "name": "Telegram: Download Photo",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        880,
+        300
+      ],
+      "parameters": {
+        "resource": "file",
+        "fileId": "={{ $json.tg_file_id }}",
+        "download": true,
+        "additionalFields": {}
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "shCredTelegram01",
+          "name": "Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "c445a1d2-abac-5683-8f7c-c8aaf16298e9",
+      "name": "Download Media URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        480
+      ],
+      "parameters": {
+        "url": "={{ $json.media_url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 60000
+        }
+      }
+    },
+    {
+      "id": "9eec28bf-2063-5c23-8cd5-43588e29d7b6",
+      "name": "Media Ready",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Joins the three media branches. Binary (if any) stays on the item as \"data\".\nconst plan = $('Plan Publish').first().json;\nconst item = $input.first();\nconst hasBin = !!(item.binary && item.binary.data);\nreturn [{ json: { ...plan, has_binary: hasBin }, binary: hasBin ? item.binary : undefined }];\n"
+      }
+    },
+    {
+      "id": "230605d0-cbbc-5457-902e-852c49ab1954",
+      "name": "Post to Facebook?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1320,
+        300
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.do_fb ? 1 : 0 }}"
+      }
+    },
+    {
+      "id": "5258b528-663b-514d-b941-6cb0fe131e1a",
+      "name": "FB: Photo or Text?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1540,
+        200
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.has_binary ? 1 : 0 }}"
+      }
+    },
+    {
+      "id": "0ce0a265-4bd7-5d7b-b8b0-5b2d3885e3e3",
+      "name": "FB: Text Post (/feed)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FB_GRAPH_BASE_URL }}/{{ $env.FB_GRAPH_VERSION }}/{{ $env.FACEBOOK_PAGE_ID }}/feed",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "options": {
+          "timeout": 120000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ message: $json.post.fb_copy }) }}"
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "shCredFbPage0001",
+          "name": "Facebook Page Token"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "78c51e5e-32f2-5c66-aa31-bff732189332",
+      "name": "FB: Photo Post (/photos)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1760,
+        280
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.FB_GRAPH_BASE_URL }}/{{ $env.FB_GRAPH_VERSION }}/{{ $env.FACEBOOK_PAGE_ID }}/photos",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpQueryAuth",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "source",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.post.fb_copy }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "credentials": {
+        "httpQueryAuth": {
+          "id": "shCredFbPage0001",
+          "name": "Facebook Page Token"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "8793dbfb-64d0-5553-85be-aa036185fd64",
+      "name": "After Facebook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1980,
+        300
+      ],
+      "parameters": {
+        "jsCode": "// Join point: restore the plan + media binary for the X/Twitter step.\nconst ready = $('Media Ready').first();\nreturn [{ json: ready.json, binary: ready.binary }];\n"
+      }
+    },
+    {
+      "id": "aabeac11-2090-50b8-babd-f1af5f9071b0",
+      "name": "Post to X?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2200,
+        300
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.do_tw ? 1 : 0 }}"
+      }
+    },
+    {
+      "id": "2357740a-dbb5-502e-b210-ffddee66a4c5",
+      "name": "X: Has Image?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        2420,
+        200
+      ],
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.has_binary ? 1 : 0 }}"
+      }
+    },
+    {
+      "id": "866c4951-1cc0-5783-b35b-7f150ca9832e",
+      "name": "X: Upload Media",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2640,
+        120
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TWITTER_API_BASE_URL }}/2/media/upload",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth1Api",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "media",
+              "inputDataFieldName": "data"
+            },
+            {
+              "name": "media_category",
+              "value": "tweet_image"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "credentials": {
+        "oAuth1Api": {
+          "id": "shCredXOAuth1001",
+          "name": "X OAuth1 User Context"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "dd6b9e85-4a92-5998-9af9-6e0879eed819",
+      "name": "Build Tweet",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2860,
+        200
+      ],
+      "parameters": {
+        "jsCode": "const plan = $('Media Ready').first().json;\nconst body = { text: plan.post.twitter_copy };\nlet mediaError = '';\nif ($('X: Upload Media').isExecuted) {\n  const up = $('X: Upload Media').first().json;\n  const id = up?.data?.id || up?.media_id_string;\n  if (id) body.media = { media_ids: [String(id)] };\n  else mediaError = 'image upload failed, posted text only: ' + (up?.error?.message || JSON.stringify(up).slice(0, 200));\n}\nreturn [{ json: { tweet_body: body, media_error: mediaError } }];\n"
+      }
+    },
+    {
+      "id": "66d73863-df19-5d71-94f8-6864444f9c86",
+      "name": "X: Create Tweet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3080,
+        200
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TWITTER_API_BASE_URL }}/2/tweets",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "oAuth1Api",
+        "options": {
+          "timeout": 120000
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.tweet_body) }}"
+      },
+      "credentials": {
+        "oAuth1Api": {
+          "id": "shCredXOAuth1001",
+          "name": "X OAuth1 User Context"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "9d9d9f12-d6b8-5739-99d2-acc699313e2a",
+      "name": "Collect Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3300,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const plan = $('Media Ready').first().json;\n// n8n wraps API errors as '400 - \"{\\\"error\\\":{\\\"message\\\":\\\"...\\\"}}\"'; keep the\n// status code and pull out the API's own message so Telegram/portal show plain text.\nconst errMsg = (r) => {\n  const m = String(r?.error?.message || r?.error?.description || r?.detail || JSON.stringify(r).slice(0, 300));\n  const inner = m.match(/\\\\?\"(?:message|detail)\\\\?\"\\s*:\\s*\\\\?\"((?:[^\"\\\\]|\\\\[^\"])+)/);\n  const code = (m.match(/^(\\d{3})\\b/) || [])[1];\n  return inner ? `${code ? code + ' - ' : ''}${inner[1].replace(/\\\\/g, '')}` : m;\n};\nconst res = { post_id: String(plan.post.id), fb_post_id: '', tweet_id: '', errors: [] };\n\nif (plan.do_fb) {\n  const node = $('FB: Photo Post (/photos)').isExecuted ? 'FB: Photo Post (/photos)'\n             : $('FB: Text Post (/feed)').isExecuted ? 'FB: Text Post (/feed)' : null;\n  const r = node ? $(node).first().json : null;\n  if (r && (r.post_id || r.id) && !r.error) res.fb_post_id = String(r.post_id || r.id);\n  else res.errors.push('Facebook: ' + (r ? errMsg(r) : 'not executed'));\n}\nif (plan.do_tw) {\n  const r = $('X: Create Tweet').isExecuted ? $('X: Create Tweet').first().json : null;\n  if (r?.data?.id) res.tweet_id = String(r.data.id);\n  else res.errors.push('X: ' + (r ? errMsg(r) : 'not executed'));\n  const b = $('Build Tweet').isExecuted ? $('Build Tweet').first().json : {};\n  if (b.media_error) res.errors.push('X: ' + b.media_error);\n}\nconst failed = (plan.do_fb && !res.fb_post_id) || (plan.do_tw && !res.tweet_id);\nres.status = failed ? 'FAILED' : 'PUBLISHED';\nres.error_message = res.errors.join(' | ');\nreturn [{ json: res }];\n"
+      }
+    },
+    {
+      "id": "a9204c2c-9358-53e5-aa40-cd234fb95ae0",
+      "name": "Finalize Post",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [
+        3520,
+        300
+      ],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE content_queue\n   SET status = $2,\n       fb_post_id = NULLIF($3, ''),\n       tweet_id = NULLIF($4, ''),\n       error_message = NULLIF($5, ''),\n       published_at = CASE WHEN $2 = 'PUBLISHED' THEN now() ELSE published_at END\n WHERE id = $1::int\nRETURNING id, status, fb_post_id, tweet_id, error_message, published_at;",
+        "options": {
+          "queryReplacement": "={{ [$json.post_id, $json.status, $json.fb_post_id, $json.tweet_id, $json.error_message] }}"
+        }
+      },
+      "credentials": {
+        "postgres": {
+          "id": "shCredPostgres01",
+          "name": "Social Hub DB"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Called with post_id": {
+      "main": [
+        [
+          {
+            "node": "Load Approved Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load Approved Post": {
+      "main": [
+        [
+          {
+            "node": "Plan Publish",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Plan Publish": {
+      "main": [
+        [
+          {
+            "node": "Media Source",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Media Source": {
+      "main": [
+        [
+          {
+            "node": "Media Ready",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Download Photo",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Download Media URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Download Photo": {
+      "main": [
+        [
+          {
+            "node": "Media Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Download Media URL": {
+      "main": [
+        [
+          {
+            "node": "Media Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Media Ready": {
+      "main": [
+        [
+          {
+            "node": "Post to Facebook?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to Facebook?": {
+      "main": [
+        [
+          {
+            "node": "After Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "FB: Photo or Text?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FB: Photo or Text?": {
+      "main": [
+        [
+          {
+            "node": "FB: Text Post (/feed)",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "FB: Photo Post (/photos)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FB: Text Post (/feed)": {
+      "main": [
+        [
+          {
+            "node": "After Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "FB: Photo Post (/photos)": {
+      "main": [
+        [
+          {
+            "node": "After Facebook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "After Facebook": {
+      "main": [
+        [
+          {
+            "node": "Post to X?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Post to X?": {
+      "main": [
+        [
+          {
+            "node": "Collect Results",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "X: Has Image?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X: Has Image?": {
+      "main": [
+        [
+          {
+            "node": "Build Tweet",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "X: Upload Media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X: Upload Media": {
+      "main": [
+        [
+          {
+            "node": "Build Tweet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Tweet": {
+      "main": [
+        [
+          {
+            "node": "X: Create Tweet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "X: Create Tweet": {
+      "main": [
+        [
+          {
+            "node": "Collect Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect Results": {
+      "main": [
+        [
+          {
+            "node": "Finalize Post",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner"
+  },
+  "pinData": {},
+  "tags": [],
+  "meta": {
+    "templateCredsSetupCompleted": true
+  }
+}

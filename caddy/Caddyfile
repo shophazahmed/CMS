@@ -1,0 +1,20 @@
+# No ACME email configured: Caddy obtains Let's Encrypt certificates without one
+# (you just won't get expiry warning emails, and Caddy renews automatically).
+
+# n8n editor + webhooks (Telegram needs this to be valid public HTTPS)
+{$N8N_DOMAIN} {
+	encode gzip
+	reverse_proxy n8n:5678
+}
+
+# NocoDB CMS UI
+{$NOCODB_DOMAIN} {
+	encode gzip
+	reverse_proxy nocodb:8080
+}
+
+# Portal (dashboard + Telegram Mini App)
+{$PORTAL_DOMAIN} {
+	encode gzip
+	reverse_proxy portal:3000
+}

@@ -1,0 +1,24 @@
+# Test-only override: offline mock APIs, Docker Hub mirror of the n8n image and
+# a portal build that trusts the sandbox proxy's CA. Never use on a real server.
+services:
+  n8n:
+    image: n8nio/n8n:${N8N_VERSION:-latest}
+    depends_on:
+      mock:
+        condition: service_started
+  portal:
+    build:
+      context: .
+      dockerfile: tests/portal.test.Dockerfile
+  mock:
+    image: python:3.12-alpine
+    container_name: social-hub-mock
+    command: ["python", "/app/mock_apis.py"]
+    environment:
+      MOCK_FAIL_FB: ${MOCK_FAIL_FB:-0}
+    volumes:
+      - ./tests/mock_apis.py:/app/mock_apis.py:ro
+      - ./tests/.work:/work
+    networks:
+      backend:
+        aliases: [mock]

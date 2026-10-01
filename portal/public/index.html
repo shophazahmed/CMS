@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Social Hub</title>
+  <meta name="color-scheme" content="light dark">
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/style.css">
+  <!-- Telegram Mini App SDK: gives us initData + theme when opened inside Telegram -->
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><img src="/icon.svg" alt="" width="22" height="22"> Social Hub</div>
+    <div class="row"><span id="who" class="who"></span><button id="logout" class="linkbtn" hidden>Sign out</button></div>
+  </header>
+
+  <nav id="tabs" class="tabs" hidden>
+    <button data-tab="dashboard" class="on">Dashboard</button>
+    <button data-tab="queue">Queue <span id="queue-badge" class="badge" hidden></span></button>
+    <button data-tab="compose">Compose</button>
+    <button data-tab="history">History</button>
+    <button data-tab="campaigns">Campaigns</button>
+    <button data-tab="system">System</button>
+    <button data-tab="help">Help</button>
+  </nav>
+
+  <main id="main">
+    <section id="login" class="card center" hidden>
+      <h2>Sign in</h2>
+      <form id="pw-form" class="login-form" hidden autocomplete="on">
+        <label for="pw-user">Username</label>
+        <input id="pw-user" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+        <label for="pw-pass">Password</label>
+        <input id="pw-pass" name="password" type="password" autocomplete="current-password" required>
+        <div class="actions"><button class="btn primary" type="submit" style="width:100%">Sign in</button></div>
+      </form>
+      <p id="login-or" class="muted small" hidden>or</p>
+      <div id="login-widget"></div>
+      <p class="muted small">Inside Telegram, open the bot's <b>Portal</b> menu button and you're signed in automatically.</p>
+      <p id="login-error" class="error"></p>
+    </section>
+
+    <section id="tab-dashboard" class="tab" hidden></section>
+    <section id="tab-queue" class="tab" hidden></section>
+    <section id="tab-compose" class="tab" hidden></section>
+    <section id="tab-history" class="tab" hidden></section>
+    <section id="tab-campaigns" class="tab" hidden></section>
+    <section id="tab-system" class="tab" hidden></section>
+    <section id="tab-help" class="tab" hidden></section>
+  </main>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="/app.js"></script>
+</body>
+</html>
