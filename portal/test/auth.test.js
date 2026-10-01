@@ -54,3 +54,29 @@ test('session cookies round-trip and reject tampering/expiry', () => {
   assert.equal(readSession(signSession({ uid: '7', exp: now - 1 }, 'secret'), 'secret'), null);
   assert.equal(readSession(body, 'secret'), null);
 });
+
+const { hashPassword, verifyPassword } = require('../auth');
+const { execFileSync } = require('child_process');
+
+test('password hashes verify and reject wrong or malformed input', () => {
+  const h = hashPassword('correct horse battery');
+  assert.match(h, /^scrypt:16384:8:1:[\w-]+:[\w-]+$/);
+  assert.ok(!h.includes('$'), 'no $ so docker compose does not interpolate it');
+  assert.equal(verifyPassword('correct horse battery', h), true);
+  assert.equal(verifyPassword('correct horse batterY', h), false);
+  assert.equal(verifyPassword('', h), false);
+  assert.equal(verifyPassword('x', ''), false);
+  assert.equal(verifyPassword('x', 'scrypt:1:2:3'), false);
+  assert.equal(verifyPassword('x', 'scrypt:16384:8:1:AAAA:'), false);
+});
+
+test('hash written by scripts/set-portal-password.sh (Python) verifies in Node', () => {
+  const py = `import base64,hashlib
+b=lambda x: base64.urlsafe_b64encode(x).rstrip(b"=").decode()
+s=b"0123456789abcdef"
+k=hashlib.scrypt(b"Pw-from-python-1", salt=s, n=16384, r=8, p=1, dklen=64, maxmem=64*1024*1024)
+print(f"scrypt:16384:8:1:{b(s)}:{b(k)}")`;
+  const h = execFileSync('python3', ['-c', py]).toString().trim();
+  assert.equal(verifyPassword('Pw-from-python-1', h), true);
+  assert.equal(verifyPassword('Pw-from-python-2', h), false);
+});

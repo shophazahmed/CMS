@@ -63,16 +63,35 @@ function showLogin(msg) {
   $('#tabs').hidden = true;
   document.querySelectorAll('.tab').forEach((t) => { t.hidden = true; });
   $('#login').hidden = false;
+  $('#logout').hidden = true;
+  $('#who').textContent = '';
   if (msg) $('#login-error').textContent = msg;
-  if (!tgApp) loadLoginWidget();
+  if (!tgApp) loadLoginOptions();
 }
 
-async function loadLoginWidget() {
+async function loadLoginOptions() {
   const box = $('#login-widget');
   if (box.dataset.loaded) return;
   box.dataset.loaded = '1';
   const cfg = await api('/api/config', { noAuthRedirect: true }).catch(() => ({}));
-  if (!cfg.botUsername) { box.innerHTML = '<p class="muted small">Bot is not configured yet.</p>'; return; }
+  if (cfg.passwordLogin) {
+    const form = $('#pw-form');
+    form.hidden = false;
+    $('#login-or').hidden = !cfg.botUsername;
+    form.onsubmit = (e) => {
+      e.preventDefault();
+      busy(form.querySelector('button'), async () => {
+        try {
+          await api('/api/auth/password', { method: 'POST', noAuthRedirect: true,
+            body: { username: $('#pw-user').value, password: $('#pw-pass').value } });
+          $('#pw-pass').value = ''; $('#login-error').textContent = '';
+          start();
+        } catch (err) { $('#login-error').textContent = err.message; $('#pw-pass').select(); }
+      });
+    };
+    $('#pw-user').focus();
+  }
+  if (!cfg.botUsername) { if (!cfg.passwordLogin) box.innerHTML = '<p class="muted small">Sign-in is not configured yet.</p>'; return; }
   window.onTelegramAuth = async (user) => {
     try { await api('/api/auth/widget', { method: 'POST', body: user, noAuthRedirect: true }); start(); }
     catch (e) { $('#login-error').textContent = e.message; }
@@ -102,6 +121,7 @@ async function start() {
   try { me = await signIn(); } catch (e) { return showLogin(e.message); }
   if (!me) return showLogin();
   $('#who').textContent = me.name;
+  $('#logout').hidden = !!tgApp; // inside Telegram the session is tied to the Telegram account
   $('#login').hidden = true;
   $('#tabs').hidden = false;
   const initial = (location.hash || '#dashboard').slice(1);
@@ -122,6 +142,10 @@ function show(name) {
   TABS[name]($('#tab-' + name)).catch((e) => { $('#tab-' + name).innerHTML = `<div class="card error">${esc(e.message)}</div>`; });
 }
 $('#tabs').addEventListener('click', (e) => { const b = e.target.closest('button[data-tab]'); if (b) show(b.dataset.tab); });
+$('#logout').addEventListener('click', async () => {
+  await api('/api/auth/logout', { method: 'POST', noAuthRedirect: true }).catch(() => {});
+  showLogin();
+});
 window.addEventListener('hashchange', () => {
   const t = location.hash.slice(1);
   if (TABS[t] && t !== current && !$('#tabs').hidden) show(t);

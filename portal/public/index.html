@@ -13,7 +13,7 @@
 <body>
   <header class="top">
     <div class="brand"><img src="/icon.svg" alt="" width="22" height="22"> Social Hub</div>
-    <div id="who" class="who"></div>
+    <div class="row"><span id="who" class="who"></span><button id="logout" class="linkbtn" hidden>Sign out</button></div>
   </header>
 
   <nav id="tabs" class="tabs" hidden>
@@ -29,9 +29,16 @@
   <main id="main">
     <section id="login" class="card center" hidden>
       <h2>Sign in</h2>
-      <p class="muted">Open this portal from the bot's menu button in Telegram, or sign in with Telegram below.
-        Only members of the approval group can use it.</p>
+      <form id="pw-form" class="login-form" hidden autocomplete="on">
+        <label for="pw-user">Username</label>
+        <input id="pw-user" name="username" type="text" autocomplete="username" autocapitalize="none" spellcheck="false" required>
+        <label for="pw-pass">Password</label>
+        <input id="pw-pass" name="password" type="password" autocomplete="current-password" required>
+        <div class="actions"><button class="btn primary" type="submit" style="width:100%">Sign in</button></div>
+      </form>
+      <p id="login-or" class="muted small" hidden>or</p>
       <div id="login-widget"></div>
+      <p class="muted small">Inside Telegram, open the bot's <b>Portal</b> menu button and you're signed in automatically.</p>
       <p id="login-error" class="error"></p>
     </section>
 

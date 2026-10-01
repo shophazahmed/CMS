@@ -79,4 +79,31 @@ function readSession(token, secret, now = Math.floor(Date.now() / 1000)) {
   }
 }
 
-module.exports = { verifyWebAppInitData, verifyLoginWidget, signSession, readSession };
+// ---- password login (browser) ----------------------------------------------
+// Stored as scrypt:N:r:p:<salt b64url>:<hash b64url>. ':' instead of '$' because
+// docker compose would try to interpolate '$' inside .env values.
+const SCRYPT = { N: 16384, r: 8, p: 1, len: 64 };
+
+function hashPassword(password, salt = crypto.randomBytes(16)) {
+  const { N, r, p, len } = SCRYPT;
+  const key = crypto.scryptSync(String(password), salt, len, { N, r, p, maxmem: 64 * 1024 * 1024 });
+  return ['scrypt', N, r, p, salt.toString('base64url'), key.toString('base64url')].join(':');
+}
+
+function verifyPassword(password, stored) {
+  const parts = String(stored || '').split(':');
+  if (parts.length !== 6 || parts[0] !== 'scrypt') return false;
+  const [, N, r, p, salt, hash] = parts;
+  const want = Buffer.from(hash, 'base64url');
+  if (!want.length) return false;
+  let got;
+  try {
+    got = crypto.scryptSync(String(password), Buffer.from(salt, 'base64url'), want.length,
+      { N: Number(N), r: Number(r), p: Number(p), maxmem: 64 * 1024 * 1024 });
+  } catch {
+    return false;
+  }
+  return crypto.timingSafeEqual(got, want);
+}
+
+module.exports = { verifyWebAppInitData, verifyLoginWidget, signSession, readSession, hashPassword, verifyPassword };

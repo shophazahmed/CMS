@@ -25,6 +25,8 @@ s += ("\n# --- test-only mock endpoints ---\n" + "".join(
 p.write_text(s)
 PY
 mkdir -p tests/.work && chmod 777 tests/.work
+# browser login for the portal tests (through the real script)
+printf 'admin\nTest-Password-123\nTest-Password-123\n' | scripts/set-portal-password.sh >/dev/null
 echo "Test .env written. Now:"
 echo "  (COMPOSE_FILE in .env already includes the test override)"
 echo "  scripts/bootstrap.sh --activate && python3 tests/run_e2e.py"

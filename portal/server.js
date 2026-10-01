@@ -9,7 +9,7 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-const { verifyWebAppInitData, verifyLoginWidget, signSession, readSession } = require('./auth');
+const { verifyWebAppInitData, verifyLoginWidget, signSession, readSession, verifyPassword } = require('./auth');
 
 const env = process.env;
 const PORT = Number(env.PORT || 3000);
@@ -181,7 +181,55 @@ route('GET', '/healthz', async () => ({ ok: true }), { auth: false });
 
 route('GET', '/api/config', async () => {
   const bot = await getBot();
-  return { botUsername: bot ? bot.username : null };
+  return { botUsername: bot ? bot.username : null, passwordLogin: PASSWORD_LOGIN };
+}, { auth: false });
+
+// ---- username + password (browser) -----------------------------------------
+// One admin account from .env (set with scripts/set-portal-password.sh).
+// Failed attempts are throttled per client IP and per username.
+const ADMIN_USER = String(env.PORTAL_ADMIN_USER || 'admin').trim().toLowerCase();
+const ADMIN_HASH = String(env.PORTAL_ADMIN_PASSWORD_HASH || '').trim();
+const PASSWORD_LOGIN = ADMIN_HASH.startsWith('scrypt:');
+const LOCK_AFTER = 5;
+const LOCK_WINDOW_MS = 15 * 60 * 1000;
+const failures = new Map(); // key -> { n, until }
+
+function clientIp(req) {
+  // Behind Traefik/Caddy the real client is the last address the proxy appended.
+  const xff = String(req.headers['x-forwarded-for'] || '').split(',').map((s) => s.trim()).filter(Boolean);
+  return xff.length ? xff[xff.length - 1] : req.socket.remoteAddress || '?';
+}
+function lockedFor(keys) {
+  const now = Date.now();
+  return Math.max(0, ...keys.map((k) => {
+    const f = failures.get(k);
+    return f && f.n >= LOCK_AFTER && f.until > now ? f.until - now : 0;
+  }));
+}
+function recordFailure(keys) {
+  const now = Date.now();
+  for (const k of keys) {
+    const f = failures.get(k);
+    failures.set(k, f && f.until > now ? { n: f.n + 1, until: now + LOCK_WINDOW_MS } : { n: 1, until: now + LOCK_WINDOW_MS });
+  }
+  if (failures.size > 10000) for (const [k, f] of failures) if (f.until < now) failures.delete(k);
+}
+
+route('POST', '/api/auth/password', async ({ req, body }) => {
+  if (!PASSWORD_LOGIN) throw new HttpError(404, 'Password login is not enabled on this server.');
+  const user = String(body.username || '').trim().toLowerCase().slice(0, 64);
+  const keys = [`ip:${clientIp(req)}`, `user:${user}`];
+  const wait = lockedFor(keys);
+  if (wait) throw new HttpError(429, `Too many failed attempts. Try again in ${Math.ceil(wait / 60000)} min.`);
+  // Always run scrypt so a wrong username takes as long as a wrong password.
+  const okPass = verifyPassword(String(body.password || '').slice(0, 256), ADMIN_HASH);
+  if (!okPass || user !== ADMIN_USER) {
+    recordFailure(keys);
+    throw new HttpError(401, 'Wrong username or password.');
+  }
+  for (const k of keys) failures.delete(k);
+  const s = { uid: `pw:${ADMIN_USER}`, name: ADMIN_USER, exp: Math.floor(Date.now() / 1000) + SESSION_HOURS * 3600 };
+  return { body: { ok: true, user: { id: s.uid, name: s.name } }, headers: { 'set-cookie': sessionCookie(signSession(s, SESSION_SECRET), SESSION_HOURS * 3600) } };
 }, { auth: false });
 
 async function startSession(user) {

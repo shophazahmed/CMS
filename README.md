@@ -34,10 +34,17 @@ source, tone, topics, CTA) and **System** (workflows on/off, last runs, n8n
 errors, connected accounts). NocoDB, the raw table editor, lives at
 `NOCODB_DOMAIN` (e.g. `db.seenu.online`).
 
-Sign-in is Telegram only: inside Telegram the Mini App's signed `initData` is
-verified with the bot token; in a browser the Telegram Login Widget is used.
-Access is limited to `TELEGRAM_ALLOWED_USER_IDS`, or if that is empty, to
-members of the approval group (`getChatMember`).
+Sign-in:
+- **Inside Telegram** the Mini App's signed `initData` is verified with the bot
+  token, so you're signed in automatically. Access is limited to
+  `TELEGRAM_ALLOWED_USER_IDS`, or if that is empty, to members of the approval
+  group (`getChatMember`).
+- **In a browser**: username + password. Set it with
+  `scripts/set-portal-password.sh` then `scripts/bootstrap.sh`. Only a scrypt
+  hash is stored (`PORTAL_ADMIN_PASSWORD_HASH`); 5 wrong attempts lock that IP
+  and username for 15 minutes. The Telegram Login Widget also works once
+  `/setdomain` is done in BotFather.
+- Sessions last 12 hours (HttpOnly, Secure cookie); **Sign out** is in the header.
 
 Set it up in @BotFather once the portal is live:
 1. `/mybots` → your bot → **Bot Settings → Menu Button** → URL `https://cms.seenu.online`, title `Portal`.
