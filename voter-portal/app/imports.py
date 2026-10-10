@@ -110,9 +110,9 @@ def _clean_name(name):
     return name[:180]
 
 
-def _safe_extract(blob, dest):
+def _safe_extract(fileobj, dest):
     """Extract a zip without letting it write outside `dest` or explode in size."""
-    with zipfile.ZipFile(io.BytesIO(blob)) as zf:
+    with zipfile.ZipFile(fileobj) as zf:
         members = [m for m in zf.infolist() if not m.is_dir()]
         if len(members) > MAX_ZIP_MEMBERS:
             raise ValueError("The zip holds too many files.")
@@ -232,7 +232,7 @@ def index():
                     raise ValueError(f"'{up.filename}' isn't a spreadsheet, image or .zip.")
                 if ext == ".zip":
                     try:
-                        _safe_extract(up.read(), files_dir)
+                        _safe_extract(up.stream, files_dir)
                     except zipfile.BadZipFile:
                         raise ValueError(f"'{name}' isn't a readable zip file.")
                 else:
