@@ -61,6 +61,17 @@ SOURCES = [
     ("final_cleaned_gadhdhoo_updated_party", "full community list"),
 ]
 TABLE_EXTS = {".xlsx", ".xlsm", ".xls", ".csv"}
+
+# The "updated party list" is the current MDP membership list. Every voter in it is MDP
+# (the file needs no Party column); a voter who was MDP in an older file but is missing
+# from it has changed party, and is set to LEFT_MDP_PARTY.
+MDP_LIST_SOURCE = "updated party list"
+MDP_PARTY = "MDP"
+LEFT_MDP_PARTY = "OTHER"
+
+
+def is_mdp(party):
+    return compare_key(party) in {"mdp", "mpd", "maldiviandemocraticparty"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
 FIELDS = ("full_name", "sex", "age", "house_name", "party")
 
@@ -382,6 +393,8 @@ def extract(path, priority, label, log, finder):
                 log.add("INFO", "ID_NORMALISED", nid, f"{where}: {note}")
             values = {"full_name": clean_text(cell(row, "full_name")), "house_name": clean_text(cell(row, "house_name")),
                       "party": normalize_party(cell(row, "party"))}
+            if label == MDP_LIST_SOURCE and "party" not in roles:
+                values["party"] = MDP_PARTY  # being on the list is what makes the voter MDP
             values["sex"], note = normalize_sex(cell(row, "sex"))
             if note:
                 log.add("WARN", "BAD_SEX", nid, f"{where}: {note}")
@@ -450,6 +463,8 @@ def merge(records, log):
         out = {"national_id": nid}
         for f in FIELDS:
             chosen = next((r for r in recs if r.values.get(f) not in ("", None)), None)
+            if f == "party":  # the updated party list decides the party over every other file
+                chosen = next((r for r in recs if r.source == MDP_LIST_SOURCE and r.values.get(f)), chosen)
             out[f] = chosen.values[f] if chosen else ("" if f != "age" else None)
             if not chosen:
                 continue
@@ -462,6 +477,25 @@ def merge(records, log):
         out["_photo_rec"] = next((r for r in recs if r.photo_blob or r.photo_ref), None)
         merged[nid] = out
     return merged
+
+
+def apply_mdp_list(merged, records, log):
+    """Voters recorded as MDP elsewhere but missing from the updated MDP list have left MDP."""
+    on_list = {r.nid for r in records if r.source == MDP_LIST_SOURCE}
+    if not on_list:
+        log.add("WARN", "MDP_LIST_NOT_LOADED", None,
+                "the updated MDP list wasn't found, so nobody was moved out of MDP")
+        return 0
+    moved = 0
+    for nid, v in merged.items():
+        if nid not in on_list and is_mdp(v["party"]):
+            log.add("INFO", "PARTY_LEFT_MDP", nid,
+                    f"MDP in {', '.join(v['sources'])} but not on the updated MDP list; set to {LEFT_MDP_PARTY}")
+            v["party"] = LEFT_MDP_PARTY
+            moved += 1
+        elif nid in on_list and is_mdp(v["party"]):
+            v["party"] = MDP_PARTY  # normalise spellings such as "M.D.P"
+    return moved
 
 
 def check_conflict(f, nid, chosen, other, log):
@@ -644,6 +678,7 @@ def main(argv=None, out=None):
                             f"{stats['skipped']} skipped, {stats['sheets']} sheet(s)")
 
     merged = merge(records, log)
+    left_mdp = apply_mdp_list(merged, records, log)
     post_checks(merged, log)
 
     photos_dir = Path(args.photos_dir)
@@ -660,6 +695,8 @@ def main(argv=None, out=None):
         *source_lines,
         f"Rows read: {len(records)}  ->  unique voters: {len(merged)}  "
         f"(duplicates merged: {len(records) - len(merged)}); with photo: {with_photo}",
+        f"Party: {sum(1 for v in merged.values() if v['party'] == MDP_PARTY)} MDP (on the updated MDP list), "
+        f"{left_mdp} moved from MDP to {LEFT_MDP_PARTY} (not on the list)",
     ]
 
     if args.csv_out:

@@ -81,6 +81,11 @@ How it works:
   digits get an `A` prefix and are logged. Sex is read from `M/F/Male/Female/ފިރިހެން/އަންހެން`,
   age from a number or a date of birth, and party is upper-cased. Header rows repeated on every
   page are skipped.
+- **MDP list:** `Gadhdhoo (updated Party list MPD )` is the current MDP membership list, and it
+  decides the party ahead of every other file. Everyone on it is `MDP` (it needs no Party column).
+  A voter recorded as MDP in another file but missing from the list has changed party: they are
+  set to `OTHER` and logged as `PARTY_LEFT_MDP`. If the list isn't uploaded, nobody is moved
+  (`MDP_LIST_NOT_LOADED`).
 - **De-duplication** is strictly on the ID. For each field, the highest-priority file that has a
   value wins. A blank in a newer file never erases data from an older one.
 - **Photos** come from three places, in this order: pictures embedded in the `Gahdhdhoo.2026`
