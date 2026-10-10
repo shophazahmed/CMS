@@ -1,34 +1,47 @@
 {% extends "base.html" %}
-{% from "_macros.html" import avatar, sex_label %}
+{% from "_macros.html" import avatar, sex_label, icon %}
 {% block title %}{{ v.full_name }}{% endblock %}
 {% block content %}
-<p><a href="{{ url_for('voters.search') }}" data-back>‹ Back to results</a></p>
+<a class="backlink" href="{{ url_for('voters.search') }}" data-back>{{ icon('back', 18) }} Back to results</a>
+
 <article class="card profile">
-  {{ avatar(v, 'lg') }}
-  <div>
-    <h1>{{ v.full_name }}</h1>
-    <dl>
-      <dt>ID card</dt><dd class="mono">{{ v.national_id }}</dd>
-      <dt>Sex</dt><dd>{{ sex_label(v.sex) }}</dd>
-      <dt>Age</dt><dd>{{ v.age if v.age is not none else '—' }}</dd>
-      <dt>House name</dt><dd>{{ v.house_name or '—' }}</dd>
-      <dt>Party</dt><dd>{{ v.party or '—' }}</dd>
-      <dt>Phone</dt><dd class="mono">{% if v.phone %}<a href="tel:{{ v.phone }}">{{ v.phone }}</a>{% else %}—{% endif %}</dd>
-      {% if is_admin %}
-      <dt>Source</dt><dd>{{ v.source }}</dd>
-      <dt>Last changed</dt><dd>{{ v.updated_at }}{% if editor %} by {{ editor.username }}{% endif %}</dd>
-      {% endif %}
-    </dl>
-    {% if is_admin %}
-    <div class="actions">
-      <a class="button primary" href="{{ url_for('voters.edit', national_id=v.national_id) }}">Edit voter</a>
-      <form method="post" action="{{ url_for('voters.delete', national_id=v.national_id) }}"
-            data-confirm="Delete {{ v.full_name }} ({{ v.national_id }})? This can't be undone.">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="danger">Delete voter</button>
-      </form>
+  <div class="profile-head">
+    {{ avatar(v, 'lg') }}
+    <div>
+      <h1>{{ v.full_name or '(no name)' }}</h1>
+      <p class="vcard-tags">
+        <span class="tag mono">{{ v.national_id }}</span>
+        {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}
+      </p>
     </div>
-    {% endif %}
   </div>
+
+  {% if v.phone %}
+  <a class="button primary big call-wide" href="tel:{{ v.phone }}">{{ icon('phone') }} Call {{ v.phone }}</a>
+  {% endif %}
+
+  <dl class="facts">
+    <div><dt>House</dt><dd>{{ v.house_name or '—' }}</dd></div>
+    <div><dt>Age</dt><dd>{{ v.age if v.age is not none else '—' }}</dd></div>
+    <div><dt>Sex</dt><dd>{{ sex_label(v.sex) }}</dd></div>
+    <div><dt>Party</dt><dd>{{ v.party or '—' }}</dd></div>
+    <div><dt>Phone</dt><dd class="mono">{% if v.phone %}<a href="tel:{{ v.phone }}">{{ v.phone }}</a>{% else %}—{% endif %}</dd></div>
+    <div><dt>ID card</dt><dd class="mono">{{ v.national_id }}</dd></div>
+    {% if is_admin %}
+    <div class="wide"><dt>Source</dt><dd>{{ v.source }}</dd></div>
+    <div class="wide"><dt>Last changed</dt><dd>{{ v.updated_at[:16].replace('T', ' ') }}{% if editor %} by {{ editor.username }}{% endif %}</dd></div>
+    {% endif %}
+  </dl>
+
+  {% if is_admin %}
+  <div class="actions split">
+    <a class="button primary" href="{{ url_for('voters.edit', national_id=v.national_id) }}">{{ icon('edit', 18) }} Edit voter</a>
+    <form method="post" action="{{ url_for('voters.delete', national_id=v.national_id) }}"
+          data-confirm="Delete {{ v.full_name }} ({{ v.national_id }})? This can't be undone.">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="danger">{{ icon('trash', 18) }} Delete voter</button>
+    </form>
+  </div>
+  {% endif %}
 </article>
 {% endblock %}

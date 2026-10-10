@@ -16,17 +16,17 @@
 </form>
 <p class="muted">{{ total }} entries</p>
 <div class="table-wrap">
-<table class="audit">
+<table class="audit stack">
   <thead><tr><th>When (UTC)</th><th>User</th><th>Action</th><th>Target</th><th>Details</th><th>IP</th></tr></thead>
   <tbody>
   {% for r in rows %}
   <tr>
-    <td class="mono">{{ r.at[:19].replace('T', ' ') }}</td>
-    <td>{{ r.username or '—' }}</td>
-    <td><span class="badge">{{ r.action }}</span></td>
-    <td class="mono">{{ r.target or '' }}</td>
-    <td class="detail">{{ r.detail or '' }}</td>
-    <td class="mono">{{ r.ip or '' }}</td>
+    <td data-label="When" class="mono">{{ r.at[:19].replace('T', ' ') }}</td>
+    <td data-label="User">{{ r.username or '—' }}</td>
+    <td data-label="Action"><span class="badge">{{ r.action }}</span></td>
+    <td data-label="Target" class="mono">{{ r.target or '' }}</td>
+    <td data-label="Details" class="detail">{{ r.detail or '' }}</td>
+    <td data-label="IP" class="mono">{{ r.ip or '' }}</td>
   </tr>
   {% endfor %}
   </tbody>

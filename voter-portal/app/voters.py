@@ -127,6 +127,7 @@ def search():
     query_args = {k: v for k, v in request.args.items() if k != "page"}
     return render_template(
         "voters/list.html",
+        chips=filter_chips(f, query_args),
         rows=rows,
         f=f,
         filtered=bool(active_filters(f)),
@@ -138,6 +139,24 @@ def search():
         stats=stats,
         query_args=query_args,
     )
+
+
+def filter_chips(f, query_args):
+    """(label, url without that filter) for each active filter, shown as removable chips."""
+    labels = {
+        "q": lambda v: f"“{v}”",
+        "national_id": lambda v: f"ID {v}",
+        "house": lambda v: f"House: {v}",
+        "party": lambda v: "No party" if v == "(none)" else v,
+        "sex": lambda v: {"M": "Male", "F": "Female", "unknown": "Sex not recorded"}[v],
+        "age_min": lambda v: f"Age ≥ {v}",
+        "age_max": lambda v: f"Age ≤ {v}",
+    }
+    chips = []
+    for key, value in active_filters(f).items():
+        rest = {k: v for k, v in query_args.items() if k != key}
+        chips.append((labels[key](value), url_for("voters.search", **rest)))
+    return chips
 
 
 def get_voter_or_404(national_id):

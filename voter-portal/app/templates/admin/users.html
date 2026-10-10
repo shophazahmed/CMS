@@ -3,13 +3,13 @@
 {% block content %}
 <h1>Users</h1>
 <div class="table-wrap">
-<table>
+<table class="stack">
   <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>
   <tbody>
   {% for u in users %}
   <tr class="{{ '' if u.is_active else 'inactive' }}">
-    <td>{{ u.username }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}</td>
-    <td>
+    <td data-label="User">{{ u.username }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}</td>
+    <td data-label="Role">
       <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="action" value="set_role">
@@ -19,13 +19,13 @@
         <noscript><button>Set role</button></noscript>
       </form>
     </td>
-    <td>
+    <td data-label="Status">
       {{ 'Active' if u.is_active else 'Deactivated' }}
       {% if u.locked_until %}<span class="badge warn">locked until {{ u.locked_until[:16] }}</span>{% endif %}
       {% if u.must_change_password %}<span class="badge">temp password</span>{% endif %}
     </td>
-    <td>{{ u.last_login_at[:16] if u.last_login_at else 'Never' }}</td>
-    <td><div class="actions">
+    <td data-label="Last sign-in">{{ u.last_login_at[:16] if u.last_login_at else 'Never' }}</td>
+    <td data-label=""><div class="actions">
       {% if u.id != current_user.id %}
       {% for action, label, confirm in [
           ('toggle_active', 'Deactivate' if u.is_active else 'Activate', ''),

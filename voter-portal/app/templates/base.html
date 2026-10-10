@@ -1,38 +1,52 @@
+{% from "_macros.html" import icon %}
 <!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#0f766e">
   <title>{% block title %}Voters{% endblock %} · Gadhdhoo voter portal</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon.svg') }}">
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
   {% block head %}{% endblock %}
 </head>
-<body>
+<body class="{{ 'has-tabbar' if is_admin }}">
   {% if current_user %}
+  {% set ep = request.endpoint or '' %}
   <header class="topbar">
-    <a class="brand" href="{{ url_for('voters.search') }}">Gadhdhoo voters</a>
-    <nav>
-      <a href="{{ url_for('voters.search') }}">Search</a>
+    <a class="brand" href="{{ url_for('voters.search') }}">
+      <span class="brand-mark">{{ icon('logo', 18) }}</span>
+      <span>Gadhdhoo <span class="brand-sub">voters</span></span>
+    </a>
+    <nav class="topnav" aria-label="Main">
+      <a href="{{ url_for('voters.search') }}" {{ 'aria-current=page' if ep.startswith('voters.') and ep != 'voters.create' }}>Search</a>
       {% if is_admin %}
-      <a href="{{ url_for('voters.create') }}">Add voter</a>
-      <a href="{{ url_for('imports.index') }}">Import</a>
-      <a href="{{ url_for('admin.users') }}">Users</a>
-      <a href="{{ url_for('admin.audit_log') }}">Activity log</a>
+      <a href="{{ url_for('voters.create') }}" {{ 'aria-current=page' if ep == 'voters.create' }}>Add voter</a>
+      <a href="{{ url_for('imports.index') }}" {{ 'aria-current=page' if ep.startswith('imports.') }}>Import</a>
+      <a href="{{ url_for('admin.users') }}" {{ 'aria-current=page' if ep.startswith('admin.user') }}>Users</a>
+      <a href="{{ url_for('admin.audit_log') }}" {{ 'aria-current=page' if ep == 'admin.audit_log' }}>Activity log</a>
       {% endif %}
     </nav>
-    <div class="who">
-      <span>{{ current_user.username }} <span class="badge">{{ current_user.role }}</span></span>
-      <a href="{{ url_for('auth.change_password') }}">Change password</a>
-      <form method="post" action="{{ url_for('auth.logout') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button class="link">Sign out</button>
-      </form>
-    </div>
+    <details class="account">
+      <summary aria-label="Account">
+        <span class="account-avatar">{{ current_user.username[:1]|upper }}</span>
+        <span class="account-name">{{ current_user.username }}</span>
+      </summary>
+      <div class="account-menu">
+        <p><strong>{{ current_user.username }}</strong><br><span class="muted">{{ 'Admin' if is_admin else 'Read-only user' }}</span></p>
+        <a href="{{ url_for('auth.change_password') }}">Change password</a>
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button class="link">Sign out</button>
+        </form>
+      </div>
+    </details>
   </header>
   {% endif %}
+
   <main class="{% block main_class %}page{% endblock %}">
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}
@@ -41,5 +55,15 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+
+  {% if current_user and is_admin %}
+  <nav class="tabbar" aria-label="Main">
+    <a href="{{ url_for('voters.search') }}" {{ 'aria-current=page' if ep.startswith('voters.') and ep != 'voters.create' }}>{{ icon('search') }}<span>Search</span></a>
+    <a href="{{ url_for('voters.create') }}" {{ 'aria-current=page' if ep == 'voters.create' }}>{{ icon('plus') }}<span>Add</span></a>
+    <a href="{{ url_for('imports.index') }}" {{ 'aria-current=page' if ep.startswith('imports.') }}>{{ icon('upload') }}<span>Import</span></a>
+    <a href="{{ url_for('admin.users') }}" {{ 'aria-current=page' if ep.startswith('admin.user') }}>{{ icon('users') }}<span>Users</span></a>
+    <a href="{{ url_for('admin.audit_log') }}" {{ 'aria-current=page' if ep == 'admin.audit_log' }}>{{ icon('log') }}<span>Log</span></a>
+  </nav>
+  {% endif %}
 </body>
 </html>
