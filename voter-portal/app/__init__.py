@@ -89,8 +89,24 @@ def create_app(test_config=None):
     with app.app_context():
         conn = connect(app.config["DATABASE"])
         init_schema(conn)
+        bootstrap_admin(conn)
         conn.close()
     return app
+
+
+def bootstrap_admin(conn):
+    """First start only: create 'admin' from VOTER_PORTAL_ADMIN_PASSWORD when there are no users."""
+    password = os.environ.get("VOTER_PORTAL_ADMIN_PASSWORD", "")
+    if not password or conn.execute("SELECT 1 FROM users LIMIT 1").fetchone():
+        return
+    stamp = now_iso(precise=True)
+    # OR IGNORE: several Gunicorn workers may get here at the same time
+    conn.execute(
+        "INSERT OR IGNORE INTO users (username, password_hash, role, must_change_password,"
+        " password_changed_at, created_at) VALUES ('admin', ?, 'admin', 1, ?, ?)",
+        (auth.hash_password(password), stamp, stamp),
+    )
+    conn.commit()
 
 
 def register_cli(app):

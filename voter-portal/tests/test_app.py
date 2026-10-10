@@ -134,3 +134,13 @@ def test_security_headers(app):
     r = app.test_client().get("/login")
     assert "frame-ancestors 'none'" in r.headers["Content-Security-Policy"]
     assert r.headers["X-Content-Type-Options"] == "nosniff"
+
+
+def test_bootstrap_admin(tmp_path, monkeypatch):
+    monkeypatch.setenv("VOTER_PORTAL_ADMIN_PASSWORD", "first-admin-pass-1")
+    cfg = {"TESTING": True, "SECRET_KEY": "t", "DATABASE": str(tmp_path / "b.db"), "PHOTOS_DIR": str(tmp_path / "p")}
+    create_app(cfg)
+    create_app(cfg)  # second start: no duplicate, no error
+    conn = connect(cfg["DATABASE"])
+    rows = conn.execute("SELECT username, role, must_change_password FROM users").fetchall()
+    assert [tuple(r) for r in rows] == [("admin", "admin", 1)]
