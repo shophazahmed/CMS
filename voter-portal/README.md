@@ -107,10 +107,30 @@ How it works:
   `SEED_ADMIN_PASSWORD` / `SEED_USER_PASSWORD`, or random ones are printed once. Both must be
   changed at first sign-in, and existing users are never touched.
 
-> PDFs aren't read. If a list only exists as a PDF, export it to Excel first, for example with
-> Acrobat's "Export PDF → Spreadsheet". Pictures placed *in* a cell with Excel 365's newer
-> "Place in Cell" feature aren't visible to the importer: use "Place over Cells", or put a file
-> name in a Photo column.
+> Pictures placed *in* a cell with Excel 365's newer "Place in Cell" feature aren't visible to
+> the importer: use "Place over Cells", or put a file name in a Photo column.
+
+### PDF voter lists (`scripts/extract_from_pdf.py`)
+
+A voter list that only exists as a PDF is turned into a CSV plus one photo per voter. The
+Import page does this by itself when you upload a `.pdf`. On your PC:
+
+```powershell
+pip install pymupdf
+python scripts\extract_from_pdf.py --data-dir "C:\Users\sofhaz.ahmed\dev\gadhdhoo-voter-portal\Data files"
+```
+
+- For each `<name>.pdf` it writes `<name>.csv` and `photos/<ID>.jpg` next to it. A PDF named like a
+  source (e.g. `Gahdhdhoo.2026.pdf`) takes that source's place in the merge.
+- Rows are found with PyMuPDF's table detection. When the PDF has no ruled table, words are grouped
+  into lines and columns by position. Every row must contain an ID card number, so page titles and
+  footers drop out. Column titles printed only on page 1 are reused on later pages.
+- Each picture goes to the ID row it sits on. Logos repeated on most pages and small icons are skipped.
+- **Thaana:** some PDFs store right-to-left text backwards. If names look reversed in the CSV, run again
+  with `--reverse-rtl`. Scanned PDFs (pictures of text) have no text layer and need OCR first.
+- **Debugging a layout:** `--inspect` prints the first two pages' line and column positions with every
+  letter shown as `x` and every digit as `9` (column titles stay readable), so you can share it without
+  exposing voter data.
 
 ## Import page (admins)
 

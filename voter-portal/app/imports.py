@@ -32,7 +32,7 @@ bp = Blueprint("imports", __name__, url_prefix="/admin/import")
 
 TABLE_EXTS = {".xlsx", ".xlsm", ".xls", ".csv"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
-ALLOWED_EXTS = TABLE_EXTS | IMAGE_EXTS | {".zip"}
+ALLOWED_EXTS = TABLE_EXTS | IMAGE_EXTS | {".zip", ".pdf"}
 MAX_UNZIPPED = 1024 * 1024 * 1024  # 1 GB: guards against zip bombs
 MAX_ZIP_MEMBERS = 20000
 STALE_AFTER = timedelta(minutes=30)   # a "running" job older than this died with its worker
@@ -123,7 +123,7 @@ def _safe_extract(fileobj, dest):
             parts = [p for p in m.filename.replace("\\", "/").split("/") if p not in ("", ".", "..")]
             if not parts or parts[0] == "__MACOSX" or parts[-1].startswith("._"):
                 continue
-            if Path(parts[-1]).suffix.lower() not in TABLE_EXTS | IMAGE_EXTS:
+            if Path(parts[-1]).suffix.lower() not in TABLE_EXTS | IMAGE_EXTS | {".pdf"}:
                 continue
             target = root.joinpath(*parts).resolve()
             if root not in target.parents:
@@ -137,7 +137,7 @@ def _data_folder(files_dir):
     """The folder holding the spreadsheets: the upload root, or a folder inside an uploaded zip."""
     best, best_count = files_dir, -1
     for d in [files_dir, *[p for p in files_dir.rglob("*") if p.is_dir()]]:
-        count = sum(1 for p in d.iterdir() if p.is_file() and p.suffix.lower() in TABLE_EXTS)
+        count = sum(1 for p in d.iterdir() if p.is_file() and p.suffix.lower() in TABLE_EXTS | {".pdf"})
         if count > best_count:
             best, best_count = d, count
     return best
@@ -158,6 +158,7 @@ def _run(app_config, job_id, dry_run, mode, data_dir):
                 "--mode", mode, "--no-seed-users"]
         if dry_run:
             argv += ["--dry-run", "--csv-out", str(d / "merged_preview.csv")]
+        _convert_pdfs(Path(data_dir), out)
         ingest.main(argv, out=out)
     except ingest.IngestError as exc:
         status = "failed"
@@ -183,6 +184,18 @@ def _run(app_config, job_id, dry_run, mode, data_dir):
         conn.close()
     if not dry_run:
         shutil.rmtree(d / "files", ignore_errors=True)  # don't keep raw voter files after a real import
+
+
+def _convert_pdfs(data_dir, out):
+    """Turn each uploaded PDF into <name>.csv + photos/ (skipped when a same-named table exists)."""
+    from scripts.extract_from_pdf import extract_pdf
+
+    for pdf in sorted(data_dir.glob("*.pdf")) + sorted(data_dir.glob("*.PDF")):
+        if any((data_dir / f"{pdf.stem}{ext}").exists() for ext in TABLE_EXTS):
+            out.write(f"{pdf.name}: a spreadsheet with the same name was uploaded too; using that instead.\n")
+            continue
+        extract_pdf(pdf, reverse_rtl=False, say=lambda *a: out.write(" ".join(str(x) for x in a) + "\n"))
+    out.write("\n")
 
 
 def _start(job_id, dry_run, mode, data_dir):

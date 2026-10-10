@@ -90,3 +90,22 @@ def test_rejects_bad_files_and_non_admins(app):
     login(u, "viewer", USER_PW)
     assert u.get("/admin/import").status_code == 403
     assert "Import</a>" not in u.get("/").get_data(as_text=True)
+
+
+def test_pdf_upload(app, tmp_path):
+    from tests.test_pdf import PEOPLE, make_pdf
+
+    make_pdf(tmp_path / "Gahdhdhoo.2026.pdf", ruled=True)
+    c = app.test_client()
+    login(c, "boss", ADMIN_PW)
+    token = csrf(c, "/admin/import")
+    with open(tmp_path / "Gahdhdhoo.2026.pdf", "rb") as fh:
+        r = c.post("/admin/import", data={"csrf_token": token, "mode": "upsert",
+                                          "files": (fh, "Gahdhdhoo.2026.pdf")},
+                   content_type="multipart/form-data")
+    page = c.get(r.headers["Location"]).get_data(as_text=True)
+    assert f"{len(PEOPLE)} voter rows on 2 pages" in page and f"unique voters: {len(PEOPLE)}" in page
+    c.post(r.headers["Location"] + "/apply", data={"csrf_token": token})
+    conn = connect(app.config["DATABASE"])
+    assert conn.execute("SELECT COUNT(*) FROM voters WHERE national_id LIKE 'A3000%' AND photo_path IS NOT NULL"
+                        ).fetchone()[0] == 11

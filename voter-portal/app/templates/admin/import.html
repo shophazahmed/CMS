@@ -6,7 +6,7 @@
 <form class="card form" method="post" enctype="multipart/form-data" action="{{ url_for('imports.index') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <p>Upload the four voter files, or the whole <strong>Data files</strong> folder as one <code>.zip</code>
-     (photos included). Excel (.xlsx, .xls) and .csv are read; photos can be .jpg, .png or .webp.</p>
+     (photos included). Excel (.xlsx, .xls), .csv and PDF voter lists are read (photos printed in a PDF are taken from it); separate photos can be .jpg, .png or .webp.</p>
   <ol class="muted">
     <li>Gahdhdhoo.2026 — newest, with photos</li>
     <li>gadhoo-new voters</li>
@@ -15,7 +15,7 @@
   </ol>
   <label>Files or .zip (up to 300 MB in total)
     <input type="file" name="files" multiple required
-           accept=".xlsx,.xlsm,.xls,.csv,.zip,.jpg,.jpeg,.png,.webp">
+           accept=".xlsx,.xlsm,.xls,.csv,.pdf,.zip,.jpg,.jpeg,.png,.webp">
   </label>
   <label>When an ID is already in the portal
     <select name="mode">
