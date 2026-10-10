@@ -27,6 +27,21 @@ browser ──HTTPS──► Nginx (TLS, HSTS, rate limit on /login) ──► G
 
 Each forbidden request returns 403 and is written to the activity log.
 
+## Canvassing
+
+Every voter has a canvassing status (**Not contacted**, **Contacted**, **Follow up**, **No answer**)
+and free-text notes. Every signed-in user can set them, including read-only users, so canvassers
+can record visits; they still can't change any other voter detail.
+- **On a voter card:** pick the status from its dropdown. It saves in the background and the list keeps its place.
+- **On the voter page:** set the status and write notes.
+- **Status chips** at the top of the search page show live counts and filter the list.
+- **Sort by House** groups the list under house headings, for door-to-door rounds.
+- **Search** also looks inside notes.
+- **Tracking:** each change records who made it and when, and is written to the activity log as `voter_canvass`.
+- **Exports** include status, when it was last changed, and notes.
+- **Imports never touch canvassing data.** Replace mode removes voters missing from the files and
+  overwrites the rest in place, so their status and notes are kept.
+
 ## Security
 
 - Passwords are hashed with **Argon2id** and must be at least 10 characters. Seeded and

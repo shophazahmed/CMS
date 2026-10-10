@@ -214,3 +214,33 @@ def test_mdp_list_alone_updates_voters_already_in_portal(tmp_path):
     rows = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT national_id, party, phone FROM voters")}
     assert rows == {"A600001": ("MDP", "7771234"), "A600002": ("OTHER", ""),
                     "A600003": ("MDP", ""), "A600004": ("PNC", "")}
+
+
+def test_imports_keep_canvassing(tmp_path):
+    from openpyxl import Workbook
+
+    data = tmp_path / "data"
+    data.mkdir()
+
+    def write(rows):
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["ID", "Name", "Party"])
+        for r in rows:
+            ws.append(r)
+        wb.save(data / "Gahdhdhoo.2026.xlsx")
+
+    db = tmp_path / "vp.db"
+    args = ["--data-dir", str(data), "--db", str(db), "--photos-dir", str(tmp_path / "p"),
+            "--log", str(tmp_path / "log"), "--no-seed-users"]
+    write([["A700001", "One", "MDP"], ["A700002", "Two", "PNC"], ["A700003", "Gone", "PNC"]])
+    ingest.main(args)
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE voters SET status = 'contacted', notes = 'n1' WHERE national_id = 'A700001'")
+    conn.execute("UPDATE voters SET status = 'followup', notes = 'n2', updated_by = 1 WHERE national_id = 'A700002'")
+    conn.commit()
+    write([["A700001", "One Renamed", "MDP"], ["A700002", "Two Renamed", "MDP"]])
+    ingest.main(args + ["--mode", "replace"])
+    rows = {r[0]: r[1:] for r in conn.execute("SELECT national_id, full_name, party, status, notes FROM voters")}
+    assert rows == {"A700001": ("One Renamed", "MDP", "contacted", "n1"),
+                    "A700002": ("Two Renamed", "MDP", "followup", "n2")}  # replace overwrites hand edits too

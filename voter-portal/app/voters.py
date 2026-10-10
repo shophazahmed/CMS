@@ -36,6 +36,8 @@ SORTS = {
     "party": "party, full_name COLLATE NOCASE",
 }
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
+STATUSES = {"new": "Not contacted", "contacted": "Contacted", "followup": "Follow up", "noanswer": "No answer"}
+MAX_NOTES = 2000
 
 
 def _like(text):
@@ -58,6 +60,7 @@ def read_filters(args):
         "sex": args.get("sex", "") if args.get("sex", "") in ("M", "F", "unknown") else "",
         "age_min": int_or_none("age_min"),
         "age_max": int_or_none("age_max"),
+        "status": args.get("status", "") if args.get("status", "") in STATUSES else "",
         "sort": args.get("sort", "name") if args.get("sort") in SORTS else "name",
     }
 
@@ -67,9 +70,9 @@ def build_where(f):
     if f["q"]:
         clauses.append(
             "(full_name LIKE ? ESCAPE '\\' OR national_id LIKE ? ESCAPE '\\' OR house_name LIKE ? ESCAPE '\\'"
-            " OR phone LIKE ? ESCAPE '\\')"
+            " OR phone LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\')"
         )
-        params += [_like(f["q"])] * 4
+        params += [_like(f["q"])] * 5
     if f["national_id"]:
         clauses.append("national_id LIKE ? ESCAPE '\\'")
         params.append(_like(f["national_id"]))
@@ -93,6 +96,9 @@ def build_where(f):
     if f["age_max"] is not None:
         clauses.append("age <= ?")
         params.append(f["age_max"])
+    if f.get("status"):
+        clauses.append("status = ?")
+        params.append(f["status"])
     return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
 
 
@@ -125,8 +131,16 @@ def search():
         "SELECT COUNT(*) AS total, SUM(sex = 'M') AS male, SUM(sex = 'F') AS female FROM voters"
     ).fetchone()
     query_args = {k: v for k, v in request.args.items() if k != "page"}
+    # Counts per canvassing status for the chips, within every filter except the status itself
+    where_all, params_all = build_where(dict(f, status=""))
+    by_status = dict(db.execute(f"SELECT status, COUNT(*) FROM voters{where_all} GROUP BY status", params_all).fetchall())
+    status_counts = {k: by_status.get(k, 0) for k in STATUSES}
+    status_counts["all"] = sum(by_status.values())
     return render_template(
         "voters/list.html",
+        statuses=STATUSES,
+        status_counts=status_counts,
+        back_url=request.full_path.rstrip("?"),
         chips=filter_chips(f, query_args),
         rows=rows,
         f=f,
@@ -154,6 +168,8 @@ def filter_chips(f, query_args):
     }
     chips = []
     for key, value in active_filters(f).items():
+        if key == "status":  # shown by the status chips instead
+            continue
         rest = {k: v for k, v in query_args.items() if k != key}
         chips.append((labels[key](value), url_for("voters.search", **rest)))
     return chips
@@ -170,10 +186,58 @@ def get_voter_or_404(national_id):
 @login_required
 def detail(national_id):
     voter = get_voter_or_404(national_id)
+    db = get_db()
     editor = None
     if voter["updated_by"] and is_admin():
-        editor = get_db().execute("SELECT username FROM users WHERE id = ?", (voter["updated_by"],)).fetchone()
-    return render_template("voters/detail.html", v=voter, editor=editor)
+        editor = db.execute("SELECT username FROM users WHERE id = ?", (voter["updated_by"],)).fetchone()
+    status_user = None
+    if voter["status_by"]:
+        status_user = db.execute("SELECT username FROM users WHERE id = ?", (voter["status_by"],)).fetchone()
+    return render_template("voters/detail.html", v=voter, editor=editor, statuses=STATUSES,
+                           status_user=status_user, back=_safe_back(request.args.get("back")))
+
+
+def _safe_back(target):
+    if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
+        return target
+    return url_for("voters.search")
+
+
+@bp.post("/voters/<national_id>/canvass")
+@login_required
+def canvass(national_id):
+    """Set the canvassing status and/or notes. Open to every signed-in user (canvassers)."""
+    voter = get_voter_or_404(national_id)
+    changes = {}
+    status = request.form.get("status")
+    if status is not None:
+        if status not in STATUSES:
+            abort(400)
+        if status != voter["status"]:
+            changes["status"] = {"from": voter["status"], "to": status}
+    notes = request.form.get("notes")
+    if notes is not None:
+        notes = notes.replace("\r\n", "\n").strip()[:MAX_NOTES]
+        if notes != voter["notes"]:
+            changes["notes"] = {"from": voter["notes"], "to": notes}
+    stamp = now_iso()
+    if changes:
+        db = get_db()
+        db.execute(
+            "UPDATE voters SET status = ?, notes = ?, status_at = ?, status_by = ? WHERE national_id = ?",
+            (changes.get("status", {}).get("to", voter["status"]), changes.get("notes", {}).get("to", voter["notes"]),
+             stamp, g.user["id"], national_id),
+        )
+        audit.log("voter_canvass", target=national_id, detail=changes, commit=False)
+        db.commit()
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"ok": True, "changed": bool(changes), "status": status or voter["status"],
+                "label": STATUSES[status or voter["status"]], "by": g.user["username"]}
+    flash("Saved." if changes else "Nothing changed.", "success" if changes else "info")
+    back = _safe_back(request.form.get("back"))
+    if request.form.get("from") == "list":
+        back += f"#v-{national_id}"
+    return redirect(back)
 
 
 @bp.route("/photos/<national_id>")
@@ -321,7 +385,8 @@ def delete(national_id):
 
 # --- admin: export ----------------------------------------------------------
 
-EXPORT_HEADERS = ["ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo"]
+EXPORT_HEADERS = ["ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
+                  "Status", "Status changed", "Notes"]
 
 
 def _safe_cell(value):
@@ -341,7 +406,9 @@ def export(fmt):
     rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
     table = [
         [_safe_cell(r["national_id"]), _safe_cell(r["full_name"]), r["sex"], r["age"],
-         _safe_cell(r["house_name"]), _safe_cell(r["party"]), r["phone"], "yes" if r["photo_path"] else ""]
+         _safe_cell(r["house_name"]), _safe_cell(r["party"]), r["phone"], "yes" if r["photo_path"] else "",
+         STATUSES.get(r["status"], r["status"]), (r["status_at"] or "")[:16].replace("T", " "),
+         _safe_cell(r["notes"])]
         for r in rows
     ]
     audit.log("export", target=fmt, detail={"filters": active_filters(f), "rows": len(rows)})
@@ -373,7 +440,7 @@ def export(fmt):
         ws.append(row)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
-    for col, width in zip("ABCDEFGH", (11, 32, 6, 6, 28, 14, 12, 10)):
+    for col, width in zip("ABCDEFGHIJK", (11, 32, 6, 6, 28, 14, 12, 10, 14, 17, 40)):
         ws.column_dimensions[col].width = width
     out = io.BytesIO()
     wb.save(out)

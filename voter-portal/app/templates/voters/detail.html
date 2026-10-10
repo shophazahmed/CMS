@@ -2,7 +2,7 @@
 {% from "_macros.html" import avatar, sex_label, icon %}
 {% block title %}{{ v.full_name }}{% endblock %}
 {% block content %}
-<a class="backlink" href="{{ url_for('voters.search') }}" data-back>{{ icon('back', 18) }} Back to results</a>
+<a class="backlink" href="{{ back }}">{{ icon('back', 18) }} Back to results</a>
 
 <article class="card profile">
   <div class="profile-head">
@@ -19,6 +19,24 @@
   {% if v.phone %}
   <a class="button primary big call-wide" href="tel:{{ v.phone }}">{{ icon('phone') }} Call {{ v.phone }}</a>
   {% endif %}
+
+  <form class="canvass" method="post" action="{{ url_for('voters.canvass', national_id=v.national_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+    <fieldset class="segmented">
+      <legend>Canvassing status</legend>
+      {% for key, label in statuses.items() %}
+      <label class="seg st-{{ key }}"><input type="radio" name="status" value="{{ key }}" {{ 'checked' if v.status == key }}><span>{{ label }}</span></label>
+      {% endfor %}
+    </fieldset>
+    <label>Notes
+      <textarea name="notes" rows="4" maxlength="2000" placeholder="What did they say? Needs a lift on voting day? Best time to visit?">{{ v.notes }}</textarea>
+    </label>
+    <div class="canvass-foot">
+      <button class="primary">Save status &amp; notes</button>
+      {% if v.status_at %}<span class="muted small-text">Last updated {{ v.status_at[:16].replace('T', ' ') }}{% if status_user %} by {{ status_user.username }}{% endif %}</span>{% endif %}
+    </div>
+  </form>
 
   <dl class="facts">
     <div><dt>House</dt><dd>{{ v.house_name or '—' }}</dd></div>

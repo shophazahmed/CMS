@@ -29,6 +29,10 @@ CREATE TABLE IF NOT EXISTS voters (
     house_name  TEXT NOT NULL DEFAULT '',
     party       TEXT NOT NULL DEFAULT '',
     phone       TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'new',
+    status_at   TEXT,
+    status_by   INTEGER REFERENCES users(id) ON DELETE SET NULL,
+    notes       TEXT NOT NULL DEFAULT '',
     photo_path  TEXT,
     source      TEXT NOT NULL DEFAULT 'import',
     created_at  TEXT NOT NULL,
@@ -71,8 +75,16 @@ def init_schema(conn):
     conn.executescript(SCHEMA)
     # Columns added after the first release
     columns = {r[1] for r in conn.execute("PRAGMA table_info(voters)")}
-    if "phone" not in columns:
-        conn.execute("ALTER TABLE voters ADD COLUMN phone TEXT NOT NULL DEFAULT ''")
+    for name, ddl in (
+        ("phone", "phone TEXT NOT NULL DEFAULT ''"),
+        ("status", "status TEXT NOT NULL DEFAULT 'new'"),
+        ("status_at", "status_at TEXT"),
+        ("status_by", "status_by INTEGER REFERENCES users(id) ON DELETE SET NULL"),
+        ("notes", "notes TEXT NOT NULL DEFAULT ''"),
+    ):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE voters ADD COLUMN {ddl}")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_voters_status ON voters (status)")
     conn.commit()
 
 

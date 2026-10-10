@@ -606,7 +606,13 @@ def load(conn, merged, mode, log):
     stamp = now_iso()
     counts = Counter()
     if mode == "replace":
-        counts["deleted"] = conn.execute("DELETE FROM voters").rowcount
+        # Remove voters missing from the files; the rest are overwritten below. Deleting everything
+        # would also throw away the canvassing status and notes collected in the portal.
+        conn.execute("CREATE TEMP TABLE IF NOT EXISTS keep_ids (nid TEXT PRIMARY KEY)")
+        conn.execute("DELETE FROM keep_ids")
+        conn.executemany("INSERT INTO keep_ids VALUES (?)", [(nid,) for nid in merged])
+        counts["deleted"] = conn.execute(
+            "DELETE FROM voters WHERE national_id NOT IN (SELECT nid FROM keep_ids)").rowcount
     for nid, v in merged.items():
         existing = conn.execute("SELECT * FROM voters WHERE national_id = ?", (nid,)).fetchone()
         src = "import: " + ", ".join(v["sources"])
@@ -618,14 +624,14 @@ def load(conn, merged, mode, log):
                  v["photo_path"], src, stamp, stamp),
             )
             counts["inserted"] += 1
-        elif existing["updated_by"] is not None or existing["source"] == "manual":
+        elif mode != "replace" and (existing["updated_by"] is not None or existing["source"] == "manual"):
             log.add("INFO", "KEPT_PORTAL_EDIT", nid, "edited in the portal since the last import; file data not applied")
             counts["kept_portal_edits"] += 1
         else:
             conn.execute(
                 "UPDATE voters SET full_name = ?, sex = ?, age = ?, house_name = ?, party = ?,"
                 " phone = COALESCE(NULLIF(?, ''), phone), photo_path = COALESCE(?, photo_path),"
-                " source = ?, updated_at = ? WHERE national_id = ?",
+                " source = ?, updated_at = ?, updated_by = NULL WHERE national_id = ?",
                 (v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"], v["photo_path"],
                  src, stamp, nid),
             )

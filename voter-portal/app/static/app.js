@@ -15,3 +15,37 @@ document.addEventListener("click", (event) => {
     history.back();
   }
 });
+
+// Canvassing status on the voter cards: save in the background so the list keeps its place.
+document.addEventListener("change", async (event) => {
+  const select = event.target.closest("[data-status-select]");
+  if (!select) return;
+  const form = select.form;
+  const card = form.closest(".vcard");
+  const state = form.querySelector(".save-state");
+  const previous = [...card.classList].find((c) => c.startsWith("st-"));
+  state.textContent = "Saving…";
+  try {
+    const response = await fetch(form.action, {
+      method: "POST",
+      body: new FormData(form),
+      headers: { "X-Requested-With": "fetch" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error(response.status);
+    const data = await response.json();
+    if (previous) card.classList.remove(previous);
+    card.classList.add("st-" + data.status);
+    const oldKey = previous ? previous.slice(3) : null;
+    const bump = (key, delta) => {
+      const el = document.querySelector(`[data-count="${key}"]`);
+      if (el) el.textContent = Math.max(0, parseInt(el.textContent, 10) + delta);
+    };
+    if (data.changed && oldKey && oldKey !== data.status) { bump(oldKey, -1); bump(data.status, 1); }
+    state.textContent = "Saved ✓";
+    setTimeout(() => { state.textContent = ""; }, 2000);
+  } catch (err) {
+    state.textContent = "Not saved, try again";
+    form.submit();  // fall back to a normal post (shows the error page if the session expired)
+  }
+});

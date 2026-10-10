@@ -64,9 +64,9 @@ def test_user_is_read_only(app):
     html = c.get("/?party=AAA").get_data(as_text=True)
     assert "Aminath Alpha" in html and "Moosa Beta" not in html
     assert "Export" not in html
-    assert c.get("/?sex=M&age_min=50&age_max=60").get_data(as_text=True).count("/voters/A2000") == 1
-    assert c.get("/?house=rose").get_data(as_text=True).count("/voters/A2000") == 2
-    assert c.get("/?national_id=a200002").get_data(as_text=True).count("/voters/A2000") == 1
+    assert c.get("/?sex=M&age_min=50&age_max=60").get_data(as_text=True).count('id="v-A2000') == 1
+    assert c.get("/?house=rose").get_data(as_text=True).count('id="v-A2000') == 2
+    assert c.get("/?national_id=a200002").get_data(as_text=True).count('id="v-A2000') == 1
     assert c.get("/voters/A200001").status_code == 200
     token = csrf(c, "/")
     for method, path in (("get", "/export.csv"), ("get", "/export.xlsx"), ("get", "/voters/new"),
@@ -155,7 +155,7 @@ def test_phone_visible_searchable_editable(app):
     u = app.test_client()
     login(u, "viewer", USER_PW)
     page = u.get("/?q=777123").get_data(as_text=True)
-    assert 'href="tel:7771234"' in page and page.count("/voters/A2000") == 1
+    assert 'href="tel:7771234"' in page and page.count('id="v-A2000') == 1
     assert "7771234" in u.get("/voters/A200001").get_data(as_text=True)
 
     a = app.test_client()
@@ -166,3 +166,40 @@ def test_phone_visible_searchable_editable(app):
     assert conn.execute("SELECT phone FROM voters WHERE national_id = 'A200002'").fetchone()[0] == "9123456"
     assert "voter_update" in a.get("/admin/audit?target=A200002").get_data(as_text=True)
     assert "Phone" in a.get("/export.csv").get_data(as_text=True).splitlines()[0]
+
+
+def test_canvassing_status_and_notes(app):
+    u = app.test_client()
+    login(u, "viewer", USER_PW)  # read-only users canvass too
+    token = csrf(u, "/")
+    page = u.get("/").get_data(as_text=True)
+    assert "Not contacted <b data-count=\"new\">3</b>" in page
+
+    # background save from a card
+    r = u.post("/voters/A200001/canvass", data={"csrf_token": token, "status": "contacted"},
+               headers={"X-Requested-With": "fetch"})
+    assert r.get_json() == {"ok": True, "changed": True, "status": "contacted", "label": "Contacted", "by": "viewer"}
+    # status + notes from the voter page (normal form post)
+    r = u.post("/voters/A200002/canvass", data={"csrf_token": token, "status": "followup",
+                                                "notes": " Wants a call after 5pm \r\n", "back": "/voters/A200002"})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/voters/A200002")
+    detail = u.get("/voters/A200002").get_data(as_text=True)
+    assert "Wants a call after 5pm" in detail and "by viewer" in detail
+
+    assert u.get("/?status=contacted").get_data(as_text=True).count('id="v-A2000') == 1
+    page = u.get("/?status=followup").get_data(as_text=True)
+    assert page.count('id="v-A2000') == 1 and "Wants a call after 5pm" in page
+    assert u.get("/?q=after+5pm").get_data(as_text=True).count('id="v-A2000') == 1  # notes are searchable
+    assert u.post("/voters/A200001/canvass", data={"csrf_token": token, "status": "bogus"}).status_code == 400
+    # still read-only for everything else
+    assert u.post("/voters/A200001/edit", data={"csrf_token": token, "full_name": "X"}).status_code == 403
+
+    conn = connect(app.config["DATABASE"])
+    row = conn.execute("SELECT status, notes, updated_by FROM voters WHERE national_id = 'A200002'").fetchone()
+    assert tuple(row) == ("followup", "Wants a call after 5pm", None)  # canvassing doesn't count as an edit
+
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    assert "voter_canvass" in a.get("/admin/audit").get_data(as_text=True)
+    header = a.get("/export.csv").get_data(as_text=True).splitlines()[0]
+    assert header.endswith("Status,Status changed,Notes")
