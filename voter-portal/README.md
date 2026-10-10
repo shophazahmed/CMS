@@ -84,7 +84,8 @@ How it works:
 - **MDP list:** `Gadhdhoo (updated Party list MPD )` is the current MDP membership list, and it
   decides the party ahead of every other file. Everyone on it is `MDP` (it needs no Party column).
   A voter recorded as MDP in another file but missing from the list has changed party: they are
-  set to `OTHER` and logged as `PARTY_LEFT_MDP`. If the list isn't uploaded, nobody is moved
+  set to `OTHER` and logged as `PARTY_LEFT_MDP`. The list can also be imported on its own: voters already in the
+  portal as MDP who aren't on it are moved to `OTHER` too, except voters edited by hand in the portal. If the list isn't uploaded, nobody is moved
   (`MDP_LIST_NOT_LOADED`).
 - **Phone:** read from a Phone / Mobile / Contact column. A `960` country code is dropped, so
   `9607902314` becomes `7902314`. A blank in a newer file never erases a number already in the portal.

@@ -505,6 +505,33 @@ def apply_mdp_list(merged, records, log):
     return moved
 
 
+def apply_mdp_list_to_portal(conn, records, merged, mode, log, apply=True):
+    """Voters already in the portal as MDP, not in this upload and not on the MDP list, have left MDP.
+
+    This lets the MDP list be imported on its own. Voters edited by hand in the portal are left alone.
+    """
+    on_list = {r.nid for r in records if r.source == MDP_LIST_SOURCE}
+    if not on_list or mode == "replace":
+        return 0
+    moved = 0
+    stamp = now_iso()
+    for row in conn.execute("SELECT national_id, party, updated_by, source FROM voters").fetchall():
+        nid = row["national_id"]
+        if nid in on_list or nid in merged or not is_mdp(row["party"]):
+            continue
+        if row["updated_by"] is not None or row["source"] == "manual":
+            log.add("INFO", "KEPT_PORTAL_EDIT", nid,
+                    "MDP in the portal but not on the updated MDP list; edited by hand, so left as MDP")
+            continue
+        log.add("INFO", "PARTY_LEFT_MDP", nid,
+                f"MDP in the portal but not on the updated MDP list; set to {LEFT_MDP_PARTY}")
+        if apply:
+            conn.execute("UPDATE voters SET party = ?, updated_at = ? WHERE national_id = ?",
+                         (LEFT_MDP_PARTY, stamp, nid))
+        moved += 1
+    return moved
+
+
 def check_conflict(f, nid, chosen, other, log):
     a, b = chosen.values[f], other.values[f]
     keep = f"kept '{a}' ({chosen.source}) over '{b}' ({other.source})"
@@ -722,6 +749,14 @@ def main(argv=None, out=None):
         os.chmod(args.csv_out, 0o600)
 
     if args.dry_run:
+        if Path(args.db).is_file():
+            conn = connect(args.db)
+            init_schema(conn)
+            more = apply_mdp_list_to_portal(conn, records, merged, args.mode, log, apply=False)
+            conn.close()
+            if more:
+                summary.append(f"Also {more} voters already in the portal would move from MDP to {LEFT_MDP_PARTY} "
+                               "(not on the updated MDP list)")
         summary.append("Dry run: database not changed.")
     else:
         Path(args.db).parent.mkdir(parents=True, exist_ok=True)
@@ -729,6 +764,9 @@ def main(argv=None, out=None):
         init_schema(conn)
         with conn:
             counts = load(conn, merged, args.mode, log)
+            more = apply_mdp_list_to_portal(conn, records, merged, args.mode, log)
+            if more:
+                counts["portal_voters_left_mdp"] = more
             created = [] if args.no_seed_users else seed_users(conn, args.admin_username, args.user_username)
             conn.execute(
                 "INSERT INTO audit_log (at, username, action, target, detail) VALUES (?, 'ingest-script', 'import', ?, ?)",

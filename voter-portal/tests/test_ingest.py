@@ -180,3 +180,37 @@ def test_phone_import_and_old_database(tmp_path):
                  "--log", str(tmp_path / "log"), "--no-seed-users"])
     phones = dict(conn.execute("SELECT national_id, phone FROM voters"))
     assert phones == {"A500001": "7902314", "A500002": "7000001"}  # a blank in the file keeps the old number
+
+
+def test_mdp_list_alone_updates_voters_already_in_portal(tmp_path):
+    import csv
+
+    from openpyxl import Workbook
+
+    db = tmp_path / "vp.db"
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["ID", "Name", "Party"])
+    ws.append(["A600001", "Stays", "MDP"])
+    ws.append(["A600002", "Leaves", "MDP"])
+    ws.append(["A600003", "Edited", "MDP"])
+    ws.append(["A600004", "Pnc", "PNC"])
+    wb.save(first / "Gahdhdhoo.2026.xlsx")
+    args = ["--db", str(db), "--photos-dir", str(tmp_path / "p"), "--no-seed-users"]
+    ingest.main(["--data-dir", str(first), "--log", str(tmp_path / "l1")] + args)
+    conn = sqlite3.connect(db)
+    conn.execute("UPDATE voters SET updated_by = 1 WHERE national_id = 'A600003'")  # edited in the portal
+    conn.commit()
+    with open(second / "Gadhdhoo_updated_Party_list_MPD_.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["#", "National ID", "Name", "Phone", "House"])
+        w.writerow([1, "A600001", "Stays", "7771234", "One"])
+    ingest.main(["--data-dir", str(second), "--log", str(tmp_path / "dry"), "--dry-run"] + args)
+    assert "Also 1 voters already in the portal would move" in (tmp_path / "dry").read_text()
+    ingest.main(["--data-dir", str(second), "--log", str(tmp_path / "l2")] + args)
+    rows = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT national_id, party, phone FROM voters")}
+    assert rows == {"A600001": ("MDP", "7771234"), "A600002": ("OTHER", ""),
+                    "A600003": ("MDP", ""), "A600004": ("PNC", "")}
