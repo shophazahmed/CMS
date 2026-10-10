@@ -23,6 +23,13 @@ is the CMS, and approved posts go to a **Facebook Page** (Graph API) and **X**
 | 04 Multi-Channel Publisher | `n8n/workflows/04-publisher.json` | Called by 02 | Publishes one approved post: text → `/feed`, photo → `/photos` (multipart); X media upload + `/2/tweets`. Records IDs or the exact API error. |
 | 05 Portal Actions | `n8n/workflows/05-portal-actions.json` | Internal webhook (shared secret) | Approve / reject / regenerate / send-to-Telegram / AI-adapt for the portal, reusing the same publisher and generator as the Telegram buttons. |
 
+## Voter portal (separate app)
+
+`voter-portal/` is an independent Flask + SQLite app for `vote.seenu.online`: a login-only,
+role-based voter list (admin / read-only user) with a data importer that merges and
+de-duplicates the Gadhdhoo voter files. See [`voter-portal/README.md`](voter-portal/README.md)
+for the importer and the VPS deployment guide.
+
 ## Portal (dashboard + Telegram Mini App)
 
 `portal/` is a small Node service served at `PORTAL_DOMAIN` (e.g. `cms.seenu.online`):

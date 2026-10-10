@@ -1,0 +1,70 @@
+{% extends "base.html" %}
+{% block title %}Users{% endblock %}
+{% block content %}
+<h1>Users</h1>
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>
+  <tbody>
+  {% for u in users %}
+  <tr class="{{ '' if u.is_active else 'inactive' }}">
+    <td>{{ u.username }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}</td>
+    <td>
+      <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="set_role">
+        <select name="role" data-autosubmit {{ 'disabled' if u.id == current_user.id }}>
+          {% for r in roles %}<option value="{{ r }}" {{ 'selected' if u.role == r }}>{{ r }}</option>{% endfor %}
+        </select>
+        <noscript><button>Set role</button></noscript>
+      </form>
+    </td>
+    <td>
+      {{ 'Active' if u.is_active else 'Deactivated' }}
+      {% if u.locked_until %}<span class="badge warn">locked until {{ u.locked_until[:16] }}</span>{% endif %}
+      {% if u.must_change_password %}<span class="badge">temp password</span>{% endif %}
+    </td>
+    <td>{{ u.last_login_at[:16] if u.last_login_at else 'Never' }}</td>
+    <td><div class="actions">
+      {% if u.id != current_user.id %}
+      {% for action, label, confirm in [
+          ('toggle_active', 'Deactivate' if u.is_active else 'Activate', ''),
+          ('reset_password', 'Reset password', 'Reset the password for ' ~ u.username ~ '? Their sessions end.'),
+        ] %}
+      <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" {% if confirm %}data-confirm="{{ confirm }}"{% endif %}>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="{{ action }}">
+        <button>{{ label }}</button>
+      </form>
+      {% endfor %}
+      {% if u.locked_until %}
+      <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="action" value="unlock">
+        <button>Unlock</button>
+      </form>
+      {% endif %}
+      {% endif %}
+    </div></td>
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+
+<form class="card form" method="post" action="{{ url_for('admin.create_user') }}">
+  <h2>Create user</h2>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="row">
+    <label>Username <input name="username" required pattern="[A-Za-z0-9._\-]{3,32}" maxlength="32"></label>
+    <label>Role
+      <select name="role"><option value="user">user (read-only)</option><option value="admin">admin</option></select>
+    </label>
+  </div>
+  <label>Temporary password <span class="muted">(leave blank to generate one)</span>
+    <input name="password" type="password" minlength="10" autocomplete="new-password">
+  </label>
+  <p class="muted">The user must choose a new password the first time they sign in.</p>
+  <button class="primary">Create user</button>
+</form>
+{% endblock %}

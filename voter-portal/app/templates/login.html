@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block main_class %}center{% endblock %}
+{% block content %}
+<form class="card narrow" method="post" action="{{ url_for('auth.login') }}">
+  <h1>Gadhdhoo voter portal</h1>
+  <p class="muted">Sign in to continue.</p>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="next" value="{{ next }}">
+  <label>Username
+    <input name="username" value="{{ username or '' }}" autocomplete="username" required autofocus>
+  </label>
+  <label>Password
+    <input name="password" type="password" autocomplete="current-password" required>
+  </label>
+  <button class="primary wide">Sign in</button>
+</form>
+{% endblock %}

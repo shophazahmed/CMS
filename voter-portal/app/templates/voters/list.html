@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% from "_macros.html" import pager, avatar, sex_label %}
+{% block content %}
+<div class="stats">
+  <div><strong>{{ stats.total or 0 }}</strong><span>voters</span></div>
+  <div><strong>{{ stats.male or 0 }}</strong><span>male</span></div>
+  <div><strong>{{ stats.female or 0 }}</strong><span>female</span></div>
+  <div><strong>{{ parties|length }}</strong><span>parties</span></div>
+</div>
+
+<form class="card filters" method="get" action="{{ url_for('voters.search') }}">
+  <label class="grow">Name, ID or house
+    <input type="search" name="q" value="{{ f.q }}" placeholder="Search…" autofocus>
+  </label>
+  <label>National ID
+    <input name="national_id" value="{{ f.national_id }}" placeholder="A123456" maxlength="20">
+  </label>
+  <label>House name
+    <input name="house" value="{{ f.house }}" list="houses" maxlength="100">
+    <datalist id="houses">{% for h in houses %}<option value="{{ h }}">{% endfor %}</datalist>
+  </label>
+  <label>Party
+    <select name="party">
+      <option value="">Any</option>
+      {% for p in parties %}<option {{ 'selected' if f.party == p }}>{{ p }}</option>{% endfor %}
+      <option value="(none)" {{ 'selected' if f.party == '(none)' }}>No party</option>
+    </select>
+  </label>
+  <label>Sex
+    <select name="sex">
+      <option value="">Any</option>
+      <option value="M" {{ 'selected' if f.sex == 'M' }}>Male</option>
+      <option value="F" {{ 'selected' if f.sex == 'F' }}>Female</option>
+      <option value="unknown" {{ 'selected' if f.sex == 'unknown' }}>Not recorded</option>
+    </select>
+  </label>
+  <label class="age">Age
+    <span class="range">
+      <input type="number" name="age_min" min="0" max="130" value="{{ f.age_min if f.age_min is not none }}" placeholder="from">
+      <input type="number" name="age_max" min="0" max="130" value="{{ f.age_max if f.age_max is not none }}" placeholder="to">
+    </span>
+  </label>
+  <label>Sort by
+    <select name="sort">
+      {% for key, label in [('name','Name'),('house','House'),('age','Age'),('party','Party'),('id','ID')] %}
+      <option value="{{ key }}" {{ 'selected' if f.sort == key }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <div class="actions">
+    <button class="primary">Search</button>
+    {% if filtered %}<a class="button" href="{{ url_for('voters.search') }}">Clear filters</a>{% endif %}
+  </div>
+</form>
+
+<div class="resultbar">
+  <span>{{ total }} {{ 'voter' if total == 1 else 'voters' }}{{ ' match' if filtered }}</span>
+  {% if is_admin %}
+  <span class="export">
+    Export {{ 'these' if filtered else 'all' }}:
+    <a class="button" href="{{ url_for('voters.export', fmt='csv', **query_args) }}">CSV</a>
+    <a class="button" href="{{ url_for('voters.export', fmt='xlsx', **query_args) }}">Excel</a>
+  </span>
+  {% endif %}
+</div>
+
+{% if rows %}
+<div class="table-wrap">
+<table class="voters">
+  <thead><tr><th></th><th>Name</th><th>ID</th><th>Sex</th><th>Age</th><th>House</th><th>Party</th></tr></thead>
+  <tbody>
+  {% for v in rows %}
+    <tr>
+      <td>{{ avatar(v) }}</td>
+      <td><a href="{{ url_for('voters.detail', national_id=v.national_id) }}">{{ v.full_name }}</a></td>
+      <td class="mono">{{ v.national_id }}</td>
+      <td>{{ v.sex or '—' }}</td>
+      <td>{{ v.age if v.age is not none else '—' }}</td>
+      <td>{{ v.house_name or '—' }}</td>
+      <td>{{ v.party or '—' }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{{ pager('voters.search', page, pages, query_args) }}
+{% else %}
+<p class="empty">No voters match these filters.</p>
+{% endif %}
+{% endblock %}

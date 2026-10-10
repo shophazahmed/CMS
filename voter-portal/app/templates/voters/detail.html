@@ -1,0 +1,33 @@
+{% extends "base.html" %}
+{% from "_macros.html" import avatar, sex_label %}
+{% block title %}{{ v.full_name }}{% endblock %}
+{% block content %}
+<p><a href="{{ url_for('voters.search') }}" data-back>‹ Back to results</a></p>
+<article class="card profile">
+  {{ avatar(v, 'lg') }}
+  <div>
+    <h1>{{ v.full_name }}</h1>
+    <dl>
+      <dt>ID card</dt><dd class="mono">{{ v.national_id }}</dd>
+      <dt>Sex</dt><dd>{{ sex_label(v.sex) }}</dd>
+      <dt>Age</dt><dd>{{ v.age if v.age is not none else '—' }}</dd>
+      <dt>House name</dt><dd>{{ v.house_name or '—' }}</dd>
+      <dt>Party</dt><dd>{{ v.party or '—' }}</dd>
+      {% if is_admin %}
+      <dt>Source</dt><dd>{{ v.source }}</dd>
+      <dt>Last changed</dt><dd>{{ v.updated_at }}{% if editor %} by {{ editor.username }}{% endif %}</dd>
+      {% endif %}
+    </dl>
+    {% if is_admin %}
+    <div class="actions">
+      <a class="button primary" href="{{ url_for('voters.edit', national_id=v.national_id) }}">Edit voter</a>
+      <form method="post" action="{{ url_for('voters.delete', national_id=v.national_id) }}"
+            data-confirm="Delete {{ v.full_name }} ({{ v.national_id }})? This can't be undone.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="danger">Delete voter</button>
+      </form>
+    </div>
+    {% endif %}
+  </div>
+</article>
+{% endblock %}
