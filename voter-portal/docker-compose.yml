@@ -18,10 +18,10 @@ services:
     networks: [web]
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=${TRAEFIK_NETWORK:-voter-portal_web}"
+      - "traefik.docker.network=voter-portal_web"
       - "traefik.http.routers.voter-portal.rule=Host(`vote.seenu.online`)"
-      - "traefik.http.routers.voter-portal.entrypoints=websecure"
-      - "traefik.http.routers.voter-portal.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.voter-portal.entrypoints=${TRAEFIK_ENTRYPOINT:-websecure}"
+      - "traefik.http.routers.voter-portal.tls.certresolver=${TRAEFIK_CERTRESOLVER:-letsencrypt}"
       - "traefik.http.services.voter-portal.loadbalancer.server.port=8000"
       - "traefik.http.middlewares.voter-portal-hsts.headers.stsSeconds=31536000"
       - "traefik.http.routers.voter-portal.middlewares=voter-portal-hsts"
@@ -30,4 +30,5 @@ volumes:
   voter-data:
 
 networks:
-  web: {}
+  web:
+    name: voter-portal_web
