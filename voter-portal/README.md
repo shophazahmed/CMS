@@ -112,6 +112,20 @@ How it works:
 > "Place in Cell" feature aren't visible to the importer: use "Place over Cells", or put a file
 > name in a Photo column.
 
+## Import page (admins)
+
+**Import** in the top bar does the same merge from the browser, so no terminal is needed:
+
+1. Upload the four files, or zip the whole `Data files` folder (with photos) and upload that one `.zip`. The limit is 300 MB.
+2. Pick the mode: add/update (the default), or replace the whole list.
+3. Read the preview. It shows the column mapping, the counts and the conflict log, and you can
+   download the full `merge_conflicts.log` and the merged list as CSV. Nothing has changed yet.
+4. Click **Apply import**. Replace mode asks you to type `REPLACE` first.
+
+Imports run in the background, and only one runs at a time. The uploaded voter files are deleted
+right after a real import, or 24 hours after an unapplied preview. Uploads, previews, imports and
+downloads all go into the activity log.
+
 ## Try it on your PC first (Windows, PowerShell)
 
 ```powershell

@@ -7,7 +7,7 @@ import click
 from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from . import admin, auth, voters
+from . import admin, auth, imports, voters
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -29,12 +29,14 @@ def create_app(test_config=None):
         SECRET_KEY=secret or secrets.token_hex(32),
         DATABASE=os.environ.get("VOTER_PORTAL_DB", os.path.join(base, "voter_portal.db")),
         PHOTOS_DIR=os.environ.get("VOTER_PORTAL_PHOTOS", os.path.join(base, "photos")),
+        IMPORTS_DIR=os.path.join(base, "imports"),
         SESSION_COOKIE_NAME="vp_session",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
         SESSION_COOKIE_SECURE=not dev,
         PERMANENT_SESSION_LIFETIME=timedelta(hours=12),
-        MAX_CONTENT_LENGTH=6 * 1024 * 1024,
+        # Large for the import page (workbooks with embedded photos); voter photo uploads check 5 MB themselves
+        MAX_CONTENT_LENGTH=300 * 1024 * 1024,
     )
     if test_config:
         app.config.update(test_config)
@@ -43,6 +45,7 @@ def create_app(test_config=None):
 
     os.makedirs(os.path.dirname(os.path.abspath(app.config["DATABASE"])), exist_ok=True)
     os.makedirs(app.config["PHOTOS_DIR"], exist_ok=True)
+    os.makedirs(app.config["IMPORTS_DIR"], mode=0o700, exist_ok=True)
 
     # Nginx sits in front: trust one hop of X-Forwarded-For / -Proto.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -53,6 +56,7 @@ def create_app(test_config=None):
     app.register_blueprint(auth.bp)
     app.register_blueprint(voters.bp)
     app.register_blueprint(admin.bp)
+    app.register_blueprint(imports.bp)
 
     @app.context_processor
     def inject():
@@ -89,6 +93,7 @@ def create_app(test_config=None):
     with app.app_context():
         conn = connect(app.config["DATABASE"])
         init_schema(conn)
+        imports.init_schema(conn)
         bootstrap_admin(conn)
         conn.close()
     return app

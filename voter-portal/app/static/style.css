@@ -132,3 +132,11 @@ td .actions button { padding: .25rem .55rem; min-height: 0; font-size: .85rem; }
   .filters .grow { grid-column: auto; }
   .voters th:nth-child(4), .voters td:nth-child(4) { display: none; }
 }
+
+pre.output {
+  background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: .75rem 1rem;
+  overflow-x: auto; max-height: 520px; font-size: .82rem; line-height: 1.45; white-space: pre;
+}
+details.card > summary { cursor: pointer; }
+form.apply { margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border); }
+code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .92em; }

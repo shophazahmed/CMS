@@ -16,7 +16,8 @@ ADMIN_PW, USER_PW = "admin-pass-123", "user-pass-1234"
 @pytest.fixture()
 def app(tmp_path):
     app = create_app({"TESTING": True, "SECRET_KEY": "test", "DATABASE": str(tmp_path / "t.db"),
-                      "PHOTOS_DIR": str(tmp_path / "photos"), "SESSION_COOKIE_SECURE": False})
+                      "PHOTOS_DIR": str(tmp_path / "photos"), "IMPORTS_DIR": str(tmp_path / "imports"),
+                      "SESSION_COOKIE_SECURE": False})
     conn = connect(app.config["DATABASE"])
     stamp = now_iso(precise=True)
     for name, role, pw in (("boss", "admin", ADMIN_PW), ("viewer", "user", USER_PW)):
@@ -138,7 +139,8 @@ def test_security_headers(app):
 
 def test_bootstrap_admin(tmp_path, monkeypatch):
     monkeypatch.setenv("VOTER_PORTAL_ADMIN_PASSWORD", "first-admin-pass-1")
-    cfg = {"TESTING": True, "SECRET_KEY": "t", "DATABASE": str(tmp_path / "b.db"), "PHOTOS_DIR": str(tmp_path / "p")}
+    cfg = {"TESTING": True, "SECRET_KEY": "t", "DATABASE": str(tmp_path / "b.db"), "PHOTOS_DIR": str(tmp_path / "p"),
+           "IMPORTS_DIR": str(tmp_path / "i")}
     create_app(cfg)
     create_app(cfg)  # second start: no duplicate, no error
     conn = connect(cfg["DATABASE"])

@@ -32,6 +32,7 @@ import os
 import re
 import secrets
 import sys
+import threading
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -90,6 +91,17 @@ SUBSTRINGS = [
     ("dob", ("birth",)),
     ("full_name", ("name",)),
 ]
+
+
+_local = threading.local()
+
+
+class IngestError(Exception):
+    """A problem with the input that stops the import (shown to the user as is)."""
+
+
+def say(*args):
+    print(*args, file=getattr(_local, "out", None) or sys.stdout)
 
 
 def header_key(text):
@@ -344,7 +356,7 @@ def extract(path, priority, label, log, finder):
             continue
         missing = [r for r in ("full_name", "sex", "house_name", "party") if r not in roles]
         stats["sheets"] += 1
-        print(f"  sheet '{sheet.name}': header row {header_idx + 1 if header_idx >= 0 else 'none'}, "
+        say(f"  sheet '{sheet.name}': header row {header_idx + 1 if header_idx >= 0 else 'none'}, "
               f"columns {sorted(roles)}" + (f", missing {missing}" if missing else ""))
         header_keys = [header_key(c) for c in sheet.rows[header_idx]] if header_idx >= 0 else None
 
@@ -554,7 +566,7 @@ def seed_users(conn, admin_name, user_name):
     created = []
     for username, role, env in ((admin_name, "admin", "SEED_ADMIN_PASSWORD"), (user_name, "user", "SEED_USER_PASSWORD")):
         if conn.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
-            print(f"  user '{username}' already exists; left unchanged")
+            say(f"  user '{username}' already exists; left unchanged")
             continue
         password = os.environ.get(env) or secrets.token_urlsafe(12)
         stamp = now_iso(precise=True)
@@ -580,13 +592,13 @@ def find_sources(data_dir, log):
             path = by_key[close[0]] if close else None
         if path is None or path in used:
             log.add("WARN", "SOURCE_MISSING", None, f"no file found for '{key}' ({label})")
-            print(f"[!] missing: {key}")
+            say(f"[!] missing: {key}")
             continue
         used.add(path)
         found.append((priority, label, path))
     for p in candidates:
         if p not in used:
-            print(f"[i] ignored (not one of the four sources): {p.name}")
+            say(f"[i] ignored (not one of the four sources): {p.name}")
     return found
 
 
@@ -596,7 +608,8 @@ def default_paths():
             Path(os.environ.get("VOTER_PORTAL_PHOTOS", base / "photos")))
 
 
-def main(argv=None):
+def main(argv=None, out=None):
+    _local.out = out
     db_default, photos_default = default_paths()
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--data-dir", required=True, help="folder holding the four voter files (and any photos)")
@@ -615,16 +628,16 @@ def main(argv=None):
 
     data_dir = Path(args.data_dir)
     if not data_dir.is_dir():
-        ap.error(f"{data_dir} is not a folder")
+        raise IngestError(f"{data_dir} is not a folder")
     log = ConflictLog()
     sources = find_sources(data_dir, log)
     if not sources:
-        ap.error("none of the four voter files were found (supported: .xlsx .xlsm .xls .csv)")
+        raise IngestError("None of the four voter files were found (supported: .xlsx .xlsm .xls .csv).")
 
     finder = PhotoFinder(data_dir)
     records, source_lines = [], []
     for priority, label, path in sources:
-        print(f"[{priority + 1}] {label}: {path.name}")
+        say(f"[{priority + 1}] {label}: {path.name}")
         recs, stats = extract(path, priority, label, log, finder)
         records += recs
         source_lines.append(f"  priority {priority + 1}: {path.name} ({label}) - {stats['rows']} rows read, "
@@ -642,7 +655,7 @@ def main(argv=None):
     with_photo = sum(1 for v in merged.values() if v["photo_path"])
     summary = [
         f"Gadhdhoo voter merge - {datetime.now():%Y-%m-%d %H:%M}",
-        f"Data folder: {data_dir}",
+        f"Data folder: {data_dir.name}",
         "Sources (highest priority first):",
         *source_lines,
         f"Rows read: {len(records)}  ->  unique voters: {len(merged)}  "
@@ -676,15 +689,18 @@ def main(argv=None):
         summary.append(f"Database {args.db} ({args.mode}): {dict(counts)}")
 
     log.write(args.log, summary)
-    print("\n".join(summary))
+    say("\n".join(summary))
     warns = sum(n for (lvl, _), n in log.counts.items() if lvl == "WARN")
-    print(f"Conflict log: {args.log} ({warns} warnings, {len(log.lines) - warns} notes)")
+    say(f"Conflict log: {args.log} ({warns} warnings, {len(log.lines) - warns} notes)")
     if not args.dry_run and not args.no_seed_users:
         for username, role, password, from_env in created:
             shown = "(from environment)" if from_env else password
-            print(f"Seeded {role} '{username}' password: {shown}  - must be changed at first sign-in")
+            say(f"Seeded {role} '{username}' password: {shown}  - must be changed at first sign-in")
     return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    except IngestError as exc:
+        sys.exit(f"error: {exc}")
