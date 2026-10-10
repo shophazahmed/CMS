@@ -1,24 +1,34 @@
-# Hostinger "Docker + Traefik" VPS: deployed as project "voter-portal" via the Hostinger API / hPanel.
-# Builds straight from the GitHub branch; Traefik (host network) routes vote.seenu.online here.
-# Project environment: VOTER_PORTAL_SECRET_KEY, VOTER_PORTAL_ADMIN_PASSWORD (first start only).
 name: voter-portal
-
 services:
   app:
-    build:
-      context: https://github.com/shophazahmed/CMS.git#claude/amazing-mccarthy-f6k50g:voter-portal
-    image: voter-portal-app:latest
+    image: python:3.12-slim
     restart: unless-stopped
     environment:
-      VOTER_PORTAL_SECRET_KEY: ${VOTER_PORTAL_SECRET_KEY:?set VOTER_PORTAL_SECRET_KEY}
-      VOTER_PORTAL_ADMIN_PASSWORD: ${VOTER_PORTAL_ADMIN_PASSWORD:-}
+      VOTER_PORTAL_SECRET_KEY: ${VOTER_PORTAL_SECRET_KEY}
+      VOTER_PORTAL_ADMIN_PASSWORD: ${VOTER_PORTAL_ADMIN_PASSWORD}
       VOTER_PORTAL_DATA_DIR: /data
       GUNICORN_BIND: 0.0.0.0:8000
-      GUNICORN_WORKERS: "3"
-      FORWARDED_ALLOW_IPS: "*"
+      GUNICORN_WORKERS: 3
+      FORWARDED_ALLOW_IPS: '*'
+      PYTHONUNBUFFERED: 1
       TZ: Indian/Maldives
     volumes:
       - voter-data:/data
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        rm -rf /tmp/src
+        python -c "import io,tarfile,urllib.request as u;tarfile.open(fileobj=io.BytesIO(u.urlopen('https://codeload.github.com/shophazahmed/CMS/tar.gz/refs/heads/claude/amazing-mccarthy-f6k50g',timeout=60).read())).extractall('/tmp/src',filter='data')"
+        cd /tmp/src/CMS-*/voter-portal
+        pip install -q --no-cache-dir --root-user-action=ignore -r requirements.txt
+        mkdir -p /data/photos && chown -R 1000:1000 /data && chmod 700 /data
+        exec setpriv --reuid=1000 --regid=1000 --clear-groups gunicorn -c deploy/gunicorn.conf.py wsgi:app
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request as u; u.urlopen('http://127.0.0.1:8000/login', timeout=5)"]
+      interval: 30s
+      timeout: 10s
+      start_period: 180s
     labels:
       - traefik.enable=true
       - traefik.http.routers.voter-portal.rule=Host(`vote.seenu.online`)
@@ -32,7 +42,6 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512m
-
+          memory: 768m
 volumes:
   voter-data:
