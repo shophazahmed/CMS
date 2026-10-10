@@ -13,6 +13,7 @@
       <dt>Age</dt><dd>{{ v.age if v.age is not none else '—' }}</dd>
       <dt>House name</dt><dd>{{ v.house_name or '—' }}</dd>
       <dt>Party</dt><dd>{{ v.party or '—' }}</dd>
+      <dt>Phone</dt><dd class="mono">{% if v.phone %}<a href="tel:{{ v.phone }}">{{ v.phone }}</a>{% else %}—{% endif %}</dd>
       {% if is_admin %}
       <dt>Source</dt><dd>{{ v.source }}</dd>
       <dt>Last changed</dt><dd>{{ v.updated_at }}{% if editor %} by {{ editor.username }}{% endif %}</dd>

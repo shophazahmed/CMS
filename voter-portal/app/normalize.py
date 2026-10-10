@@ -81,6 +81,23 @@ def normalize_age(value):
     return age, None
 
 
+def normalize_phone(value):
+    """Return (phone, note). Maldives numbers are 7 digits; a 960 country code is dropped."""
+    if is_blank(value):
+        return "", None
+    raw = str(value).strip()
+    if re.fullmatch(r"\d+\.0+", raw):
+        raw = raw.split(".")[0]
+    digits = re.sub(r"\D", "", raw)
+    if len(digits) == 10 and digits.startswith("960"):
+        digits = digits[3:]
+    if re.fullmatch(r"[3-9]\d{6}", digits):
+        return digits, None
+    if 7 <= len(digits) <= 15:
+        return digits, f"unusual phone number '{raw}' (kept as is)"
+    return "", f"unreadable phone number '{raw}'"
+
+
 def normalize_party(value):
     return clean_text(value).upper()
 

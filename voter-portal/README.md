@@ -19,7 +19,7 @@ browser ──HTTPS──► Nginx (TLS, HSTS, rate limit on /login) ──► G
 
 | | Admin | User |
 |---|---|---|
-| Search, filter (name, ID, house, party, sex, age range), view voter + photo | ✓ | ✓ |
+| Search, filter (name, ID, house, phone, party, sex, age range), view voter + photo + phone | ✓ | ✓ |
 | Add, edit, delete voters; upload photos | ✓ | — |
 | Export the current filtered list to CSV / Excel | ✓ | — |
 | Create users, activate/deactivate, change role, reset password | ✓ | — |
@@ -86,6 +86,8 @@ How it works:
   A voter recorded as MDP in another file but missing from the list has changed party: they are
   set to `OTHER` and logged as `PARTY_LEFT_MDP`. If the list isn't uploaded, nobody is moved
   (`MDP_LIST_NOT_LOADED`).
+- **Phone:** read from a Phone / Mobile / Contact column. A `960` country code is dropped, so
+  `9607902314` becomes `7902314`. A blank in a newer file never erases a number already in the portal.
 - **De-duplication** is strictly on the ID. For each field, the highest-priority file that has a
   value wins. A blank in a newer file never erases data from an older one.
 - **Photos** come from three places, in this order: pictures embedded in the `Gahdhdhoo.2026`

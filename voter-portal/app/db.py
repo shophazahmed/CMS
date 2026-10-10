@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS voters (
     age         INTEGER CHECK (age IS NULL OR (age >= 0 AND age <= 130)),
     house_name  TEXT NOT NULL DEFAULT '',
     party       TEXT NOT NULL DEFAULT '',
+    phone       TEXT NOT NULL DEFAULT '',
     photo_path  TEXT,
     source      TEXT NOT NULL DEFAULT 'import',
     created_at  TEXT NOT NULL,
@@ -68,6 +69,10 @@ def connect(path):
 
 def init_schema(conn):
     conn.executescript(SCHEMA)
+    # Columns added after the first release
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(voters)")}
+    if "phone" not in columns:
+        conn.execute("ALTER TABLE voters ADD COLUMN phone TEXT NOT NULL DEFAULT ''")
     conn.commit()
 
 

@@ -146,3 +146,23 @@ def test_bootstrap_admin(tmp_path, monkeypatch):
     conn = connect(cfg["DATABASE"])
     rows = conn.execute("SELECT username, role, must_change_password FROM users").fetchall()
     assert [tuple(r) for r in rows] == [("admin", "admin", 1)]
+
+
+def test_phone_visible_searchable_editable(app):
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET phone = '7771234' WHERE national_id = 'A200001'")
+    conn.commit()
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    page = u.get("/?q=777123").get_data(as_text=True)
+    assert 'href="tel:7771234"' in page and page.count("/voters/A2000") == 1
+    assert "7771234" in u.get("/voters/A200001").get_data(as_text=True)
+
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    token = csrf(a, "/")
+    a.post("/voters/A200002/edit", data={"csrf_token": token, "full_name": "Moosa Beta", "sex": "M", "age": "55",
+                                         "house_name": "Blue Ge", "party": "BBB", "phone": "+960 912-3456"})
+    assert conn.execute("SELECT phone FROM voters WHERE national_id = 'A200002'").fetchone()[0] == "9123456"
+    assert "voter_update" in a.get("/admin/audit?target=A200002").get_data(as_text=True)
+    assert "Phone" in a.get("/export.csv").get_data(as_text=True).splitlines()[0]

@@ -50,6 +50,7 @@ from app.normalize import (  # noqa: E402
     normalize_age,
     normalize_id,
     normalize_party,
+    normalize_phone,
     normalize_sex,
 )
 
@@ -73,7 +74,7 @@ LEFT_MDP_PARTY = "OTHER"
 def is_mdp(party):
     return compare_key(party) in {"mdp", "mpd", "maldiviandemocraticparty"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
-FIELDS = ("full_name", "sex", "age", "house_name", "party")
+FIELDS = ("full_name", "sex", "age", "house_name", "party", "phone")
 
 # Header names, compared after lower-casing and removing everything but letters/digits.
 ALIASES = {
@@ -88,6 +89,8 @@ ALIASES = {
     "house_name": {"house", "housename", "address", "houseaddress", "permanentaddress", "home", "residence",
                    "housenameaddress", "homename"},
     "party": {"party", "partyname", "politicalparty", "affiliation", "partyaffiliation"},
+    "phone": {"phone", "phoneno", "phonenumber", "mobile", "mobileno", "mobilenumber", "contact", "contactno",
+              "contactnumber", "tel", "telephone", "mob"},
     "photo": {"photo", "photopath", "photofile", "photoname", "image", "imagefile", "picture", "pic",
               "photoref", "img", "filename", "file"},
 }
@@ -97,6 +100,7 @@ SUBSTRINGS = [
     ("photo", ("photo", "image", "picture")),
     ("house_name", ("house", "address")),
     ("party", ("party",)),
+    ("phone", ("phone", "mobile", "contact")),
     ("national_id", ("idcard", "nationalid", "identity")),
     ("sex", ("gender",)),
     ("dob", ("birth",)),
@@ -393,6 +397,9 @@ def extract(path, priority, label, log, finder):
                 log.add("INFO", "ID_NORMALISED", nid, f"{where}: {note}")
             values = {"full_name": clean_text(cell(row, "full_name")), "house_name": clean_text(cell(row, "house_name")),
                       "party": normalize_party(cell(row, "party"))}
+            values["phone"], note = normalize_phone(cell(row, "phone"))
+            if note:
+                log.add("INFO", "ODD_PHONE", nid, f"{where}: {note}")
             if label == MDP_LIST_SOURCE and "party" not in roles:
                 values["party"] = MDP_PARTY  # being on the list is what makes the voter MDP
             values["sex"], note = normalize_sex(cell(row, "sex"))
@@ -520,6 +527,9 @@ def check_conflict(f, nid, chosen, other, log):
     elif f == "house_name":
         if compare_key(a) != compare_key(b):
             log.add("INFO", "HOUSE_CHANGED", nid, keep)
+    elif f == "phone":
+        if a != b:
+            log.add("INFO", "PHONE_CHANGED", nid, keep)
     elif f == "party":
         if a != b:
             log.add("INFO", "PARTY_CHANGED", nid, keep)
@@ -575,10 +585,10 @@ def load(conn, merged, mode, log):
         src = "import: " + ", ".join(v["sources"])
         if existing is None:
             conn.execute(
-                "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, photo_path, source,"
-                " created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (nid, v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["photo_path"], src,
-                 stamp, stamp),
+                "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, photo_path,"
+                " source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (nid, v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"],
+                 v["photo_path"], src, stamp, stamp),
             )
             counts["inserted"] += 1
         elif existing["updated_by"] is not None or existing["source"] == "manual":
@@ -587,8 +597,10 @@ def load(conn, merged, mode, log):
         else:
             conn.execute(
                 "UPDATE voters SET full_name = ?, sex = ?, age = ?, house_name = ?, party = ?,"
-                " photo_path = COALESCE(?, photo_path), source = ?, updated_at = ? WHERE national_id = ?",
-                (v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["photo_path"], src, stamp, nid),
+                " phone = COALESCE(NULLIF(?, ''), phone), photo_path = COALESCE(?, photo_path),"
+                " source = ?, updated_at = ? WHERE national_id = ?",
+                (v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"], v["photo_path"],
+                 src, stamp, nid),
             )
             counts["updated"] += 1
     return counts
@@ -702,10 +714,10 @@ def main(argv=None, out=None):
     if args.csv_out:
         with open(args.csv_out, "w", newline="", encoding="utf-8-sig") as fh:
             w = csv.writer(fh)
-            w.writerow(["ID", "full_name", "sex", "age", "house_name", "Party", "photo_path", "sources"])
+            w.writerow(["ID", "full_name", "sex", "age", "house_name", "Party", "phone", "photo_path", "sources"])
             for nid in sorted(merged):
                 v = merged[nid]
-                w.writerow([nid, v["full_name"], v["sex"], v["age"], v["house_name"], v["party"],
+                w.writerow([nid, v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"],
                             v["photo_path"] or "", "; ".join(v["sources"])])
         os.chmod(args.csv_out, 0o600)
 

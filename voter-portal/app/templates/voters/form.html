@@ -34,6 +34,9 @@
   <label>Party
     <input name="party" value="{{ v.party or '' }}" maxlength="50">
   </label>
+  <label>Phone
+    <input name="phone" type="tel" value="{{ v.phone or '' }}" maxlength="20" placeholder="7771234" inputmode="tel">
+  </label>
   <label>Photo (JPEG, PNG or WebP, up to 5 MB)
     <input name="photo" type="file" accept="image/jpeg,image/png,image/webp">
   </label>

@@ -136,3 +136,47 @@ def test_no_mdp_list_changes_nobody(tmp_path):
                  "--log", str(tmp_path / "log"), "--no-seed-users"])
     assert sqlite3.connect(db).execute("SELECT party FROM voters").fetchone()[0] == "MDP"
     assert "MDP_LIST_NOT_LOADED" in (tmp_path / "log").read_text()
+
+
+def test_phone_normalisation():
+    from app.normalize import normalize_phone
+
+    assert normalize_phone("7771234") == ("7771234", None)
+    assert normalize_phone("9607902314")[0] == "7902314"      # +960 country code dropped
+    assert normalize_phone("+960 777-1234")[0] == "7771234"
+    assert normalize_phone(7771234.0)[0] == "7771234"
+    assert normalize_phone("")[0] == "" and normalize_phone("n/a")[0] == ""
+    assert normalize_phone("12")[0] == ""
+
+
+def test_phone_import_and_old_database(tmp_path):
+    import csv
+
+    from app.db import connect
+
+    # a database created before the phone column existed
+    db = tmp_path / "vp.db"
+    old = sqlite3.connect(db)
+    old.executescript("""CREATE TABLE voters (national_id TEXT PRIMARY KEY, full_name TEXT NOT NULL,
+        sex TEXT NOT NULL DEFAULT '', age INTEGER, house_name TEXT NOT NULL DEFAULT '',
+        party TEXT NOT NULL DEFAULT '', photo_path TEXT, source TEXT NOT NULL DEFAULT 'import',
+        created_at TEXT NOT NULL, updated_at TEXT NOT NULL, updated_by INTEGER);
+        INSERT INTO voters VALUES ('A500002','Keeps Phone','M',30,'X','',NULL,'import','t','t',NULL);""")
+    old.commit()
+    old.close()
+    data = tmp_path / "data"
+    data.mkdir()
+    with open(data / "gadhoo-new voters.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["National ID", "Name", "Phone", "House"])
+        w.writerow(["A500001", "Has Phone", "9607902314", "One"])
+        w.writerow(["A500002", "Keeps Phone", "", "X"])
+    conn = connect(db)
+    from app.db import init_schema
+    init_schema(conn)
+    conn.execute("UPDATE voters SET phone = '7000001' WHERE national_id = 'A500002'")
+    conn.commit()
+    ingest.main(["--data-dir", str(data), "--db", str(db), "--photos-dir", str(tmp_path / "p"),
+                 "--log", str(tmp_path / "log"), "--no-seed-users"])
+    phones = dict(conn.execute("SELECT national_id, phone FROM voters"))
+    assert phones == {"A500001": "7902314", "A500002": "7000001"}  # a blank in the file keeps the old number

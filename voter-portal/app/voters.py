@@ -22,12 +22,12 @@ from flask import (
 from . import audit
 from .auth import admin_required, is_admin, login_required
 from .db import get_db, now_iso
-from .normalize import clean_text, normalize_age, normalize_id, normalize_party, normalize_sex
+from .normalize import clean_text, normalize_age, normalize_id, normalize_party, normalize_phone, normalize_sex
 
 bp = Blueprint("voters", __name__)
 
 PAGE_SIZE = 50
-FIELDS = ("national_id", "full_name", "sex", "age", "house_name", "party")
+FIELDS = ("national_id", "full_name", "sex", "age", "house_name", "party", "phone")
 SORTS = {
     "name": "full_name COLLATE NOCASE, national_id",
     "house": "house_name COLLATE NOCASE, full_name COLLATE NOCASE",
@@ -66,9 +66,10 @@ def build_where(f):
     clauses, params = [], []
     if f["q"]:
         clauses.append(
-            "(full_name LIKE ? ESCAPE '\\' OR national_id LIKE ? ESCAPE '\\' OR house_name LIKE ? ESCAPE '\\')"
+            "(full_name LIKE ? ESCAPE '\\' OR national_id LIKE ? ESCAPE '\\' OR house_name LIKE ? ESCAPE '\\'"
+            " OR phone LIKE ? ESCAPE '\\')"
         )
-        params += [_like(f["q"])] * 3
+        params += [_like(f["q"])] * 4
     if f["national_id"]:
         clauses.append("national_id LIKE ? ESCAPE '\\'")
         params.append(_like(f["national_id"]))
@@ -187,6 +188,9 @@ def _parse_form(form, creating):
         errors.append("Age must be a number from 0 to 130.")
     data["house_name"] = clean_text(form.get("house_name", ""))[:200]
     data["party"] = normalize_party(form.get("party", ""))[:50]
+    data["phone"], note = normalize_phone(form.get("phone", ""))
+    if note and "unreadable" in note:
+        errors.append("Phone must be a number such as 7771234.")
     return data, errors
 
 
@@ -233,10 +237,10 @@ def create():
             return render_template("voters/form.html", v=request.form, creating=True), 400
         stamp = now_iso()
         db.execute(
-            "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, photo_path,"
-            " source, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)",
+            "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, photo_path,"
+            " source, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)",
             (data["national_id"], data["full_name"], data["sex"], data["age"], data["house_name"],
-             data["party"], data.get("photo_path"), stamp, stamp, g.user["id"]),
+             data["party"], data["phone"], data.get("photo_path"), stamp, stamp, g.user["id"]),
         )
         audit.log("voter_create", target=data["national_id"], detail={k: data[k] for k in FIELDS}, commit=False)
         db.commit()
@@ -298,7 +302,7 @@ def delete(national_id):
 
 # --- admin: export ----------------------------------------------------------
 
-EXPORT_HEADERS = ["ID", "Full name", "Sex", "Age", "House name", "Party", "Has photo"]
+EXPORT_HEADERS = ["ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo"]
 
 
 def _safe_cell(value):
@@ -318,7 +322,7 @@ def export(fmt):
     rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
     table = [
         [_safe_cell(r["national_id"]), _safe_cell(r["full_name"]), r["sex"], r["age"],
-         _safe_cell(r["house_name"]), _safe_cell(r["party"]), "yes" if r["photo_path"] else ""]
+         _safe_cell(r["house_name"]), _safe_cell(r["party"]), r["phone"], "yes" if r["photo_path"] else ""]
         for r in rows
     ]
     audit.log("export", target=fmt, detail={"filters": active_filters(f), "rows": len(rows)})
@@ -350,7 +354,7 @@ def export(fmt):
         ws.append(row)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
-    for col, width in zip("ABCDEFG", (11, 32, 6, 6, 28, 14, 10)):
+    for col, width in zip("ABCDEFGH", (11, 32, 6, 6, 28, 14, 12, 10)):
         ws.column_dimensions[col].width = width
     out = io.BytesIO()
     wb.save(out)
