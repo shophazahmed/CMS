@@ -96,7 +96,8 @@ voters. "Most active this week" ranks people by their canvassing updates.
   **Assign to an agent**, tick voters (or choose "all matching voters", up to 5,000) and assign. A voter
   handed out this way belongs to that agent even if their house belongs to someone else; pick
   "back to their house's agent" to undo. Cards show the agent's name, the Agents page shows
-  "+N one by one", and every change is in the activity log.
+  "+N one by one", and every change is in the activity log. The CSV/Excel export has **Agent** (the
+  voter's agent) and **Agent via** ("One by one" or "House") columns.
 - **What agents see:** only the voters in their own houses (minus any handed to another agent) plus
   the voters handed to them one by one, in search, voter pages, photos and status
   updates. They don't see the dashboard and can't export.

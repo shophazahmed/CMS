@@ -152,6 +152,15 @@ def test_assign_individual_voters(app):
     # admin sees who has them, filters by agent, and sends one back to the house agent by filter
     assert "sara" in a.get("/?h=Rose+Villa").get_data(as_text=True)
     assert a.get(f"/?va={sara}").get_data(as_text=True).count('id="v-A2000') == 2
+    import csv as _csv
+    rows = {r["ID"]: r for r in _csv.DictReader(a.get("/export.csv").get_data(as_text=True).lstrip("\ufeff").splitlines())}
+    assert (rows[rose[0]]["Agent"], rows[rose[0]]["Agent via"]) == ("sara", "One by one")
+    assert (rows[rose[1]]["Agent"], rows[rose[1]]["Agent via"]) == ("ali", "House")
+    assert rows["A200002"]["Agent"] == "sara"
+    from openpyxl import load_workbook
+    import io as _io
+    ws = load_workbook(_io.BytesIO(a.get("/export.xlsx").data)).active
+    assert [c.value for c in ws[1]][8:10] == ["Agent", "Agent via"]
     a.post("/voters/assign", data={"csrf_token": token, "agent": "", "scope": "all", "h": "Rose Villa"})
     assert a.get(f"/?va={sara}").get_data(as_text=True).count('id="v-A2000') == 1
     assert f'id="v-{rose[0]}"' in g.get("/").get_data(as_text=True)

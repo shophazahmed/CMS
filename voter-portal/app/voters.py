@@ -539,7 +539,16 @@ def delete(national_id):
 # --- admin: export ----------------------------------------------------------
 
 EXPORT_HEADERS = ["ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
-                  "Status", "Status changed", "Notes"]
+                  "Agent", "Agent via", "Status", "Status changed", "Notes"]
+
+# The agent responsible for a voter: the one they were handed to individually, else their house's agent
+EXPORT_AGENT = (
+    "COALESCE((SELECT u.username FROM voter_assignments va JOIN users u ON u.id = va.user_id"
+    " WHERE va.national_id = voters.national_id),"
+    " (SELECT u.username FROM house_assignments a JOIN users u ON u.id = a.user_id"
+    " WHERE a.house_name = voters.house_name AND voters.house_name != '')) AS agent,"
+    " EXISTS (SELECT 1 FROM voter_assignments va WHERE va.national_id = voters.national_id) AS one_by_one"
+)
 
 
 def _safe_cell(value):
@@ -556,10 +565,12 @@ def export(fmt):
         abort(404)
     f = read_filters(request.args)
     where, params = build_where(f)
-    rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
+    rows = get_db().execute(
+        f"SELECT *, {EXPORT_AGENT} FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
     table = [
         [_safe_cell(r["national_id"]), _safe_cell(r["full_name"]), r["sex"], r["age"],
          _safe_cell(r["house_name"]), _safe_cell(r["party"]), r["phone"], "yes" if r["photo_path"] else "",
+         _safe_cell(r["agent"] or ""), ("One by one" if r["one_by_one"] else "House") if r["agent"] else "",
          STATUSES.get(r["status"], r["status"]), (r["status_at"] or "")[:16].replace("T", " "),
          _safe_cell(r["notes"])]
         for r in rows
@@ -593,7 +604,7 @@ def export(fmt):
         ws.append(row)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
-    for col, width in zip("ABCDEFGHIJK", (11, 32, 6, 6, 28, 14, 12, 10, 14, 17, 40)):
+    for col, width in zip("ABCDEFGHIJKLM", (11, 32, 6, 6, 28, 14, 12, 10, 16, 12, 14, 17, 40)):
         ws.column_dimensions[col].width = width
     out = io.BytesIO()
     wb.save(out)
