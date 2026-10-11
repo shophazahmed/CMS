@@ -63,6 +63,8 @@ def read_filters(args):
         "age_max": int_or_none("age_max"),
         "status": args.get("status", "") if args.get("status", "") in STATUSES else "",
         # Individually assigned: an agent's id, or "any"
+        # Who last set the status (someone who reached the voter): a user id
+        "by": args.get("by", "") if args.get("by", "").isdigit() else "",
         # Responsible agent (house or one by one): an agent's id, or "none"
         "ag": args.get("ag", "") if args.get("ag", "") == "none" or args.get("ag", "").isdigit() else "",
         "va": args.get("va", "") if args.get("va", "") == "any" or args.get("va", "").isdigit() else "",
@@ -139,6 +141,9 @@ def build_where(f):
     if f.get("status"):
         clauses.append("status = ?")
         params.append(f["status"])
+    if f.get("by"):
+        clauses.append("status_by = ? AND status != 'new'")
+        params.append(int(f["by"]))
     if f.get("ag") == "none":
         clauses.append(NO_AGENT)
     elif f.get("ag"):
@@ -178,6 +183,10 @@ def search():
     w, p = scoped(" WHERE house_name != ''")
     houses = [r[0] for r in db.execute(
         f"SELECT DISTINCT house_name FROM voters{w} ORDER BY house_name COLLATE NOCASE", p)]
+    w, p = scoped(" WHERE status != 'new'")
+    contacted_by = db.execute(
+        "SELECT id, username FROM users WHERE id IN"
+        f" (SELECT DISTINCT status_by FROM voters{w}) ORDER BY username COLLATE NOCASE", p).fetchall()
     w, p = scoped()
     stats = db.execute(
         f"SELECT COUNT(*) AS total, SUM(sex = 'M') AS male, SUM(sex = 'F') AS female FROM voters{w}", p
@@ -205,6 +214,7 @@ def search():
         stats=stats,
         query_args=query_args,
         agents=agent_list() if is_admin() else [],
+        contacted_by=contacted_by,
         agent_options=agent_list() if g.user["role"] in ("admin", "user") else [],
     )
 
@@ -241,6 +251,7 @@ def filter_chips(f, query_args):
         "age_min": lambda v: f"Age ≥ {v}",
         "age_max": lambda v: f"Age ≤ {v}",
         "va": _agent_name,
+        "by": lambda v: _agent_name(v).replace("Assigned to", "Contacted by"),
         "ag": lambda v: "No agent" if v == "none" else _agent_name(v).replace("Assigned to", "Agent:"),
     }
     chips = []

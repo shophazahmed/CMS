@@ -189,3 +189,22 @@ def test_card_shows_who_changed_last(app):
     assert "Follow up by <strong>boss</strong>" in card and "Edited by <strong>boss</strong>" in card
     header = a.get("/export.csv").get_data(as_text=True).splitlines()[0]
     assert "Status by" in header and "Last edited by" in header
+
+
+def test_filter_by_who_contacted(app):
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    u.post("/voters/A200001/canvass", data={"csrf_token": csrf(u, "/"), "status": "contacted"})
+    a.post("/voters/A200002/canvass", data={"csrf_token": csrf(a, "/"), "status": "noanswer"})
+    ids = {r[1]: r[0] for r in connect(app.config["DATABASE"]).execute("SELECT id, username FROM users")}
+    page = a.get("/").get_data(as_text=True)
+    assert "Contacted by" in page and f'<option value="{ids["viewer"]}"' in page
+    page = a.get(f"/?by={ids['viewer']}").get_data(as_text=True)
+    assert page.count('id="v-A2000') == 1 and 'id="v-A200001"' in page and "Contacted by viewer" in page
+    lines = a.get(f"/export.csv?by={ids['boss']}").get_data(as_text=True).strip().splitlines()
+    assert len(lines) == 2 and "A200002" in lines[1]
+    # set back to "not contacted": no longer counts as contacted by anyone
+    u.post("/voters/A200001/canvass", data={"csrf_token": csrf(u, "/"), "status": "new"})
+    assert a.get(f"/?by={ids['viewer']}").get_data(as_text=True).count('id="v-A2000') == 0

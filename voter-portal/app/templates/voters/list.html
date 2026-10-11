@@ -6,7 +6,7 @@
     {{ icon('search') }}
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone"
            aria-label="Search name, ID, house or phone" autocomplete="off" enterkeyhint="search">
-    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'sort') %}
+    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'by', 'sort') %}
       {% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}
     {% endfor %}
     <button class="primary" type="submit">Search</button>
@@ -64,6 +64,14 @@
         <input type="number" inputmode="numeric" name="age_max" min="0" max="130" value="{{ f.age_max if f.age_max is not none }}" placeholder="to" aria-label="Age to">
       </span>
     </label>
+    {% if contacted_by %}
+    <label>Contacted by
+      <select name="by">
+        <option value="">Anyone</option>
+        {% for u in contacted_by %}<option value="{{ u.id }}" {{ 'selected' if f.by == u.id|string }}>{{ u.username }}</option>{% endfor %}
+      </select>
+    </label>
+    {% endif %}
     {% if agent_options %}
     <label>Agent
       <select name="ag">

@@ -101,6 +101,8 @@ voters. "Most active this week" ranks people by their canvassing updates.
 - **Agent filter:** in Search, **More filters → Agent** shows the voters an agent is responsible for
   (their houses plus voters handed to them, minus voters handed to someone else), or **No agent**.
   The CSV/Excel buttons export exactly what the search shows, so use it to export one agent's list.
+- **Contacted by filter:** **More filters → Contacted by** lists the voters a person last marked as
+  contacted, follow up or no answer (anyone who has done so appears in the list). Exports follow it too.
 - **Who changed it:** each voter card shows who last set the canvassing status (and when), and who
   last edited the voter's details.
 - **What agents see:** only the voters in their own houses (minus any handed to another agent) plus
