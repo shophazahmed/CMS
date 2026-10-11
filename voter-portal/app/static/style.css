@@ -471,6 +471,22 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .assign-main .pbar { grid-column: 1 / -1; }
 .assign-list select { min-height: 40px; padding: .35rem .55rem; width: 100%; }
 
+/* --- campaign scope --------------------------------------------------------- */
+.campaign-banner {
+  display: flex; align-items: center; justify-content: space-between; gap: .5rem .75rem; flex-wrap: wrap;
+  margin: 0 0 .9rem; padding: .5rem .6rem .5rem .9rem; border-radius: var(--radius-sm); font-size: .9rem;
+  background: var(--accent-soft); color: var(--text);
+}
+.campaign-banner.all { background: var(--secret-bg); color: var(--secret-text); }
+.party-checks { display: grid; gap: .5rem; }
+.party-option {
+  display: flex; align-items: center; gap: .75rem; padding: .7rem .8rem; min-height: var(--tap);
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-2);
+}
+.party-option span { display: flex; justify-content: space-between; gap: .75rem; flex: 1; }
+.party-option:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
 /* --- wider screens ------------------------------------------------------ */
 @media (min-width: 720px) {
   .topnav { display: flex; }

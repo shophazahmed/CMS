@@ -19,7 +19,7 @@ from flask import (
     url_for,
 )
 
-from . import audit
+from . import audit, campaign
 from .auth import admin_required, is_admin, login_required
 from .db import get_db, now_iso
 from .normalize import clean_text, normalize_age, normalize_id, normalize_party, normalize_phone, normalize_sex
@@ -75,13 +75,14 @@ def agent_scope():
 
 
 def scoped(sql_where="", params=()):
-    """Add the agent scope to a WHERE clause ('' or ' WHERE ...')."""
-    clause, extra = agent_scope()
-    if not clause:
-        return sql_where, list(params)
-    if sql_where:
-        return f"{sql_where} AND {clause}", list(params) + extra
-    return f" WHERE {clause}", extra
+    """Add the access scope (agent's houses, campaign parties) to a WHERE clause ('' or ' WHERE ...')."""
+    params = list(params)
+    for clause, extra in (agent_scope(), campaign.party_scope()):
+        if not clause:
+            continue
+        sql_where = f"{sql_where} AND {clause}" if sql_where else f" WHERE {clause}"
+        params += extra
+    return sql_where, params
 
 
 def build_where(f):

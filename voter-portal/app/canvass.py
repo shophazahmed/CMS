@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from . import audit
+from . import audit, campaign
 from .auth import role_required
 from .db import get_db, now_iso
 
@@ -43,6 +43,9 @@ def local_day_start_utc():
 
 
 def house_rows(where="", params=(), sort="progress"):
+    clause, extra = campaign.party_scope("v.party")
+    if clause:
+        where, params = f"{where} AND {clause}", list(params) + extra
     sql = f"{HOUSE_STATS} WHERE v.house_name != '' {where} GROUP BY v.house_name ORDER BY {SORTS[sort]}"
     return get_db().execute(sql, list(params)).fetchall()
 
@@ -94,9 +97,12 @@ def dashboard():
         where += " AND a.user_id = ?"
         params.append(int(agent))
     rows = house_rows(where, params, sort)
-    parties = [r[0] for r in db.execute("SELECT DISTINCT party FROM voters WHERE party != '' ORDER BY party")]
+    clause, extra = campaign.party_scope()
+    scope = f" AND {clause}" if clause else ""
+    parties = [r[0] for r in db.execute(
+        f"SELECT DISTINCT party FROM voters WHERE party != ''{scope} ORDER BY party", extra)]
     agents = db.execute("SELECT id, username FROM users WHERE role = 'agent' ORDER BY username").fetchall()
-    no_house = db.execute("SELECT COUNT(*) FROM voters WHERE house_name = ''").fetchone()[0]
+    no_house = db.execute(f"SELECT COUNT(*) FROM voters WHERE house_name = ''{scope}", extra).fetchone()[0]
     return render_template(
         "canvass/dashboard.html", rows=rows, t=totals(rows), act=activity(), parties=parties, agents=agents,
         party=party, agent=agent, sort=sort, sorts=SORTS, no_house=no_house,
@@ -131,6 +137,8 @@ def my_houses():
 
 def _agents(active_only=False):
     cond = " AND u.is_active = 1" if active_only else ""
+    clause, extra = campaign.party_scope("v.party")
+    join_scope = f" AND {clause}" if clause else ""
     return get_db().execute(
         f"""SELECT u.id, u.username, u.is_active, u.last_login_at,
                    COUNT(DISTINCT a.house_name) AS houses,
@@ -142,9 +150,9 @@ def _agents(active_only=False):
                    SUM(v.status = 'noanswer') AS noanswer
             FROM users u
             LEFT JOIN house_assignments a ON a.user_id = u.id
-            LEFT JOIN voters v ON v.house_name = a.house_name
+            LEFT JOIN voters v ON v.house_name = a.house_name{join_scope}
             WHERE u.role = 'agent'{cond}
-            GROUP BY u.id ORDER BY u.username COLLATE NOCASE"""
+            GROUP BY u.id ORDER BY u.username COLLATE NOCASE""", extra
     ).fetchall()
 
 

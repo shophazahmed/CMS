@@ -7,7 +7,7 @@ import click
 from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from . import admin, auth, canvass, imports, voters
+from . import admin, auth, campaign, canvass, imports, voters
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -58,10 +58,12 @@ def create_app(test_config=None):
     app.register_blueprint(admin.bp)
     app.register_blueprint(imports.bp)
     app.register_blueprint(canvass.bp)
+    app.register_blueprint(campaign.bp)
 
     @app.context_processor
     def inject():
-        return {"csrf_token": auth.csrf_token, "current_user": g.get("user"), "is_admin": auth.is_admin()}
+        return {"csrf_token": auth.csrf_token, "current_user": g.get("user"), "is_admin": auth.is_admin(),
+                "campaign_banner": campaign.banner}
 
     @app.after_request
     def security_headers(resp):
@@ -95,6 +97,7 @@ def create_app(test_config=None):
         conn = connect(app.config["DATABASE"])
         init_schema(conn)
         imports.init_schema(conn)
+        campaign.init_schema(conn)
         bootstrap_admin(conn)
         conn.close()
     return app

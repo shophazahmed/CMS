@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}Campaign settings{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Campaign settings</h1>
+  <p class="muted">Choose whose voters this campaign works with. Everyone else is hidden from users and agents
+    in search, voter pages, photos, the dashboard and My houses.</p>
+</div>
+
+<form class="card form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h2>Show voters of these parties</h2>
+  <fieldset class="checks party-checks">
+    <legend class="sr-only">Parties</legend>
+    {% for party, n in options %}
+    <label class="check party-option">
+      <input type="checkbox" name="parties" value="{{ party }}" {{ 'checked' if party in current }}>
+      <span><strong>{{ 'No party recorded' if party == '(none)' else party }}</strong>
+        <span class="muted">{{ n }} voter{{ 's' if n != 1 }}</span></span>
+    </label>
+    {% endfor %}
+  </fieldset>
+  <div class="actions">
+    <button class="primary" name="mode" value="selected">Save</button>
+    {% if current %}<button name="mode" value="all" data-confirm-click="Show every party's voters to everyone again?">Show all parties</button>{% endif %}
+  </div>
+  {% if current %}
+  <p class="flash flash-info">Now showing <strong>{{ current|join(', ')|replace('(none)', 'No party') }}</strong> only;
+    {{ hidden }} other voter{{ 's' if hidden != 1 }} hidden.</p>
+  {% else %}
+  <p class="muted">Right now every party is shown. Tick <strong>MDP</strong> and save to show MDP members only.</p>
+  {% endif %}
+</form>
+
+<div class="card">
+  <h2>How it works</h2>
+  <ul class="muted">
+    <li>Hidden voters are not deleted. Imports keep updating them, and they appear automatically if their
+      party changes to one you show (for example, when they join the MDP list).</li>
+    <li>Admins see the campaign view too, and can tap <strong>Show all parties</strong> in the banner
+      to look someone up. That only changes the view for the admin who taps it, and it's logged.</li>
+    <li>Houses with no voters in the campaign drop off the dashboard and the assignment lists.</li>
+  </ul>
+</div>
+{% endblock %}

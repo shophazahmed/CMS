@@ -59,3 +59,9 @@ document.addEventListener("input", (event) => {
     row.hidden = term !== "" && !row.dataset.filterText.includes(term);
   });
 });
+
+// Confirm for a single button (forms use data-confirm on the form itself).
+document.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-confirm-click]");
+  if (button && !window.confirm(button.dataset.confirmClick)) event.preventDefault();
+});

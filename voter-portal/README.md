@@ -42,6 +42,20 @@ can record visits; they still can't change any other voter detail.
 - **Imports never touch canvassing data.** Replace mode removes voters missing from the files and
   overwrites the rest in place, so their status and notes are kept.
 
+## Campaign parties (e.g. MDP only)
+
+**Settings → Show voters of these parties**: tick the parties the campaign covers (for example MDP)
+and save.
+- **Who's affected:** users and agents then never see other voters. That covers search, voter pages
+  and photos (direct links give "not found"), status updates, the dashboard, My houses and the
+  assignment lists.
+- **Admins** see the same campaign view, with a banner button **Show all parties**. It changes the
+  view for that admin only, until they switch back, and it's logged. Exports follow the current view.
+- **Hidden voters are not deleted.** Imports keep updating them, and anyone whose party changes to
+  a campaign party (for example by joining the MDP list) appears automatically.
+- **"No party recorded"** can be included too. **Show all parties** on the settings page turns the
+  filter off for everyone.
+
 ## Dashboard and agents
 
 **Dashboard** (admins and users): overall progress (voters reached, contacted, follow up, no answer,

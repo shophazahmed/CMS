@@ -34,7 +34,7 @@
       <a href="{{ url_for('canvass.agents') }}" {{ 'aria-current=page' if ep == 'canvass.agents' or (ep == 'canvass.my_houses') }}>Agents</a>
       <a href="{{ url_for('imports.index') }}" {{ 'aria-current=page' if ep.startswith('imports.') }}>Import</a>
       <a href="{{ url_for('admin.users') }}" {{ 'aria-current=page' if ep.startswith('admin.user') }}>Users</a>
-      <a href="{{ url_for('admin.audit_log') }}" {{ 'aria-current=page' if ep == 'admin.audit_log' }}>Activity log</a>
+      <a href="{{ url_for('campaign.settings') }}" {{ 'aria-current=page' if ep == 'campaign.settings' }}>Settings</a>
       {% endif %}
     </nav>
     <details class="account">
@@ -47,6 +47,7 @@
         {% if is_admin %}
         <a href="{{ url_for('voters.create') }}">Add a voter</a>
         <a href="{{ url_for('admin.audit_log') }}">Activity log</a>
+        <a href="{{ url_for('campaign.settings') }}">Campaign settings</a>
         {% endif %}
         <a href="{{ url_for('auth.change_password') }}">Change password</a>
         <form method="post" action="{{ url_for('auth.logout') }}">
@@ -59,6 +60,20 @@
   {% endif %}
 
   <main class="{% block main_class %}page{% endblock %}">
+    {% set cb = campaign_banner() if current_user else none %}
+    {% if cb %}
+    <form class="campaign-banner {{ 'all' if cb.all }}" method="post" action="{{ url_for('campaign.toggle_view_all') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+      {% if cb.all %}
+      <span>Showing <strong>all parties</strong> (only you). Other users see {{ cb.label }} only.</span>
+      <button class="small">Back to {{ cb.label }} only</button>
+      {% else %}
+      <span>Campaign view: <strong>{{ cb.label }}</strong> voters only</span>
+      <button class="small">Show all parties</button>
+      {% endif %}
+    </form>
+    {% endif %}
     {% with messages = get_flashed_messages(with_categories=true) %}
       {% for category, message in messages %}
         <div class="flash flash-{{ category }}" role="status">{{ message }}</div>
