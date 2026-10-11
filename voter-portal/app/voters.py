@@ -2,7 +2,7 @@
 import csv
 import io
 import os
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 
 from flask import (
     Blueprint,
@@ -63,9 +63,23 @@ def read_filters(args):
         "age_max": int_or_none("age_max"),
         "status": args.get("status", "") if args.get("status", "") in STATUSES else "",
         # Individually assigned: an agent's id, or "any"
+        # Responsible agent (house or one by one): an agent's id, or "none"
+        "ag": args.get("ag", "") if args.get("ag", "") == "none" or args.get("ag", "").isdigit() else "",
         "va": args.get("va", "") if args.get("va", "") == "any" or args.get("va", "").isdigit() else "",
         "sort": args.get("sort", "name") if args.get("sort") in SORTS else "name",
     }
+
+
+def handled_by(placeholder="?"):
+    """Voters an agent is responsible for: handed to them one by one, or in their house and not handed
+    to anyone else individually."""
+    return (f"(national_id IN (SELECT national_id FROM voter_assignments WHERE user_id = {placeholder})"
+            f" OR (house_name IN (SELECT house_name FROM house_assignments WHERE user_id = {placeholder})"
+            " AND national_id NOT IN (SELECT national_id FROM voter_assignments)))")
+
+
+NO_AGENT = ("(national_id NOT IN (SELECT national_id FROM voter_assignments)"
+            " AND house_name NOT IN (SELECT house_name FROM house_assignments))")
 
 
 def agent_scope():
@@ -73,9 +87,7 @@ def agent_scope():
     plus everyone in their houses who hasn't been handed to someone individually."""
     user = g.get("user")
     if user is not None and user["role"] == "agent":
-        return ("(national_id IN (SELECT national_id FROM voter_assignments WHERE user_id = ?)"
-                " OR (house_name IN (SELECT house_name FROM house_assignments WHERE user_id = ?)"
-                " AND national_id NOT IN (SELECT national_id FROM voter_assignments)))"), [user["id"], user["id"]]
+        return handled_by(), [user["id"], user["id"]]
     return None, []
 
 
@@ -127,6 +139,11 @@ def build_where(f):
     if f.get("status"):
         clauses.append("status = ?")
         params.append(f["status"])
+    if f.get("ag") == "none":
+        clauses.append(NO_AGENT)
+    elif f.get("ag"):
+        clauses.append(handled_by())
+        params += [int(f["ag"])] * 2
     if f.get("va") == "any":
         clauses.append("national_id IN (SELECT national_id FROM voter_assignments)")
     elif f.get("va"):
@@ -153,7 +170,7 @@ def search():
     pages = max(1, -(-total // PAGE_SIZE))
     page = min(page, pages)
     rows = db.execute(
-        f"SELECT *, ({ASSIGNED_TO}) AS assigned_to FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
+        f"SELECT *, ({ASSIGNED_TO}) AS assigned_to, {WHO} FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
         params + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
     ).fetchall()
     w, p = scoped(" WHERE party != ''")
@@ -188,8 +205,12 @@ def search():
         stats=stats,
         query_args=query_args,
         agents=agent_list() if is_admin() else [],
+        agent_options=agent_list() if g.user["role"] in ("admin", "user") else [],
     )
 
+
+WHO = ("(SELECT username FROM users WHERE id = voters.status_by) AS status_by_name,"
+       " (SELECT username FROM users WHERE id = voters.updated_by) AS updated_by_name")
 
 ASSIGNED_TO = ("SELECT u.username FROM voter_assignments va JOIN users u ON u.id = va.user_id"
                " WHERE va.national_id = voters.national_id")
@@ -220,6 +241,7 @@ def filter_chips(f, query_args):
         "age_min": lambda v: f"Age ≥ {v}",
         "age_max": lambda v: f"Age ≤ {v}",
         "va": _agent_name,
+        "ag": lambda v: "No agent" if v == "none" else _agent_name(v).replace("Assigned to", "Agent:"),
     }
     chips = []
     for key, value in active_filters(f).items():
@@ -296,7 +318,8 @@ def canvass(national_id):
         db.commit()
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True, "changed": bool(changes), "status": status or voter["status"],
-                "label": STATUSES[status or voter["status"]], "by": g.user["username"]}
+                "label": STATUSES[status or voter["status"]], "by": g.user["username"],
+                "at": current_app.jinja_env.filters["local"](stamp) if changes else None}
     flash("Saved." if changes else "Nothing changed.", "success" if changes else "info")
     back = _safe_back(request.form.get("back"))
     if request.form.get("from") == "list":
@@ -539,7 +562,8 @@ def delete(national_id):
 # --- admin: export ----------------------------------------------------------
 
 EXPORT_HEADERS = ["ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
-                  "Agent", "Agent via", "Status", "Status changed", "Notes"]
+                  "Agent", "Agent via", "Status", "Status changed", "Status by", "Notes",
+                  "Last edited", "Last edited by"]
 
 # The agent responsible for a voter: the one they were handed to individually, else their house's agent
 EXPORT_AGENT = (
@@ -549,6 +573,16 @@ EXPORT_AGENT = (
     " WHERE a.house_name = voters.house_name AND voters.house_name != '')) AS agent,"
     " EXISTS (SELECT 1 FROM voter_assignments va WHERE va.national_id = voters.national_id) AS one_by_one"
 )
+
+
+def _local(value):
+    """Stored UTC timestamp -> Maldives time for spreadsheets ('2026-10-11 17:20')."""
+    if not value:
+        return ""
+    stamp = datetime.fromisoformat(value)
+    if stamp.tzinfo is None:
+        stamp = stamp.replace(tzinfo=timezone.utc)
+    return (stamp + timedelta(hours=5)).strftime("%Y-%m-%d %H:%M")
 
 
 def _safe_cell(value):
@@ -566,13 +600,15 @@ def export(fmt):
     f = read_filters(request.args)
     where, params = build_where(f)
     rows = get_db().execute(
-        f"SELECT *, {EXPORT_AGENT} FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
+        f"SELECT *, {EXPORT_AGENT}, {WHO} FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
     table = [
         [_safe_cell(r["national_id"]), _safe_cell(r["full_name"]), r["sex"], r["age"],
          _safe_cell(r["house_name"]), _safe_cell(r["party"]), r["phone"], "yes" if r["photo_path"] else "",
          _safe_cell(r["agent"] or ""), ("One by one" if r["one_by_one"] else "House") if r["agent"] else "",
-         STATUSES.get(r["status"], r["status"]), (r["status_at"] or "")[:16].replace("T", " "),
-         _safe_cell(r["notes"])]
+         STATUSES.get(r["status"], r["status"]), _local(r["status_at"]),
+         _safe_cell(r["status_by_name"] or ""), _safe_cell(r["notes"]),
+         _local(r["updated_at"]) if r["updated_by"] else "",
+         _safe_cell(r["updated_by_name"] or "")]
         for r in rows
     ]
     audit.log("export", target=fmt, detail={"filters": active_filters(f), "rows": len(rows)})
@@ -604,7 +640,7 @@ def export(fmt):
         ws.append(row)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
-    for col, width in zip("ABCDEFGHIJKLM", (11, 32, 6, 6, 28, 14, 12, 10, 16, 12, 14, 17, 40)):
+    for col, width in zip("ABCDEFGHIJKLMNOP", (11, 32, 6, 6, 28, 14, 12, 10, 16, 12, 14, 17, 14, 40, 17, 14)):
         ws.column_dimensions[col].width = width
     out = io.BytesIO()
     wb.save(out)

@@ -1,7 +1,7 @@
 """Gadhdhoo voter portal: Flask application factory."""
 import os
 import secrets
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import click
 from flask import Flask, g, render_template
@@ -60,6 +60,19 @@ def create_app(test_config=None):
     app.register_blueprint(canvass.bp)
     app.register_blueprint(campaign.bp)
     app.register_blueprint(campaign.themes_bp)
+
+    @app.template_filter("local")
+    def local_time(value):
+        """Stored UTC timestamp -> Maldives time, e.g. '11 Oct 17:20'."""
+        if not value:
+            return ""
+        try:
+            stamp = datetime.fromisoformat(value)
+        except ValueError:
+            return value[:16].replace("T", " ")
+        if stamp.tzinfo is None:
+            stamp = stamp.replace(tzinfo=timezone.utc)
+        return (stamp + timedelta(hours=5)).strftime("%-d %b %H:%M")
 
     @app.context_processor
     def inject():

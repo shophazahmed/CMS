@@ -97,7 +97,12 @@ voters. "Most active this week" ranks people by their canvassing updates.
   handed out this way belongs to that agent even if their house belongs to someone else; pick
   "back to their house's agent" to undo. Cards show the agent's name, the Agents page shows
   "+N one by one", and every change is in the activity log. The CSV/Excel export has **Agent** (the
-  voter's agent) and **Agent via** ("One by one" or "House") columns.
+  voter's agent) and **Agent via** ("One by one" or "House") columns, plus **Status by**, **Last edited** and **Last edited by**. Times are Maldives time.
+- **Agent filter:** in Search, **More filters → Agent** shows the voters an agent is responsible for
+  (their houses plus voters handed to them, minus voters handed to someone else), or **No agent**.
+  The CSV/Excel buttons export exactly what the search shows, so use it to export one agent's list.
+- **Who changed it:** each voter card shows who last set the canvassing status (and when), and who
+  last edited the voter's details.
 - **What agents see:** only the voters in their own houses (minus any handed to another agent) plus
   the voters handed to them one by one, in search, voter pages, photos and status
   updates. They don't see the dashboard and can't export.

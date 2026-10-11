@@ -6,7 +6,7 @@
     {{ icon('search') }}
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone"
            aria-label="Search name, ID, house or phone" autocomplete="off" enterkeyhint="search">
-    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'va', 'sort') %}
+    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'sort') %}
       {% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}
     {% endfor %}
     <button class="primary" type="submit">Search</button>
@@ -64,6 +64,15 @@
         <input type="number" inputmode="numeric" name="age_max" min="0" max="130" value="{{ f.age_max if f.age_max is not none }}" placeholder="to" aria-label="Age to">
       </span>
     </label>
+    {% if agent_options %}
+    <label>Agent
+      <select name="ag">
+        <option value="">Any</option>
+        {% for a in agent_options %}<option value="{{ a.id }}" {{ 'selected' if f.ag == a.id|string }}>{{ a.username }}{{ ' (deactivated)' if not a.is_active }}</option>{% endfor %}
+        <option value="none" {{ 'selected' if f.ag == 'none' }}>No agent</option>
+      </select>
+    </label>
+    {% endif %}
     <label>Sort by
       <select name="sort">
         {% for key, label in [('name','Name'),('house','House'),('age','Age'),('party','Party'),('id','ID')] %}
@@ -162,6 +171,10 @@
       </span>
       {% endif %}
     </form>
+    <p class="vcard-who small-text muted" data-who>
+      {%- if v.status_by_name %}<span data-who-status>{{ statuses[v.status] if v.status != 'new' else 'Changed' }} by <strong>{{ v.status_by_name }}</strong> · {{ v.status_at|local }}</span>{% endif -%}
+      {%- if v.updated_by_name %}<span>Edited by <strong>{{ v.updated_by_name }}</strong> · {{ v.updated_at|local }}</span>{% endif -%}
+    </p>
     {% if v.notes %}<p class="vcard-notes">{{ v.notes|truncate(140) }}</p>{% endif %}
   </li>
   {% endfor %}

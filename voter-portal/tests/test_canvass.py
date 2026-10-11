@@ -161,8 +161,31 @@ def test_assign_individual_voters(app):
     import io as _io
     ws = load_workbook(_io.BytesIO(a.get("/export.xlsx").data)).active
     assert [c.value for c in ws[1]][8:10] == ["Agent", "Agent via"]
+    # agent filter (responsible agent, house or one by one), and the export follows it
+    assert a.get(f"/?ag={sara}").get_data(as_text=True).count('id="v-A2000') == 2
+    page = a.get(f"/?ag={ali}").get_data(as_text=True)
+    assert page.count('id="v-A2000') == 1 and f'id="v-{rose[1]}"' in page and "Agent: ali" in page
+    lines = a.get(f"/export.csv?ag={ali}").get_data(as_text=True).strip().splitlines()
+    assert len(lines) == 2 and rose[1] in lines[1]
+    assert a.get("/?ag=none").get_data(as_text=True).count('id="v-A2000') == 0
     a.post("/voters/assign", data={"csrf_token": token, "agent": "", "scope": "all", "h": "Rose Villa"})
     assert a.get(f"/?va={sara}").get_data(as_text=True).count('id="v-A2000') == 1
     assert f'id="v-{rose[0]}"' in g.get("/").get_data(as_text=True)
     conn = connect(app.config["DATABASE"])
     assert conn.execute("SELECT COUNT(*) FROM audit_log WHERE action = 'voters_assigned'").fetchone()[0] == 3
+
+
+def test_card_shows_who_changed_last(app):
+    add_agent(app, "ali")
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    token = csrf(a, "/")
+    r = a.post("/voters/A200002/canvass", data={"csrf_token": token, "status": "followup"},
+               headers={"X-Requested-With": "fetch"})
+    assert r.json["by"] == "boss" and r.json["at"]
+    a.post("/voters/A200002/edit", data={"csrf_token": token, "full_name": "Moosa Beta", "sex": "M", "age": "61",
+                                          "house_name": "Blue Ge", "party": "BBB", "phone": ""})
+    card = a.get("/?q=Moosa").get_data(as_text=True)
+    assert "Follow up by <strong>boss</strong>" in card and "Edited by <strong>boss</strong>" in card
+    header = a.get("/export.csv").get_data(as_text=True).splitlines()[0]
+    assert "Status by" in header and "Last edited by" in header

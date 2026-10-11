@@ -39,7 +39,7 @@
     </label>
     <div class="canvass-foot">
       <button class="primary">Save status &amp; notes</button>
-      {% if v.status_at %}<span class="muted small-text">Last updated {{ v.status_at[:16].replace('T', ' ') }}{% if status_user %} by {{ status_user.username }}{% endif %}</span>{% endif %}
+      {% if v.status_at %}<span class="muted small-text">Last updated {{ v.status_at|local }}{% if status_user %} by {{ status_user.username }}{% endif %}</span>{% endif %}
     </div>
   </form>
 
@@ -72,7 +72,7 @@
     {% endif %}
     {% if is_admin %}
     <div class="wide"><dt>Source</dt><dd>{{ v.source }}</dd></div>
-    <div class="wide"><dt>Last changed</dt><dd>{{ v.updated_at[:16].replace('T', ' ') }}{% if editor %} by {{ editor.username }}{% endif %}</dd></div>
+    <div class="wide"><dt>Last changed</dt><dd>{{ v.updated_at|local }}{% if editor %} by {{ editor.username }}{% endif %}</dd></div>
     {% endif %}
   </dl>
 

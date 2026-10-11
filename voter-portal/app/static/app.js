@@ -42,6 +42,14 @@ document.addEventListener("change", async (event) => {
       if (el) el.textContent = Math.max(0, parseInt(el.textContent, 10) + delta);
     };
     if (data.changed && oldKey && oldKey !== data.status) { bump(oldKey, -1); bump(data.status, 1); }
+    const who = card.querySelector("[data-who]");
+    if (who && data.changed) {
+      let line = who.querySelector("[data-who-status]");
+      if (!line) { line = document.createElement("span"); line.dataset.whoStatus = ""; who.prepend(line); }
+      const name = document.createElement("strong");
+      name.textContent = data.by;
+      line.replaceChildren(`${data.status === "new" ? "Changed" : data.label} by `, name, ` · ${data.at}`);
+    }
     state.textContent = "Saved ✓";
     setTimeout(() => { state.textContent = ""; }, 2000);
   } catch (err) {

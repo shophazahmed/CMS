@@ -201,7 +201,9 @@ def test_canvassing_status_and_notes(app):
     # background save from a card
     r = u.post("/voters/A200001/canvass", data={"csrf_token": token, "status": "contacted"},
                headers={"X-Requested-With": "fetch"})
-    assert r.get_json() == {"ok": True, "changed": True, "status": "contacted", "label": "Contacted", "by": "viewer"}
+    reply = r.get_json()
+    assert reply.pop("at")
+    assert reply == {"ok": True, "changed": True, "status": "contacted", "label": "Contacted", "by": "viewer"}
     # status + notes from the voter page (normal form post)
     r = u.post("/voters/A200002/canvass", data={"csrf_token": token, "status": "followup",
                                                 "notes": " Wants a call after 5pm \r\n", "back": "/voters/A200002"})
@@ -225,4 +227,4 @@ def test_canvassing_status_and_notes(app):
     login(a, "boss", ADMIN_PW)
     assert "voter_canvass" in a.get("/admin/audit").get_data(as_text=True)
     header = a.get("/export.csv").get_data(as_text=True).splitlines()[0]
-    assert header.endswith("Status,Status changed,Notes")
+    assert "Status,Status changed,Status by,Notes" in header

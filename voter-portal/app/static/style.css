@@ -592,3 +592,8 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .assign-one select { width: 100%; }
 .assign-one p { margin: 0; }
 .bulk-assign .wide-row { grid-column: 1 / -1; margin: 0; }
+
+/* Who changed the voter last */
+.vcard-who { margin: 0; display: flex; flex-wrap: wrap; gap: .1rem .9rem; }
+.vcard-who:empty { display: none; }
+.vcard-who strong { color: var(--text); font-weight: 600; }
