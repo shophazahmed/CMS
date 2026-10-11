@@ -1,13 +1,15 @@
 {% from "_macros.html" import icon %}
 <!doctype html>
-<html lang="en">
+{% set look = appearance() %}{% set theme = theme_name() %}
+<html lang="en"{% if look != 'system' %} data-theme="{{ look }}"{% endif %}>
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
-  <meta name="theme-color" content="#0f766e">
+  <meta name="theme-color" content="{{ themes[theme][1]['accent'] }}">
   <title>{% block title %}Voters{% endblock %} · Gadhdhoo voter portal</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+  <link rel="stylesheet" href="{{ url_for('theme.theme_css', v=theme) }}">
   <link rel="icon" href="{{ url_for('static', filename='icon.svg') }}" type="image/svg+xml">
   <link rel="apple-touch-icon" href="{{ url_for('static', filename='icon.svg') }}">
   <script src="{{ url_for('static', filename='app.js') }}" defer></script>
@@ -49,6 +51,16 @@
         <a href="{{ url_for('admin.audit_log') }}">Activity log</a>
         <a href="{{ url_for('campaign.settings') }}">Campaign settings</a>
         {% endif %}
+        <form class="appearance" method="post" action="{{ url_for('theme.set_appearance') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+          <span class="muted small-text">Appearance</span>
+          <div class="appearance-btns">
+            {% for key, label in [('system', 'Auto'), ('light', 'Light'), ('dark', 'Dark')] %}
+            <button name="appearance" value="{{ key }}" class="small {{ 'on' if look == key }}" aria-pressed="{{ 'true' if look == key else 'false' }}">{{ label }}</button>
+            {% endfor %}
+          </div>
+        </form>
         <a href="{{ url_for('auth.change_password') }}">Change password</a>
         <form method="post" action="{{ url_for('auth.logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

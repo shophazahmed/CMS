@@ -107,19 +107,12 @@
     {{ avatar(v, 'md') }}
     <div class="vcard-main">
       <a class="vcard-name" href="{{ url_for('voters.detail', national_id=v.national_id, back=back_url) }}">{{ v.full_name or '(no name)' }}</a>
-      <p class="vcard-meta">{{ v.house_name or 'No house' }}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}</p>
+      <p class="vcard-meta">{{ v.house_name or 'No house' }}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}{% if v.phone %} · <span class="mono">{{ v.phone }}</span>{% endif %}</p>
       <p class="vcard-tags">
         <span class="tag mono">{{ v.national_id }}</span>
         {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}
       </p>
     </div>
-    {% if v.phone %}
-    <div class="contact-btns">
-    {% set wa = whatsapp_url(v) %}
-    {% if wa %}<a class="wa" href="{{ wa }}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp {{ v.full_name }}">{{ icon('chat', 18) }}</a>{% endif %}
-    <a class="call" href="tel:{{ v.phone }}" aria-label="Call {{ v.full_name }}">{{ icon('phone', 18) }}<span class="call-number mono">{{ v.phone }}</span></a>
-    </div>
-    {% endif %}
     </div>
     <form class="status-form" method="post" action="{{ url_for('voters.canvass', national_id=v.national_id) }}" data-status-form>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -130,6 +123,14 @@
       </select>
       <noscript><button>Save</button></noscript>
       <span class="save-state" aria-live="polite"></span>
+      {% if v.phone %}
+      <span class="contact-btns">
+        {% set wa = whatsapp_url(v) %}{% set sms = sms_url(v) %}
+        {% if wa %}<a class="wa" href="{{ wa }}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp {{ v.full_name }}" title="WhatsApp">{{ icon('chat', 18) }}</a>{% endif %}
+        {% if sms %}<a class="sms" href="{{ sms }}" aria-label="SMS {{ v.full_name }}" title="SMS">{{ icon('sms', 18) }}</a>{% endif %}
+        <a class="call" href="tel:{{ v.phone }}" aria-label="Call {{ v.full_name }}" title="Call">{{ icon('phone', 18) }}</a>
+      </span>
+      {% endif %}
     </form>
     {% if v.notes %}<p class="vcard-notes">{{ v.notes|truncate(140) }}</p>{% endif %}
   </li>

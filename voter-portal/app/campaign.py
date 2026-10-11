@@ -8,7 +8,7 @@ import json
 import re
 from urllib.parse import quote
 
-from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
+from flask import Blueprint, Response, flash, g, redirect, render_template, request, session, url_for
 
 from . import audit
 from .auth import admin_required
@@ -20,6 +20,48 @@ NO_PARTY = "(none)"  # how a blank party is stored in the setting
 DEFAULT_WHATSAPP = "Assalaamu alaikum {first_name}, "
 MAX_TEMPLATE = 600
 PLACEHOLDER = re.compile(r"\{(first_name|name|house|id)\}")
+
+
+# Colour presets: (light, dark) values for the accent tokens in style.css. "ink" is the accent
+# used for text, so it stays readable on light backgrounds even for yellow.
+THEMES = {
+    "teal": ("Teal", {"accent": "#0f766e", "accent-strong": "#0b5e58", "accent-soft": "#e3f4f2",
+                      "accent-text": "#ffffff", "accent-ink": "#0f766e"},
+                     {"accent": "#2dd4bf", "accent-strong": "#5eead4", "accent-soft": "#123a36",
+                      "accent-text": "#06201d", "accent-ink": "#5eead4"}),
+    "mdp": ("MDP yellow", {"accent": "#f5c400", "accent-strong": "#e0b200", "accent-soft": "#fff5c7",
+                           "accent-text": "#1c1700", "accent-ink": "#7a5a00"},
+                          {"accent": "#facc15", "accent-strong": "#fde047", "accent-soft": "#3a3108",
+                           "accent-text": "#1c1700", "accent-ink": "#fde047"}),
+    "blue": ("Blue", {"accent": "#1d4ed8", "accent-strong": "#1e40af", "accent-soft": "#e7eefc",
+                      "accent-text": "#ffffff", "accent-ink": "#1d4ed8"},
+                     {"accent": "#60a5fa", "accent-strong": "#93c5fd", "accent-soft": "#16264a",
+                      "accent-text": "#0b1220", "accent-ink": "#93c5fd"}),
+    "green": ("Green", {"accent": "#15803d", "accent-strong": "#166534", "accent-soft": "#e6f4ea",
+                        "accent-text": "#ffffff", "accent-ink": "#15803d"},
+                       {"accent": "#4ade80", "accent-strong": "#86efac", "accent-soft": "#10301c",
+                        "accent-text": "#052e16", "accent-ink": "#86efac"}),
+    "purple": ("Purple", {"accent": "#6d28d9", "accent-strong": "#5b21b6", "accent-soft": "#efe9fc",
+                          "accent-text": "#ffffff", "accent-ink": "#6d28d9"},
+                         {"accent": "#a78bfa", "accent-strong": "#c4b5fd", "accent-soft": "#271b47",
+                          "accent-text": "#140b2e", "accent-ink": "#c4b5fd"}),
+    "red": ("Red", {"accent": "#b91c1c", "accent-strong": "#991b1b", "accent-soft": "#fbe9e9",
+                    "accent-text": "#ffffff", "accent-ink": "#b91c1c"},
+                   {"accent": "#f87171", "accent-strong": "#fca5a5", "accent-soft": "#3d1515",
+                    "accent-text": "#2b0606", "accent-ink": "#fca5a5"}),
+}
+DEFAULT_THEME = "teal"
+APPEARANCES = ("system", "light", "dark")
+
+
+def theme_name():
+    name = get_setting("theme", DEFAULT_THEME)
+    return name if name in THEMES else DEFAULT_THEME
+
+
+def appearance():
+    value = request.cookies.get("appearance", "system")
+    return value if value in APPEARANCES else "system"
 
 
 def get_setting(key, default=None):
@@ -40,25 +82,39 @@ def put_setting(key, value):
     g.get("settings_cache", {}).pop(key, None)
 
 
+def _mobile_number(voter):
+    """International number for a voter's mobile phone, or None for landlines and junk."""
+    digits = re.sub(r"\D", "", voter["phone"] or "")
+    if re.fullmatch(r"[79]\d{6}", digits):
+        return "960" + digits
+    if 10 <= len(digits) <= 15 and not digits.startswith("960"):
+        return digits
+    return None
+
+
+def _message(voter):
+    name = (voter["full_name"] or "").strip()
+    values = {"name": name, "first_name": name.split(" ")[0] if name else "",
+              "house": voter["house_name"] or "", "id": voter["national_id"]}
+    # Plain substitution, not str.format: the template is typed by an admin.
+    text = PLACEHOLDER.sub(lambda m: values[m.group(1)], get_setting("whatsapp_template") or DEFAULT_WHATSAPP)
+    return text.strip() + " "
+
+
+def sms_url(voter):
+    """sms: link with the campaign message; '?&body=' works on both iPhone and Android."""
+    number = _mobile_number(voter)
+    return f"sms:+{number}?&body={quote(_message(voter))}" if number else None
+
+
 def whatsapp_url(voter):
     """wa.me link with the campaign's message filled in, or None if the number can't use WhatsApp.
 
     Maldives mobile numbers have 7 digits starting with 7 or 9; landlines (3xxxxxx, 6xxxxxx) have
     no WhatsApp. Longer numbers are taken to include their own country code.
     """
-    digits = re.sub(r"\D", "", voter["phone"] or "")
-    if re.fullmatch(r"[79]\d{6}", digits):
-        number = "960" + digits
-    elif 10 <= len(digits) <= 15 and not digits.startswith("960"):
-        number = digits
-    else:
-        return None
-    name = (voter["full_name"] or "").strip()
-    values = {"name": name, "first_name": name.split(" ")[0] if name else "",
-              "house": voter["house_name"] or "", "id": voter["national_id"]}
-    # Plain substitution, not str.format: the template is typed by an admin.
-    message = PLACEHOLDER.sub(lambda m: values[m.group(1)], get_setting("whatsapp_template") or DEFAULT_WHATSAPP)
-    return f"https://wa.me/{number}?text={quote(message.strip() + ' ')}"
+    number = _mobile_number(voter)
+    return f"https://wa.me/{number}?text={quote(_message(voter))}" if number else None
 
 
 def init_schema(conn):
@@ -140,7 +196,8 @@ def settings():
     current = visible_parties() or []
     hidden = sum(n for p, n in options if current and p not in current)
     return render_template("admin/settings.html", options=options, current=current, hidden=hidden,
-                           template=get_setting("whatsapp_template") or DEFAULT_WHATSAPP)
+                           template=get_setting("whatsapp_template") or DEFAULT_WHATSAPP,
+                           themes=THEMES, theme=theme_name())
 
 
 @bp.post("/view-all")
@@ -150,3 +207,42 @@ def toggle_view_all():
     audit.log("view_all_parties", detail={"on": session["show_all_parties"]})
     back = request.form.get("back", "")
     return redirect(back if back.startswith("/") and not back.startswith("//") else url_for("voters.search"))
+
+
+@bp.post("/theme")
+@admin_required
+def set_theme():
+    name = request.form.get("theme", "")
+    if name in THEMES:
+        put_setting("theme", name)
+        audit.log("theme", detail={"theme": name}, commit=False)
+        get_db().commit()
+        flash(f"Colour changed to {THEMES[name][0]}.", "success")
+    return redirect(url_for("campaign.settings"))
+
+
+themes_bp = Blueprint("theme", __name__)
+
+
+@themes_bp.route("/theme.css")
+def theme_css():
+    """The chosen colour preset as CSS variables (a file, since the CSP forbids inline styles)."""
+    _, light, dark = THEMES[theme_name()]
+    decl = lambda values: " ".join(f"--{k}: {v};" for k, v in values.items())  # noqa: E731
+    css = (f":root {{ {decl(light)} }}\n"
+           f"@media (prefers-color-scheme: dark) {{ :root:not([data-theme=\"light\"]) {{ {decl(dark)} }} }}\n"
+           f":root[data-theme=\"dark\"] {{ {decl(dark)} }}\n")
+    resp = Response(css, mimetype="text/css")
+    resp.headers["Cache-Control"] = "public, max-age=86400"  # the URL carries ?v=<theme>
+    return resp
+
+
+@themes_bp.post("/account/appearance")
+def set_appearance():
+    value = request.form.get("appearance", "system")
+    back = request.form.get("back", "")
+    resp = redirect(back if back.startswith("/") and not back.startswith("//") else "/")
+    if value in APPEARANCES:
+        resp.set_cookie("appearance", value, max_age=365 * 24 * 3600, samesite="Lax",
+                        secure=request.is_secure, httponly=True)
+    return resp

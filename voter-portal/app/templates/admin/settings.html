@@ -35,14 +35,30 @@
 <form class="card form" method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="form" value="whatsapp">
-  <h2>WhatsApp message</h2>
-  <p class="muted">The <strong>WhatsApp</strong> button on each voter opens a chat with this text already typed.
+  <h2>WhatsApp &amp; SMS message</h2>
+  <p class="muted">The <strong>WhatsApp</strong> and <strong>SMS</strong> buttons on each voter open a message with this text already typed.
     The canvasser can still change it before sending. Placeholders: <code>{first_name}</code>, <code>{name}</code>,
     <code>{house}</code>.</p>
   <label>Message
     <textarea name="template" rows="4" maxlength="600">{{ template }}</textarea>
   </label>
   <button class="primary">Save message</button>
+</form>
+
+<form class="card form" method="post" action="{{ url_for('campaign.set_theme') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h2>Portal colour</h2>
+  <p class="muted">The main colour for everyone. Each person can still choose light or dark mode from their account menu.</p>
+  <div class="swatches">
+    {% for key, (label, light, dark) in themes.items() %}
+    <label class="swatch">
+      <input type="radio" name="theme" value="{{ key }}" {{ 'checked' if key == theme }}>
+      <span class="swatch-chip sw-{{ key }}" aria-hidden="true"></span>
+      <span>{{ label }}</span>
+    </label>
+    {% endfor %}
+  </div>
+  <button class="primary">Save colour</button>
 </form>
 
 <div class="card">

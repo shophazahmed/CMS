@@ -102,3 +102,42 @@ def test_whatsapp_button(app):
     assert unquote(link) == "Hi Aminath of Rose Villa! {name.__class__} {unknown} "
     assert u.post("/admin/settings", data={"csrf_token": csrf(u, "/"), "form": "whatsapp",
                                            "template": "x"}).status_code == 403
+
+
+def test_theme_appearance_and_sms(app):
+    from urllib.parse import unquote
+
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET phone = '9771234' WHERE national_id = 'A200001'")
+    conn.execute("UPDATE voters SET phone = '3001234' WHERE national_id = 'A200002'")
+    conn.commit()
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    page = u.get("/").get_data(as_text=True)
+    assert page.count('class="sms"') == 1
+    sms = page.split('class="sms" href="')[1].split('"')[0]
+    assert sms.startswith("sms:+9609771234?&amp;body=") and "Aminath" in unquote(sms)
+    assert "SMS" in u.get("/voters/A200001").get_data(as_text=True)
+
+    # colour: teal by default, admins change it for everyone, users can't
+    assert "/theme.css?v=teal" in page
+    assert "--accent: #0f766e" in u.get("/theme.css?v=teal").get_data(as_text=True)
+    token = csrf(u, "/")
+    assert u.post("/admin/theme", data={"csrf_token": token, "theme": "mdp"}).status_code == 403
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    a.post("/admin/theme", data={"csrf_token": csrf(a, "/admin/settings"), "theme": "mdp"})
+    page = u.get("/").get_data(as_text=True)
+    assert "/theme.css?v=mdp" in page and 'content="#f5c400"' in page
+    css = u.get("/theme.css?v=mdp").get_data(as_text=True)
+    assert "--accent: #f5c400" in css and ':root[data-theme="dark"]' in css
+    a.post("/admin/theme", data={"csrf_token": csrf(a, "/admin/settings"), "theme": "nope"})
+    assert "/theme.css?v=mdp" in u.get("/").get_data(as_text=True)
+
+    # appearance: per person, remembered in a cookie
+    assert "data-theme" not in u.get("/").get_data(as_text=True).split("<head>")[0]
+    u.post("/account/appearance", data={"appearance": "dark", "back": "/", "csrf_token": csrf(u, "/")})
+    assert '<html lang="en" data-theme="dark">' in u.get("/").get_data(as_text=True)
+    assert 'data-theme="dark"' not in a.get("/").get_data(as_text=True).split("<head>")[0]
+    u.post("/account/appearance", data={"appearance": "system", "back": "/", "csrf_token": csrf(u, "/")})
+    assert "data-theme" not in u.get("/").get_data(as_text=True).split("<head>")[0]

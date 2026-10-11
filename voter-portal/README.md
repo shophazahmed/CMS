@@ -56,13 +56,28 @@ and save.
 - **"No party recorded"** can be included too. **Show all parties** on the settings page turns the
   filter off for everyone.
 
-## WhatsApp
+## WhatsApp and SMS
 
-Every voter with a mobile number (7 digits starting with 7 or 9) gets a green **WhatsApp** button,
-on their card and on the voter page. It opens a WhatsApp chat with the number (+960) and a message
-already typed, which the canvasser can still edit before sending. Landlines get no button.
-Admins set the message under **Settings → WhatsApp message**, using `{first_name}`, `{name}` and
-`{house}`; the default is "Assalaamu alaikum {first_name},".
+Every voter with a mobile number (7 digits starting with 7 or 9) gets three buttons, on their card
+and on the voter page:
+- **WhatsApp:** opens a chat (+960 added) with the campaign message already typed.
+- **SMS:** opens the phone's messaging app with the number and the same message. It's sent from the
+  canvasser's own phone, so it costs whatever their plan charges.
+- **Call.**
+
+Landlines only get Call. Admins set the message under **Settings → WhatsApp & SMS message**, using
+`{first_name}`, `{name}` and `{house}`. Nothing is sent automatically: the canvasser always presses Send.
+
+Sending one SMS to many voters at once (bulk SMS) needs an account with an SMS gateway (e.g. Dhiraagu
+or Ooredoo bulk SMS, or Twilio) and is not set up.
+
+## Colours
+
+- **Settings → Portal colour** sets the main colour for everyone: MDP yellow, teal, blue, green,
+  purple or red. Each comes with a dark-mode version and a darker shade for text, so links stay
+  readable even in yellow.
+- **Appearance** (each person, in the account menu): Auto (follows the phone), Light or Dark. It's
+  remembered on that device.
 
 ## Dashboard and agents
 

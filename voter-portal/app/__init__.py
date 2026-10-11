@@ -59,11 +59,14 @@ def create_app(test_config=None):
     app.register_blueprint(imports.bp)
     app.register_blueprint(canvass.bp)
     app.register_blueprint(campaign.bp)
+    app.register_blueprint(campaign.themes_bp)
 
     @app.context_processor
     def inject():
         return {"csrf_token": auth.csrf_token, "current_user": g.get("user"), "is_admin": auth.is_admin(),
-                "campaign_banner": campaign.banner, "whatsapp_url": campaign.whatsapp_url}
+                "campaign_banner": campaign.banner, "whatsapp_url": campaign.whatsapp_url,
+                "sms_url": campaign.sms_url, "theme_name": campaign.theme_name, "themes": campaign.THEMES,
+                "appearance": campaign.appearance}
 
     @app.after_request
     def security_headers(resp):

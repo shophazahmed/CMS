@@ -19,8 +19,9 @@
   {% if v.phone %}
   <div class="contact-wide">
     <a class="button primary big" href="tel:{{ v.phone }}">{{ icon('phone') }} Call {{ v.phone }}</a>
-    {% set wa = whatsapp_url(v) %}
+    {% set wa = whatsapp_url(v) %}{% set sms = sms_url(v) %}
     {% if wa %}<a class="button big wa-wide" href="{{ wa }}" target="_blank" rel="noopener noreferrer">{{ icon('chat') }} WhatsApp</a>{% endif %}
+    {% if sms %}<a class="button big sms-wide" href="{{ sms }}">{{ icon('sms') }} SMS</a>{% endif %}
   </div>
   {% endif %}
 
