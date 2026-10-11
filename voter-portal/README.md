@@ -56,6 +56,14 @@ and save.
 - **"No party recorded"** can be included too. **Show all parties** on the settings page turns the
   filter off for everyone.
 
+## WhatsApp
+
+Every voter with a mobile number (7 digits starting with 7 or 9) gets a green **WhatsApp** button,
+on their card and on the voter page. It opens a WhatsApp chat with the number (+960) and a message
+already typed, which the canvasser can still edit before sending. Landlines get no button.
+Admins set the message under **Settings → WhatsApp message**, using `{first_name}`, `{name}` and
+`{house}`; the default is "Assalaamu alaikum {first_name},".
+
 ## Dashboard and agents
 
 **Dashboard** (admins and users): overall progress (voters reached, contacted, follow up, no answer,

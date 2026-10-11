@@ -114,7 +114,11 @@
       </p>
     </div>
     {% if v.phone %}
+    <div class="contact-btns">
+    {% set wa = whatsapp_url(v) %}
+    {% if wa %}<a class="wa" href="{{ wa }}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp {{ v.full_name }}">{{ icon('chat', 18) }}</a>{% endif %}
     <a class="call" href="tel:{{ v.phone }}" aria-label="Call {{ v.full_name }}">{{ icon('phone', 18) }}<span class="call-number mono">{{ v.phone }}</span></a>
+    </div>
     {% endif %}
     </div>
     <form class="status-form" method="post" action="{{ url_for('voters.canvass', national_id=v.national_id) }}" data-status-form>

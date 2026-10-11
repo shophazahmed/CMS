@@ -471,6 +471,20 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .assign-main .pbar { grid-column: 1 / -1; }
 .assign-list select { min-height: 40px; padding: .35rem .55rem; width: 100%; }
 
+/* --- WhatsApp ---------------------------------------------------------------- */
+:root { --wa: #1f9d57; --wa-text: #ffffff; }
+@media (prefers-color-scheme: dark) { :root { --wa: #25d366; --wa-text: #052e16; } }
+.contact-btns { position: relative; z-index: 1; display: flex; gap: .45rem; flex: none; }
+.wa {
+  display: inline-flex; align-items: center; justify-content: center; flex: none;
+  width: var(--tap); height: var(--tap); border-radius: 50%;
+  background: var(--wa); color: var(--wa-text); text-decoration: none;
+}
+.contact-wide { display: grid; grid-template-columns: 1fr 1fr; gap: .6rem; margin-bottom: 1rem; }
+.contact-wide .button:only-child { grid-column: 1 / -1; }
+.wa-wide { background: var(--wa); border-color: var(--wa); color: var(--wa-text); }
+.wa-wide:hover { filter: brightness(1.05); border-color: var(--wa); }
+
 /* --- campaign scope --------------------------------------------------------- */
 .campaign-banner {
   display: flex; align-items: center; justify-content: space-between; gap: .5rem .75rem; flex-wrap: wrap;
@@ -499,6 +513,8 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
   .filters .actions .primary { flex: 0 1 auto; }
   .voter-list { grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: .75rem; }
   .call { width: auto; padding: 0 .9rem; border-radius: 999px; height: 40px; }
+  .wa { width: 40px; height: 40px; }
+  .contact-wide { grid-template-columns: auto auto; justify-content: start; }
   .call-number { display: inline; }
   .avatar.lg { width: 150px; height: 150px; }
   .profile { display: grid; grid-template-columns: 1fr; max-width: 760px; }

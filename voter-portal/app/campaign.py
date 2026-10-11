@@ -5,6 +5,8 @@ hidden. Users and agents never see them. Admins see the campaign view by default
 to "all parties" for their own session.
 """
 import json
+import re
+from urllib.parse import quote
 
 from flask import Blueprint, flash, g, redirect, render_template, request, session, url_for
 
@@ -15,6 +17,48 @@ from .db import get_db, now_iso
 bp = Blueprint("campaign", __name__, url_prefix="/admin")
 
 NO_PARTY = "(none)"  # how a blank party is stored in the setting
+DEFAULT_WHATSAPP = "Assalaamu alaikum {first_name}, "
+MAX_TEMPLATE = 600
+PLACEHOLDER = re.compile(r"\{(first_name|name|house|id)\}")
+
+
+def get_setting(key, default=None):
+    cache = g.setdefault("settings_cache", {})
+    if key not in cache:
+        row = get_db().execute("SELECT value FROM settings WHERE key = ?", (key,)).fetchone()
+        cache[key] = row[0] if row else default
+    return cache[key]
+
+
+def put_setting(key, value):
+    get_db().execute(
+        "INSERT INTO settings (key, value, updated_at, updated_by) VALUES (?, ?, ?, ?)"
+        " ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at,"
+        " updated_by = excluded.updated_by",
+        (key, value, now_iso(), g.user["username"]),
+    )
+    g.get("settings_cache", {}).pop(key, None)
+
+
+def whatsapp_url(voter):
+    """wa.me link with the campaign's message filled in, or None if the number can't use WhatsApp.
+
+    Maldives mobile numbers have 7 digits starting with 7 or 9; landlines (3xxxxxx, 6xxxxxx) have
+    no WhatsApp. Longer numbers are taken to include their own country code.
+    """
+    digits = re.sub(r"\D", "", voter["phone"] or "")
+    if re.fullmatch(r"[79]\d{6}", digits):
+        number = "960" + digits
+    elif 10 <= len(digits) <= 15 and not digits.startswith("960"):
+        number = digits
+    else:
+        return None
+    name = (voter["full_name"] or "").strip()
+    values = {"name": name, "first_name": name.split(" ")[0] if name else "",
+              "house": voter["house_name"] or "", "id": voter["national_id"]}
+    # Plain substitution, not str.format: the template is typed by an admin.
+    message = PLACEHOLDER.sub(lambda m: values[m.group(1)], get_setting("whatsapp_template") or DEFAULT_WHATSAPP)
+    return f"https://wa.me/{number}?text={quote(message.strip() + ' ')}"
 
 
 def init_schema(conn):
@@ -69,6 +113,13 @@ def settings():
     db = get_db()
     counts = db.execute("SELECT party, COUNT(*) FROM voters GROUP BY party ORDER BY COUNT(*) DESC").fetchall()
     options = [(p or NO_PARTY, n) for p, n in counts]
+    if request.method == "POST" and request.form.get("form") == "whatsapp":
+        template = request.form.get("template", "").replace("\r\n", "\n").strip()[:MAX_TEMPLATE]
+        put_setting("whatsapp_template", template)
+        audit.log("whatsapp_template", detail={"template": template}, commit=False)
+        db.commit()
+        flash("WhatsApp message saved.", "success")
+        return redirect(url_for("campaign.settings"))
     if request.method == "POST":
         known = {p for p, _ in options} | set(visible_parties() or [])
         chosen = [p for p in request.form.getlist("parties") if p in known]
@@ -88,7 +139,8 @@ def settings():
         return redirect(url_for("campaign.settings"))
     current = visible_parties() or []
     hidden = sum(n for p, n in options if current and p not in current)
-    return render_template("admin/settings.html", options=options, current=current, hidden=hidden)
+    return render_template("admin/settings.html", options=options, current=current, hidden=hidden,
+                           template=get_setting("whatsapp_template") or DEFAULT_WHATSAPP)
 
 
 @bp.post("/view-all")

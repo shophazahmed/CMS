@@ -75,3 +75,30 @@ def test_campaign_and_agent_scopes_combine(app):
     assert g.get("/voters/A200003").status_code == 404
     assert "0/1" in g.get("/my").get_data(as_text=True)
     assert "1 voters" in a.get("/admin/agents").get_data(as_text=True)
+
+
+def test_whatsapp_button(app):
+    from urllib.parse import unquote
+
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET phone = '7771234' WHERE national_id = 'A200001'")   # mobile
+    conn.execute("UPDATE voters SET phone = '3001234' WHERE national_id = 'A200002'")   # landline
+    conn.commit()
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    page = u.get("/").get_data(as_text=True)
+    assert page.count('class="wa"') == 1
+    assert 'href="https://wa.me/9607771234?text=Assalaamu%20alaikum%20Aminath%2C%20"' in page
+    assert "wa.me" in u.get("/voters/A200001").get_data(as_text=True)
+    assert "wa.me" not in u.get("/voters/A200002").get_data(as_text=True)   # landlines have no WhatsApp
+
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    token = csrf(a, "/admin/settings")
+    a.post("/admin/settings", data={"csrf_token": token, "form": "whatsapp",
+                                    "template": "Hi {first_name} of {house}! {name.__class__} {unknown}"})
+    page = u.get("/voters/A200001").get_data(as_text=True)
+    link = page.split('href="https://wa.me/9607771234?text=')[1].split('"')[0]
+    assert unquote(link) == "Hi Aminath of Rose Villa! {name.__class__} {unknown} "
+    assert u.post("/admin/settings", data={"csrf_token": csrf(u, "/"), "form": "whatsapp",
+                                           "template": "x"}).status_code == 403

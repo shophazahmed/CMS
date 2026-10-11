@@ -17,7 +17,11 @@
   </div>
 
   {% if v.phone %}
-  <a class="button primary big call-wide" href="tel:{{ v.phone }}">{{ icon('phone') }} Call {{ v.phone }}</a>
+  <div class="contact-wide">
+    <a class="button primary big" href="tel:{{ v.phone }}">{{ icon('phone') }} Call {{ v.phone }}</a>
+    {% set wa = whatsapp_url(v) %}
+    {% if wa %}<a class="button big wa-wide" href="{{ wa }}" target="_blank" rel="noopener noreferrer">{{ icon('chat') }} WhatsApp</a>{% endif %}
+  </div>
   {% endif %}
 
   <form class="canvass" method="post" action="{{ url_for('voters.canvass', national_id=v.national_id) }}">

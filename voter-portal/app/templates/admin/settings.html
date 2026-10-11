@@ -32,6 +32,19 @@
   {% endif %}
 </form>
 
+<form class="card form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="form" value="whatsapp">
+  <h2>WhatsApp message</h2>
+  <p class="muted">The <strong>WhatsApp</strong> button on each voter opens a chat with this text already typed.
+    The canvasser can still change it before sending. Placeholders: <code>{first_name}</code>, <code>{name}</code>,
+    <code>{house}</code>.</p>
+  <label>Message
+    <textarea name="template" rows="4" maxlength="600">{{ template }}</textarea>
+  </label>
+  <button class="primary">Save message</button>
+</form>
+
 <div class="card">
   <h2>How it works</h2>
   <ul class="muted">
