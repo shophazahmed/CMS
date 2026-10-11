@@ -584,3 +584,11 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
   .actions.split > * { flex: 0 1 auto; }
 }
 
+
+/* Individual voter assignment */
+.vcard-top .pick { width: 1.35rem; height: 1.35rem; flex: none; accent-color: var(--accent); margin: 0; }
+.tag.agent-tag { display: inline-flex; align-items: center; gap: .2rem; }
+.assign-one { display: grid; gap: .35rem; margin: 1rem 0; }
+.assign-one select { width: 100%; }
+.assign-one p { margin: 0; }
+.bulk-assign .wide-row { grid-column: 1 / -1; margin: 0; }

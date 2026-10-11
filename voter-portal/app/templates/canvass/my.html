@@ -12,12 +12,21 @@
   {% endif %}
 </div>
 
-{% if not rows %}
+{% if singles.total %}
+<a class="card next-up" href="{{ url_for('voters.search', va=agent.id, sort='house') }}">
+  <span class="kpi-label">Voters given to {{ agent.username if viewing_other else 'you' }} one by one</span>
+  <strong>{{ singles.total }} voter{{ 's' if singles.total != 1 }}</strong>
+  <span class="muted">{{ singles.reached or 0 }} reached{% if singles.followup %} · {{ singles.followup }} follow-up{{ 's' if singles.followup != 1 }}{% endif %}</span>
+  <span class="button primary">Open list {{ icon('chevron', 18) }}</span>
+</a>
+{% endif %}
+
+{% if not rows and not singles.total %}
 <div class="empty card">
   <p><strong>No houses assigned yet.</strong></p>
   <p class="muted">Ask an admin to assign houses to {{ 'this agent' if viewing_other else 'you' }}.</p>
 </div>
-{% else %}
+{% elif rows %}
 <section class="kpis" aria-label="Progress">
   <div class="kpi hero">
     <span class="kpi-label">Voters reached</span>

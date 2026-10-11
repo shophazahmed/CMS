@@ -43,6 +43,23 @@
     </div>
   </form>
 
+  {% if is_admin %}
+  <form class="assign-one" method="post" action="{{ url_for('voters.assign', national_id=v.national_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="back" value="{{ back }}">
+    <label>Assigned agent
+      <select name="agent" data-autosubmit>
+        <option value="">{% if house_agent %}House agent ({{ house_agent.username }}){% else %}— nobody (house has no agent) —{% endif %}</option>
+        {% for a in agents %}
+        <option value="{{ a.id }}" {{ 'selected' if assigned and assigned.id == a.id }}>{{ a.username }}{{ ' (deactivated)' if not a.is_active }}</option>
+        {% endfor %}
+      </select>
+    </label>
+    <noscript><button>Save</button></noscript>
+    <p class="muted small-text">{% if assigned %}Handed to <strong>{{ assigned.username }}</strong> one by one{% if house_agent and house_agent.id != assigned.id %}; {{ house_agent.username }} (house agent) no longer sees this voter{% endif %}.{% elif house_agent %}{{ house_agent.username }} has this voter through the house.{% else %}No agent sees this voter yet.{% endif %}</p>
+  </form>
+  {% endif %}
+
   <dl class="facts">
     <div><dt>House</dt><dd>{{ v.house_name or '—' }}</dd></div>
     <div><dt>Age</dt><dd>{{ v.age if v.age is not none else '—' }}</dd></div>
@@ -50,6 +67,9 @@
     <div><dt>Party</dt><dd>{{ v.party or '—' }}</dd></div>
     <div><dt>Phone</dt><dd class="mono">{% if v.phone %}<a href="tel:{{ v.phone }}">{{ v.phone }}</a>{% else %}—{% endif %}</dd></div>
     <div><dt>ID card</dt><dd class="mono">{{ v.national_id }}</dd></div>
+    {% if not is_admin and current_user.role == 'user' %}
+    <div><dt>Agent</dt><dd>{{ assigned.username if assigned else (house_agent.username if house_agent else '—') }}</dd></div>
+    {% endif %}
     {% if is_admin %}
     <div class="wide"><dt>Source</dt><dd>{{ v.source }}</dd></div>
     <div class="wide"><dt>Last changed</dt><dd>{{ v.updated_at[:16].replace('T', ' ') }}{% if editor %} by {{ editor.username }}{% endif %}</dd></div>

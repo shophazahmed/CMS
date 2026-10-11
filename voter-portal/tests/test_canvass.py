@@ -112,3 +112,48 @@ def test_old_database_gains_agent_role(tmp_path):
     conn.execute("INSERT INTO users (username, password_hash, role, password_changed_at, created_at)"
                  " VALUES ('ali', 'x', 'agent', 't', 't')")
     assert [r[0] for r in conn.execute("SELECT username FROM users ORDER BY id")] == ["admin", "ali"]
+
+
+def test_assign_individual_voters(app):
+    ali = add_agent(app, "ali")
+    sara = add_agent(app, "sara")
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    token = csrf(a, "/admin/agents")
+    houses = re.findall(r'name="house" value="([^"]+)"', a.get("/admin/agents").get_data(as_text=True))
+    a.post("/admin/agents/assign", data={"csrf_token": token, "house": houses, "agent": ["", str(ali)]})
+    rose = re.findall(r'id="v-(A\d+)"', a.get("/?h=Rose+Villa").get_data(as_text=True))
+    assert len(rose) == 2
+
+    # one voter from ali's house and Moosa (no agent) go to sara, one by one
+    detail = a.get(f"/voters/{rose[0]}").get_data(as_text=True)
+    assert "Assigned agent" in detail and "House agent (ali)" in detail
+    assert a.post(f"/voters/{rose[0]}/assign", data={"csrf_token": token, "agent": str(sara)}).status_code == 302
+    r = a.post("/voters/assign", data={"csrf_token": token, "agent": str(sara), "scope": "selected",
+                                       "ids": ["A200002", "A999999"], "back": "/"})
+    assert r.status_code == 302
+    assert a.post("/voters/assign", data={"csrf_token": token, "agent": "1", "ids": ["A200002"]}).status_code == 400
+
+    s = app.test_client()
+    login(s, "sara", AGENT_PW)
+    page = s.get("/").get_data(as_text=True)
+    assert f'id="v-{rose[0]}"' in page and 'id="v-A200002"' in page and f'id="v-{rose[1]}"' not in page
+    assert "one by one" in s.get("/my").get_data(as_text=True)
+
+    g = app.test_client()
+    login(g, "ali", AGENT_PW)
+    page = g.get("/").get_data(as_text=True)
+    assert f'id="v-{rose[0]}"' not in page and f'id="v-{rose[1]}"' in page   # handed to sara
+    assert g.get(f"/voters/{rose[0]}").status_code == 404
+    assert "1/1" in g.get("/my").get_data(as_text=True) or "0/1" in g.get("/my").get_data(as_text=True)
+    assert g.post("/voters/assign", data={"csrf_token": csrf(g, "/"), "agent": str(ali),
+                                          "ids": [rose[0]]}).status_code == 403
+
+    # admin sees who has them, filters by agent, and sends one back to the house agent by filter
+    assert "sara" in a.get("/?h=Rose+Villa").get_data(as_text=True)
+    assert a.get(f"/?va={sara}").get_data(as_text=True).count('id="v-A2000') == 2
+    a.post("/voters/assign", data={"csrf_token": token, "agent": "", "scope": "all", "h": "Rose Villa"})
+    assert a.get(f"/?va={sara}").get_data(as_text=True).count('id="v-A2000') == 1
+    assert f'id="v-{rose[0]}"' in g.get("/").get_data(as_text=True)
+    conn = connect(app.config["DATABASE"])
+    assert conn.execute("SELECT COUNT(*) FROM audit_log WHERE action = 'voters_assigned'").fetchone()[0] == 3

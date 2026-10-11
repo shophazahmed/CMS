@@ -92,7 +92,13 @@ voters. "Most active this week" ranks people by their canvassing updates.
   Auto-assign shares out the unassigned houses, or re-balances all of them, so each agent gets a
   similar amount of work left (voters not yet reached plus follow-ups), handing out the biggest
   houses first.
-- **What agents see:** only the voters in their own houses, in search, voter pages, photos and status
+- **One voter at a time:** open a voter and pick an agent under **Assigned agent**, or in Search open
+  **Assign to an agent**, tick voters (or choose "all matching voters", up to 5,000) and assign. A voter
+  handed out this way belongs to that agent even if their house belongs to someone else; pick
+  "back to their house's agent" to undo. Cards show the agent's name, the Agents page shows
+  "+N one by one", and every change is in the activity log.
+- **What agents see:** only the voters in their own houses (minus any handed to another agent) plus
+  the voters handed to them one by one, in search, voter pages, photos and status
   updates. They don't see the dashboard and can't export.
 - **My houses:** an agent lands here after signing in. It shows their progress, follow-ups and
   not-contacted counts (tap to list them), and a **Suggested next** house: follow-ups first, then the

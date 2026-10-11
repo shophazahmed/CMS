@@ -4,7 +4,8 @@
 {% block content %}
 <div class="page-head">
   <h1>Agents</h1>
-  <p class="muted">Agents are canvassers. Each sees only the voters in the houses assigned to them.
+  <p class="muted">Agents are canvassers. Each sees only the voters in the houses assigned to them, plus any voter you hand them one by one
+    (open a voter and use <strong>Assigned agent</strong>, or tick voters in Search).
     Create one under <a href="{{ url_for('admin.users') }}">Users</a> with the role <strong>agent</strong>.</p>
 </div>
 
@@ -18,6 +19,7 @@
       <div>
         <strong>{{ a.username }}</strong>{% if not a.is_active %} <span class="badge">deactivated</span>{% endif %}
         <p class="muted small-text">{{ a.houses }} house{{ 's' if a.houses != 1 }} · {{ a.voters }} voters ·
+          {% if a.singles %}<a href="{{ url_for('voters.search', va=a.id) }}">+{{ a.singles }} one by one</a> ·{% endif %}
           {{ weekly.get(a.id, 0) }} update{{ 's' if weekly.get(a.id, 0) != 1 }} this week</p>
       </div>
       <strong class="agent-pct">{{ pct }}%</strong>

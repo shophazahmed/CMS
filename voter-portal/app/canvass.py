@@ -121,15 +121,24 @@ def my_houses():
     sort = request.args.get("sort", "progress")
     if sort not in SORTS:
         sort = "progress"
-    rows = house_rows(" AND a.user_id = ?", [user["id"]], sort)
+    # Voters in their houses that were handed to another agent one by one aren't theirs
+    rows = house_rows(" AND a.user_id = ? AND v.national_id NOT IN"
+                      " (SELECT national_id FROM voter_assignments WHERE user_id != ?)",
+                      [user["id"], user["id"]], sort)
     t = totals(rows)
+    clause, extra = campaign.party_scope("v.party")
+    singles = get_db().execute(
+        "SELECT COUNT(*) AS total, SUM(v.status != 'new') AS reached, SUM(v.status = 'contacted') AS contacted,"
+        " SUM(v.status = 'followup') AS followup, SUM(v.status = 'noanswer') AS noanswer"
+        " FROM voter_assignments va JOIN voters v ON v.national_id = va.national_id"
+        f" WHERE va.user_id = ?{' AND ' + clause if clause else ''}", [user["id"]] + extra).fetchone()
     # Suggested next stop: follow-ups first (someone asked us to come back), then the house
     # with the most voters nobody has reached yet.
     open_rows = [r for r in rows if r["reached"] < r["total"] or r["followup"]]
     suggestion = None
     if open_rows:
         suggestion = max(open_rows, key=lambda r: (r["followup"] or 0, r["total"] - r["reached"], -len(r["house"])))
-    return render_template("canvass/my.html", rows=rows, t=t, act=activity(user["id"]), agent=user,
+    return render_template("canvass/my.html", rows=rows, t=t, act=activity(user["id"]), agent=user, singles=singles,
                            suggestion=suggestion, sort=sort, viewing_other=user["id"] != g.user["id"])
 
 
@@ -141,6 +150,7 @@ def _agents(active_only=False):
     join_scope = f" AND {clause}" if clause else ""
     return get_db().execute(
         f"""SELECT u.id, u.username, u.is_active, u.last_login_at,
+                   (SELECT COUNT(*) FROM voter_assignments va WHERE va.user_id = u.id) AS singles,
                    COUNT(DISTINCT a.house_name) AS houses,
                    COUNT(v.national_id) AS voters,
                    COUNT(v.national_id) AS total,

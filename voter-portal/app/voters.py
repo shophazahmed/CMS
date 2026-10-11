@@ -62,15 +62,20 @@ def read_filters(args):
         "age_min": int_or_none("age_min"),
         "age_max": int_or_none("age_max"),
         "status": args.get("status", "") if args.get("status", "") in STATUSES else "",
+        # Individually assigned: an agent's id, or "any"
+        "va": args.get("va", "") if args.get("va", "") == "any" or args.get("va", "").isdigit() else "",
         "sort": args.get("sort", "name") if args.get("sort") in SORTS else "name",
     }
 
 
 def agent_scope():
-    """SQL limiting an agent to the voters in their assigned houses (None for other roles)."""
+    """SQL limiting an agent to their voters (None for other roles): the ones handed to them one by one,
+    plus everyone in their houses who hasn't been handed to someone individually."""
     user = g.get("user")
     if user is not None and user["role"] == "agent":
-        return "house_name IN (SELECT house_name FROM house_assignments WHERE user_id = ?)", [user["id"]]
+        return ("(national_id IN (SELECT national_id FROM voter_assignments WHERE user_id = ?)"
+                " OR (house_name IN (SELECT house_name FROM house_assignments WHERE user_id = ?)"
+                " AND national_id NOT IN (SELECT national_id FROM voter_assignments)))"), [user["id"], user["id"]]
     return None, []
 
 
@@ -122,6 +127,11 @@ def build_where(f):
     if f.get("status"):
         clauses.append("status = ?")
         params.append(f["status"])
+    if f.get("va") == "any":
+        clauses.append("national_id IN (SELECT national_id FROM voter_assignments)")
+    elif f.get("va"):
+        clauses.append("national_id IN (SELECT national_id FROM voter_assignments WHERE user_id = ?)")
+        params.append(int(f["va"]))
     return scoped((" WHERE " + " AND ".join(clauses)) if clauses else "", params)
 
 
@@ -143,7 +153,7 @@ def search():
     pages = max(1, -(-total // PAGE_SIZE))
     page = min(page, pages)
     rows = db.execute(
-        f"SELECT * FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
+        f"SELECT *, ({ASSIGNED_TO}) AS assigned_to FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
         params + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
     ).fetchall()
     w, p = scoped(" WHERE party != ''")
@@ -177,7 +187,25 @@ def search():
         houses=houses,
         stats=stats,
         query_args=query_args,
+        agents=agent_list() if is_admin() else [],
     )
+
+
+ASSIGNED_TO = ("SELECT u.username FROM voter_assignments va JOIN users u ON u.id = va.user_id"
+               " WHERE va.national_id = voters.national_id")
+
+
+def agent_list():
+    return get_db().execute(
+        "SELECT id, username, is_active FROM users WHERE role = 'agent' ORDER BY is_active DESC, username COLLATE NOCASE"
+    ).fetchall()
+
+
+def _agent_name(value):
+    if value == "any":
+        return "Assigned one by one"
+    row = get_db().execute("SELECT username FROM users WHERE id = ?", (int(value),)).fetchone()
+    return f"Assigned to {row['username'] if row else '?'}"
 
 
 def filter_chips(f, query_args):
@@ -191,6 +219,7 @@ def filter_chips(f, query_args):
         "sex": lambda v: {"M": "Male", "F": "Female", "unknown": "Sex not recorded"}[v],
         "age_min": lambda v: f"Age ≥ {v}",
         "age_max": lambda v: f"Age ≤ {v}",
+        "va": _agent_name,
     }
     chips = []
     for key, value in active_filters(f).items():
@@ -220,8 +249,16 @@ def detail(national_id):
     status_user = None
     if voter["status_by"]:
         status_user = db.execute("SELECT username FROM users WHERE id = ?", (voter["status_by"],)).fetchone()
+    assigned = db.execute(
+        "SELECT u.id, u.username FROM voter_assignments va JOIN users u ON u.id = va.user_id"
+        " WHERE va.national_id = ?", (national_id,)).fetchone()
+    house_agent = db.execute(
+        "SELECT u.id, u.username FROM house_assignments a JOIN users u ON u.id = a.user_id WHERE a.house_name = ?",
+        (voter["house_name"],)).fetchone() if voter["house_name"] else None
     return render_template("voters/detail.html", v=voter, editor=editor, statuses=STATUSES,
-                           status_user=status_user, back=_safe_back(request.args.get("back")))
+                           status_user=status_user, back=_safe_back(request.args.get("back")),
+                           assigned=assigned, house_agent=house_agent,
+                           agents=agent_list() if is_admin() else [])
 
 
 def _safe_back(target):
@@ -276,6 +313,94 @@ def photo(national_id):
     resp = send_from_directory(current_app.config["PHOTOS_DIR"], voter["photo_path"], max_age=3600)
     resp.headers["Cache-Control"] = "private, max-age=3600"
     return resp
+
+
+# --- admin: hand voters to agents one by one ---------------------------------
+
+MAX_BULK_ASSIGN = 5000
+
+
+def assign_voters(ids, agent_id):
+    """Give these voters to an agent (None = back to their house's agent). Returns how many changed."""
+    db = get_db()
+    current = {}
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        current.update(db.execute(
+            f"SELECT national_id, user_id FROM voter_assignments WHERE national_id IN ({','.join('?' * len(chunk))})",
+            chunk).fetchall())
+    changed = [nid for nid in ids if current.get(nid) != agent_id]
+    if not changed:
+        return 0
+    if agent_id is None:
+        db.executemany("DELETE FROM voter_assignments WHERE national_id = ?", [(nid,) for nid in changed])
+    else:
+        stamp = now_iso()
+        db.executemany(
+            "INSERT INTO voter_assignments (national_id, user_id, assigned_at, assigned_by) VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(national_id) DO UPDATE SET user_id = excluded.user_id,"
+            " assigned_at = excluded.assigned_at, assigned_by = excluded.assigned_by",
+            [(nid, agent_id, stamp, g.user["id"]) for nid in changed],
+        )
+    audit.log("voters_assigned", target=changed[0] if len(changed) == 1 else f"{len(changed)} voters",
+              detail={"agent": agent_id, "voters": changed[:200]}, commit=False)
+    db.commit()
+    return len(changed)
+
+
+def _chosen_agent(value):
+    """'' means 'no individual agent'; anything else must be an agent's id (else 400)."""
+    if value == "":
+        return None, None
+    row = get_db().execute("SELECT id, username FROM users WHERE id = ? AND role = 'agent'",
+                           (int(value) if value.isdigit() else -1,)).fetchone()
+    if row is None:
+        abort(400)
+    return row["id"], row["username"]
+
+
+@bp.post("/voters/<national_id>/assign")
+@admin_required
+def assign(national_id):
+    get_voter_or_404(national_id)
+    agent_id, name = _chosen_agent(request.form.get("agent", ""))
+    n = assign_voters([national_id], agent_id)
+    if not n:
+        flash("Nothing changed.", "info")
+    else:
+        flash(f"Assigned to {name}." if name else "Back with the house's agent.", "success")
+    return redirect(url_for("voters.detail", national_id=national_id, back=_safe_back(request.form.get("back"))))
+
+
+@bp.post("/voters/assign")
+@admin_required
+def assign_bulk():
+    """Assign the ticked voters, or every voter matching the search filters, to one agent."""
+    agent_id, name = _chosen_agent(request.form.get("agent", ""))
+    back = _safe_back(request.form.get("back"))
+    if request.form.get("scope") == "all":
+        where, params = build_where(read_filters(request.form))
+        ids = [r[0] for r in get_db().execute(
+            f"SELECT national_id FROM voters{where} LIMIT ?", params + [MAX_BULK_ASSIGN + 1])]
+        if len(ids) > MAX_BULK_ASSIGN:
+            flash(f"That's more than {MAX_BULK_ASSIGN} voters. Narrow the filters first "
+                  "(or assign whole houses on the Agents page).", "error")
+            return redirect(back)
+    else:
+        wanted = list(dict.fromkeys(request.form.getlist("ids")))[:MAX_BULK_ASSIGN]
+        ids = []
+        for i in range(0, len(wanted), 500):
+            chunk = wanted[i:i + 500]
+            w, p = scoped(f" WHERE national_id IN ({','.join('?' * len(chunk))})", chunk)
+            ids += [r[0] for r in get_db().execute(f"SELECT national_id FROM voters{w}", p)]
+    if not ids:
+        flash("Tick some voters first, or choose 'all matching voters'.", "error")
+        return redirect(back)
+    n = assign_voters(ids, agent_id)
+    who = name or "their house's agent"
+    flash(f"{n} voter{'s' if n != 1 else ''} now with {who}." if n else "Nothing changed.",
+          "success" if n else "info")
+    return redirect(back)
 
 
 # --- admin: add / edit / delete --------------------------------------------
@@ -404,6 +529,7 @@ def delete(national_id):
     voter = get_voter_or_404(national_id)
     db = get_db()
     db.execute("DELETE FROM voters WHERE national_id = ?", (national_id,))
+    db.execute("DELETE FROM voter_assignments WHERE national_id = ?", (national_id,))
     audit.log("voter_delete", target=national_id, detail={k: voter[k] for k in FIELDS}, commit=False)
     db.commit()
     flash(f"Voter {national_id} deleted.", "success")

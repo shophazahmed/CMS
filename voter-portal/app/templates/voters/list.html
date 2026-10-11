@@ -6,7 +6,7 @@
     {{ icon('search') }}
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone"
            aria-label="Search name, ID, house or phone" autocomplete="off" enterkeyhint="search">
-    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'sort') %}
+    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'va', 'sort') %}
       {% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}
     {% endfor %}
     <button class="primary" type="submit">Search</button>
@@ -34,6 +34,7 @@
     <input type="hidden" name="q" value="{{ f.q }}">
     {% if f.status %}<input type="hidden" name="status" value="{{ f.status }}">{% endif %}
     {% if f.h %}<input type="hidden" name="h" value="{{ f.h }}">{% endif %}
+    {% if f.va %}<input type="hidden" name="va" value="{{ f.va }}">{% endif %}
     <label>National ID
       <input name="national_id" value="{{ f.national_id }}" placeholder="A123456" maxlength="20" autocapitalize="characters">
     </label>
@@ -96,6 +97,33 @@
   {% endif %}
 </div>
 
+{% if is_admin and rows and agents %}
+<details class="filter-panel card bulk-assign">
+  <summary>{{ icon('users') }} Assign to an agent</summary>
+  <form id="bulk-assign" class="filters" method="post" action="{{ url_for('voters.assign_bulk') }}"
+        data-confirm="Assign these voters?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="back" value="{{ back_url }}">
+    {% for k, val in query_args.items() if k != 'sort' %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
+    <p class="muted small-text wide-row">Tick voters below, or use every voter that matches this search. They move to that
+      agent even if their house belongs to someone else.</p>
+    <label>Which voters
+      <select name="scope">
+        <option value="selected">Only the ones I tick below</option>
+        <option value="all">All {{ total }} matching voter{{ 's' if total != 1 }}</option>
+      </select>
+    </label>
+    <label>Agent
+      <select name="agent">
+        {% for a in agents if a.is_active %}<option value="{{ a.id }}">{{ a.username }}</option>{% endfor %}
+        <option value="">— back to their house's agent —</option>
+      </select>
+    </label>
+    <div class="actions"><button class="primary">Assign</button></div>
+  </form>
+</details>
+{% endif %}
+
 {% if rows %}
 <ul class="voter-list">
   {% for v in rows %}
@@ -104,6 +132,7 @@
   {% endif %}
   <li class="vcard st-{{ v.status }}" id="v-{{ v.national_id }}">
     <div class="vcard-top">
+    {% if is_admin and agents %}<input type="checkbox" class="pick" name="ids" value="{{ v.national_id }}" form="bulk-assign" aria-label="Select {{ v.full_name }}">{% endif %}
     {{ avatar(v, 'md') }}
     <div class="vcard-main">
       <a class="vcard-name" href="{{ url_for('voters.detail', national_id=v.national_id, back=back_url) }}">{{ v.full_name or '(no name)' }}</a>
@@ -111,6 +140,7 @@
       <p class="vcard-tags">
         <span class="tag mono">{{ v.national_id }}</span>
         {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}
+        {% if v.assigned_to and current_user.role != 'agent' %}<span class="tag agent-tag">{{ icon('user', 12) }} {{ v.assigned_to }}</span>{% endif %}
       </p>
     </div>
     </div>

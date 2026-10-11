@@ -51,6 +51,16 @@ CREATE TABLE IF NOT EXISTS house_assignments (
 );
 CREATE INDEX IF NOT EXISTS ix_assign_user ON house_assignments (user_id);
 
+-- One voter handed to one agent, overriding the house's agent. No foreign key to voters on purpose:
+-- imports rewrite voter rows, and deletes clean these up themselves.
+CREATE TABLE IF NOT EXISTS voter_assignments (
+    national_id TEXT PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_at TEXT NOT NULL,
+    assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_vassign_user ON voter_assignments (user_id);
+
 CREATE TABLE IF NOT EXISTS audit_log (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     at       TEXT NOT NULL,

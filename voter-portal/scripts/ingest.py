@@ -613,6 +613,8 @@ def load(conn, merged, mode, log):
         conn.executemany("INSERT INTO keep_ids VALUES (?)", [(nid,) for nid in merged])
         counts["deleted"] = conn.execute(
             "DELETE FROM voters WHERE national_id NOT IN (SELECT nid FROM keep_ids)").rowcount
+        if conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'voter_assignments'").fetchone():
+            conn.execute("DELETE FROM voter_assignments WHERE national_id NOT IN (SELECT nid FROM keep_ids)")
     for nid, v in merged.items():
         existing = conn.execute("SELECT * FROM voters WHERE national_id = ?", (nid,)).fetchone()
         src = "import: " + ", ".join(v["sources"])
