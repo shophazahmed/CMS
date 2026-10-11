@@ -11,7 +11,7 @@ CREATE TABLE IF NOT EXISTS users (
     id                   INTEGER PRIMARY KEY AUTOINCREMENT,
     username             TEXT NOT NULL UNIQUE COLLATE NOCASE,
     password_hash        TEXT NOT NULL,
-    role                 TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+    role                 TEXT NOT NULL CHECK (role IN ('admin', 'agent', 'user')),
     is_active            INTEGER NOT NULL DEFAULT 1,
     must_change_password INTEGER NOT NULL DEFAULT 1,
     failed_logins        INTEGER NOT NULL DEFAULT 0,
@@ -43,6 +43,14 @@ CREATE INDEX IF NOT EXISTS ix_voters_name  ON voters (full_name COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS ix_voters_house ON voters (house_name COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS ix_voters_party ON voters (party);
 
+CREATE TABLE IF NOT EXISTS house_assignments (
+    house_name  TEXT PRIMARY KEY,
+    user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    assigned_at TEXT NOT NULL,
+    assigned_by INTEGER REFERENCES users(id) ON DELETE SET NULL
+);
+CREATE INDEX IF NOT EXISTS ix_assign_user ON house_assignments (user_id);
+
 CREATE TABLE IF NOT EXISTS audit_log (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     at       TEXT NOT NULL,
@@ -71,7 +79,30 @@ def connect(path):
     return conn
 
 
+def _allow_agent_role(conn):
+    """Databases from before the agent role have CHECK (role IN ('admin', 'user')): rebuild the table."""
+    sql = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'users'").fetchone()
+    if not sql or "'agent'" in sql[0]:
+        return
+    new_sql = sql[0].replace("CREATE TABLE users", "CREATE TABLE users_new", 1).replace(
+        "CHECK (role IN ('admin', 'user'))", "CHECK (role IN ('admin', 'agent', 'user'))")
+    conn.commit()
+    conn.execute("PRAGMA foreign_keys = OFF")  # other tables reference users; keep their rows as they are
+    try:
+        conn.executescript(
+            "BEGIN;"
+            f"{new_sql};"
+            "INSERT INTO users_new SELECT * FROM users;"
+            "DROP TABLE users;"
+            "ALTER TABLE users_new RENAME TO users;"
+            "COMMIT;"
+        )
+    finally:
+        conn.execute("PRAGMA foreign_keys = ON")
+
+
 def init_schema(conn):
+    _allow_agent_role(conn)
     conn.executescript(SCHEMA)
     # Columns added after the first release
     columns = {r[1] for r in conn.execute("PRAGMA table_info(voters)")}

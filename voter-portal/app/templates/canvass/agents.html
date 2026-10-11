@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% from "_macros.html" import progress, legend, icon %}
+{% block title %}Agents{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Agents</h1>
+  <p class="muted">Agents are canvassers. Each sees only the voters in the houses assigned to them.
+    Create one under <a href="{{ url_for('admin.users') }}">Users</a> with the role <strong>agent</strong>.</p>
+</div>
+
+{% if agents %}
+<ul class="agent-grid">
+  {% for a in agents %}
+  {% set pct = (100 * (a.reached or 0) / a.voters)|round|int if a.voters else 0 %}
+  <li class="card agent-card {{ '' if a.is_active else 'inactive' }}">
+    <div class="agent-top">
+      <span class="account-avatar">{{ a.username[:1]|upper }}</span>
+      <div>
+        <strong>{{ a.username }}</strong>{% if not a.is_active %} <span class="badge">deactivated</span>{% endif %}
+        <p class="muted small-text">{{ a.houses }} house{{ 's' if a.houses != 1 }} · {{ a.voters }} voters ·
+          {{ weekly.get(a.id, 0) }} update{{ 's' if weekly.get(a.id, 0) != 1 }} this week</p>
+      </div>
+      <strong class="agent-pct">{{ pct }}%</strong>
+    </div>
+    {{ progress(a) }}
+    <p class="small-text agent-foot">
+      <span class="muted">Last sign-in {{ a.last_login_at[:16].replace('T', ' ') if a.last_login_at else 'never' }}</span>
+      <a href="{{ url_for('canvass.my_houses', agent=a.id) }}">Open their houses ›</a>
+    </p>
+  </li>
+  {% endfor %}
+</ul>
+
+<form class="card form" method="post" action="{{ url_for('canvass.auto_assign') }}"
+      data-confirm="Assign houses automatically?">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h2>{{ icon('users') }} Auto-assign houses</h2>
+  <p class="muted">Shares out the houses so every agent gets a similar amount of work left: voters not yet
+    reached plus follow-ups. The biggest houses are handed out first, each to the agent with the least work so far.</p>
+  <fieldset class="checks">
+    <legend>Agents to include</legend>
+    {% for a in agents if a.is_active %}
+    <label class="check"><input type="checkbox" name="agents" value="{{ a.id }}" checked> {{ a.username }}</label>
+    {% endfor %}
+  </fieldset>
+  <label>Which houses
+    <select name="scope">
+      <option value="unassigned">Only the {{ unassigned }} unassigned house{{ 's' if unassigned != 1 }}</option>
+      <option value="all">Re-balance all houses (replaces current assignments)</option>
+    </select>
+  </label>
+  <button class="primary">Auto-assign</button>
+</form>
+{% else %}
+<div class="empty card">
+  <p><strong>No agents yet.</strong></p>
+  <p class="muted">Go to <a href="{{ url_for('admin.users') }}">Users</a>, create a user and pick the role <strong>agent</strong>.</p>
+</div>
+{% endif %}
+
+{% if houses %}
+<form class="card" method="post" action="{{ url_for('canvass.assign') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="list-head">
+    <h2>Houses ({{ houses|length }}, {{ unassigned }} unassigned)</h2>
+    <button class="primary">Save assignments</button>
+  </div>
+  <input type="search" class="wide" placeholder="Filter houses…" aria-label="Filter houses" data-filter-rows="#assign-rows">
+  {{ legend() }}
+  <ul class="assign-list" id="assign-rows">
+    {% for h in houses %}
+    <li data-filter-text="{{ h.house|lower }} {{ (h.agent or 'unassigned')|lower }}">
+      <input type="hidden" name="house" value="{{ h.house }}">
+      <div class="assign-main">
+        <span class="house-name">{{ h.house }}</span>
+        <span class="muted small-text mono">{{ h.reached }}/{{ h.total }}</span>
+        {{ progress(h, 'sm') }}
+      </div>
+      <select name="agent" aria-label="Agent for {{ h.house }}">
+        <option value="">— unassigned —</option>
+        {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if h.agent_id == a.id }}>{{ a.username }}{{ ' (inactive)' if not a.is_active }}</option>{% endfor %}
+      </select>
+    </li>
+    {% endfor %}
+  </ul>
+  <button class="primary">Save assignments</button>
+</form>
+{% endif %}
+{% endblock %}

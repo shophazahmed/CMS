@@ -4,7 +4,7 @@ import re
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
 from . import audit
-from .auth import ROLES, admin_required, generate_password, hash_password, password_problem
+from .auth import ROLE_LABELS, ROLES, admin_required, generate_password, hash_password, password_problem
 from .db import get_db, now_iso
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -28,7 +28,7 @@ def _active_admins():
 @admin_required
 def users():
     rows = get_db().execute("SELECT * FROM users ORDER BY is_active DESC, role, username COLLATE NOCASE").fetchall()
-    return render_template("admin/users.html", users=rows, roles=ROLES)
+    return render_template("admin/users.html", users=rows, roles=ROLES, role_labels=ROLE_LABELS)
 
 
 @bp.post("/users")

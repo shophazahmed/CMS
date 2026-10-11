@@ -6,7 +6,7 @@
     {{ icon('search') }}
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone"
            aria-label="Search name, ID, house or phone" autocomplete="off" enterkeyhint="search">
-    {% for k in ('national_id', 'house', 'party', 'sex', 'age_min', 'age_max', 'status', 'sort') %}
+    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'sort') %}
       {% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}
     {% endfor %}
     <button class="primary" type="submit">Search</button>
@@ -33,6 +33,7 @@
   <form class="filters" method="get" action="{{ url_for('voters.search') }}">
     <input type="hidden" name="q" value="{{ f.q }}">
     {% if f.status %}<input type="hidden" name="status" value="{{ f.status }}">{% endif %}
+    {% if f.h %}<input type="hidden" name="h" value="{{ f.h }}">{% endif %}
     <label>National ID
       <input name="national_id" value="{{ f.national_id }}" placeholder="A123456" maxlength="20" autocapitalize="characters">
     </label>

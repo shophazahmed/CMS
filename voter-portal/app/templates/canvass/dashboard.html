@@ -1,0 +1,83 @@
+{% extends "base.html" %}
+{% from "_macros.html" import progress, legend, icon %}
+{% block title %}Dashboard{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Canvassing dashboard</h1>
+  <p class="muted">Progress per house{{ ' · ' ~ party if party }}{% if agent == 'none' %} · unassigned houses{% endif %}</p>
+</div>
+
+<section class="kpis" aria-label="Totals">
+  <div class="kpi hero">
+    <span class="kpi-label">Voters reached</span>
+    <strong>{{ t.pct }}%</strong>
+    <span class="muted">{{ t.reached }} of {{ t.total }}</span>
+    {{ progress(t, 'lg') }}
+  </div>
+  <div class="kpi"><span class="kpi-label"><i class="dot seg-contacted"></i>Contacted</span><strong>{{ t.contacted }}</strong></div>
+  <div class="kpi"><span class="kpi-label"><i class="dot seg-followup"></i>Follow up</span><strong>{{ t.followup }}</strong></div>
+  <div class="kpi"><span class="kpi-label"><i class="dot seg-noanswer"></i>No answer</span><strong>{{ t.noanswer }}</strong></div>
+  <div class="kpi"><span class="kpi-label"><i class="dot seg-track"></i>Not contacted</span><strong>{{ t.new }}</strong></div>
+  <div class="kpi"><span class="kpi-label">Houses finished</span><strong>{{ t.done_houses }}<small class="muted"> / {{ t.houses }}</small></strong></div>
+  <div class="kpi"><span class="kpi-label">Updates today</span><strong>{{ act.today }}</strong><span class="muted">{{ act.week }} this week</span></div>
+</section>
+
+<form class="card filters dash-filters" method="get">
+  <label>Party
+    <select name="party" data-autosubmit>
+      <option value="">All parties</option>
+      {% for p in parties %}<option {{ 'selected' if party == p }}>{{ p }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Agent
+    <select name="agent" data-autosubmit>
+      <option value="">All houses</option>
+      <option value="none" {{ 'selected' if agent == 'none' }}>Unassigned houses</option>
+      {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if agent == a.id|string }}>{{ a.username }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Sort
+    <select name="sort" data-autosubmit>
+      {% for key, label in [('progress', 'Least progress first'), ('remaining', 'Most voters left'), ('voters', 'Biggest houses'), ('recent', 'Recently updated'), ('name', 'House name')] %}
+      <option value="{{ key }}" {{ 'selected' if sort == key }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </label>
+  <noscript><button class="primary">Apply</button></noscript>
+</form>
+
+{{ legend() }}
+
+{% if rows %}
+<ul class="house-list">
+  {% for r in rows %}
+  <li class="house-row {{ 'done' if r.reached == r.total }}">
+    <a class="house-link" href="{{ url_for('voters.search', h=r.house, sort='house', party=party or None) }}">
+      <span class="house-name">{{ r.house }}</span>
+      <span class="house-meta">
+        <span class="mono">{{ r.reached }}/{{ r.total }}</span>
+        {% if r.followup %}<span class="tag st-tag-followup">{{ r.followup }} follow-up</span>{% endif %}
+        {% if r.agent %}<span class="tag">{{ icon('user', 12) }} {{ r.agent }}{{ ' (inactive)' if not r.agent_active }}</span>
+        {% else %}<span class="tag muted">unassigned</span>{% endif %}
+      </span>
+    </a>
+    {{ progress(r) }}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty card"><p>No houses match.</p></div>
+{% endif %}
+{% if no_house %}<p class="muted small-text">{{ no_house }} voters have no house name and aren't counted per house.</p>{% endif %}
+
+{% if act.leaders %}
+<section class="card">
+  <h2>Most active this week</h2>
+  <ol class="leaders">
+    {% for l in act.leaders %}
+    <li><span>{{ l.username or '—' }}</span><span class="muted">{{ l.n }} update{{ 's' if l.n != 1 }}</span></li>
+    {% endfor %}
+  </ol>
+</section>
+{% endif %}
+{% endblock %}

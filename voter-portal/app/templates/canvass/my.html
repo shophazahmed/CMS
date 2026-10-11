@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% from "_macros.html" import progress, legend, icon %}
+{% block title %}My houses{% endblock %}
+{% block content %}
+<div class="page-head">
+  {% if viewing_other %}
+  <p><a href="{{ url_for('canvass.agents') }}">‹ Agents</a></p>
+  <h1>{{ agent.username }}'s houses</h1>
+  {% else %}
+  <h1>Hi {{ agent.username }}</h1>
+  <p class="muted">Your houses and what's left to do.</p>
+  {% endif %}
+</div>
+
+{% if not rows %}
+<div class="empty card">
+  <p><strong>No houses assigned yet.</strong></p>
+  <p class="muted">Ask an admin to assign houses to {{ 'this agent' if viewing_other else 'you' }}.</p>
+</div>
+{% else %}
+<section class="kpis" aria-label="Progress">
+  <div class="kpi hero">
+    <span class="kpi-label">Voters reached</span>
+    <strong>{{ t.pct }}%</strong>
+    <span class="muted">{{ t.reached }} of {{ t.total }} in {{ t.houses }} house{{ 's' if t.houses != 1 }}</span>
+    {{ progress(t, 'lg') }}
+  </div>
+  <a class="kpi link-kpi" href="{{ url_for('voters.search', status='followup', sort='house') }}">
+    <span class="kpi-label"><i class="dot seg-followup"></i>Follow-ups</span><strong>{{ t.followup }}</strong>
+    <span class="muted">Tap to see them</span></a>
+  <a class="kpi link-kpi" href="{{ url_for('voters.search', status='new', sort='house') }}">
+    <span class="kpi-label"><i class="dot seg-track"></i>Not contacted</span><strong>{{ t.new }}</strong>
+    <span class="muted">Tap to see them</span></a>
+  <div class="kpi"><span class="kpi-label">Your updates today</span><strong>{{ act.today }}</strong><span class="muted">{{ act.week }} this week</span></div>
+</section>
+
+{% if suggestion and not viewing_other %}
+<a class="card next-up" href="{{ url_for('voters.search', h=suggestion.house, sort='house') }}">
+  <span class="kpi-label">Suggested next</span>
+  <strong>{{ suggestion.house }}</strong>
+  <span class="muted">
+    {% if suggestion.followup %}{{ suggestion.followup }} follow-up{{ 's' if suggestion.followup != 1 }} waiting · {% endif %}
+    {{ suggestion.total - suggestion.reached }} not contacted yet
+  </span>
+  <span class="button primary">Go {{ icon('chevron', 18) }}</span>
+</a>
+{% endif %}
+
+<div class="list-head">
+  <h2>Houses</h2>
+  <form method="get">
+    {% if viewing_other %}<input type="hidden" name="agent" value="{{ agent.id }}">{% endif %}
+    <select name="sort" data-autosubmit aria-label="Sort houses">
+      {% for key, label in [('progress', 'Least progress'), ('remaining', 'Most left'), ('name', 'Name'), ('recent', 'Recent')] %}
+      <option value="{{ key }}" {{ 'selected' if sort == key }}>{{ label }}</option>
+      {% endfor %}
+    </select>
+  </form>
+</div>
+{{ legend() }}
+<ul class="house-list">
+  {% for r in rows %}
+  <li class="house-row {{ 'done' if r.reached == r.total }}">
+    <a class="house-link" href="{{ url_for('voters.search', h=r.house, sort='house') }}">
+      <span class="house-name">{% if r.reached == r.total %}✓ {% endif %}{{ r.house }}</span>
+      <span class="house-meta">
+        <span class="mono">{{ r.reached }}/{{ r.total }}</span>
+        {% if r.followup %}<span class="tag st-tag-followup">{{ r.followup }} follow-up</span>{% endif %}
+      </span>
+    </a>
+    {{ progress(r) }}
+  </li>
+  {% endfor %}
+</ul>
+{% endif %}
+{% endblock %}

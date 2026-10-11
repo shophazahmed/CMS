@@ -7,7 +7,7 @@ import click
 from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from . import admin, auth, imports, voters
+from . import admin, auth, canvass, imports, voters
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -57,6 +57,7 @@ def create_app(test_config=None):
     app.register_blueprint(voters.bp)
     app.register_blueprint(admin.bp)
     app.register_blueprint(imports.bp)
+    app.register_blueprint(canvass.bp)
 
     @app.context_processor
     def inject():

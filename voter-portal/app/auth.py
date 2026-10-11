@@ -23,7 +23,12 @@ from .db import get_db, now_iso
 
 bp = Blueprint("auth", __name__)
 
-ROLES = ("admin", "user")
+ROLES = ("admin", "agent", "user")
+ROLE_LABELS = {
+    "admin": "Admin: everything, including users, imports and exports",
+    "user": "User: read-only, all voters, can record canvassing",
+    "agent": "Agent: canvasser, sees only the houses assigned to them",
+}
 MAX_FAILED_LOGINS = 5
 LOCKOUT = timedelta(minutes=15)
 MIN_PASSWORD_LENGTH = 10
@@ -129,16 +134,25 @@ def is_admin():
 
 # --- views -------------------------------------------------------------------
 
-def _safe_next(target):
+def _safe_next(target, user=None):
+    if target in (None, "", "/"):
+        return home_url(user)
     if target and target.startswith("/") and not target.startswith("//") and "\\" not in target:
         return target
+    return home_url()
+
+
+def home_url(user=None):
+    user = user or g.get("user")
+    if user is not None and user["role"] == "agent":
+        return url_for("canvass.my_houses")
     return url_for("voters.search")
 
 
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     if g.user is not None:
-        return redirect(url_for("voters.search"))
+        return redirect(home_url())
     if request.method != "POST":
         return render_template("login.html", next=request.args.get("next", ""))
 
@@ -178,7 +192,7 @@ def login():
         session["uid"] = user["id"]
         session["pwd_at"] = user["password_changed_at"]
         audit.log("login", user=user)
-        return redirect(_safe_next(request.form.get("next")))
+        return redirect(_safe_next(request.form.get("next"), user))
 
     flash(error, "error")
     return render_template("login.html", next=request.form.get("next", ""), username=username), 401
@@ -222,5 +236,5 @@ def change_password():
             audit.log("password_changed", target=g.user["username"])
             session["pwd_at"] = stamp
             flash("Password changed.", "success")
-            return redirect(url_for("voters.search"))
+            return redirect(home_url())
     return render_template("account/password.html")

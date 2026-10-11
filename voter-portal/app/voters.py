@@ -56,6 +56,7 @@ def read_filters(args):
         "q": clean_text(args.get("q", ""))[:100],
         "national_id": clean_text(args.get("national_id", "")).upper().replace(" ", "")[:20],
         "house": clean_text(args.get("house", ""))[:100],
+        "h": clean_text(args.get("h", ""))[:200],
         "party": clean_text(args.get("party", ""))[:50],
         "sex": args.get("sex", "") if args.get("sex", "") in ("M", "F", "unknown") else "",
         "age_min": int_or_none("age_min"),
@@ -65,8 +66,29 @@ def read_filters(args):
     }
 
 
+def agent_scope():
+    """SQL limiting an agent to the voters in their assigned houses (None for other roles)."""
+    user = g.get("user")
+    if user is not None and user["role"] == "agent":
+        return "house_name IN (SELECT house_name FROM house_assignments WHERE user_id = ?)", [user["id"]]
+    return None, []
+
+
+def scoped(sql_where="", params=()):
+    """Add the agent scope to a WHERE clause ('' or ' WHERE ...')."""
+    clause, extra = agent_scope()
+    if not clause:
+        return sql_where, list(params)
+    if sql_where:
+        return f"{sql_where} AND {clause}", list(params) + extra
+    return f" WHERE {clause}", extra
+
+
 def build_where(f):
     clauses, params = [], []
+    if f.get("h"):
+        clauses.append("house_name = ?")
+        params.append(f["h"])
     if f["q"]:
         clauses.append(
             "(full_name LIKE ? ESCAPE '\\' OR national_id LIKE ? ESCAPE '\\' OR house_name LIKE ? ESCAPE '\\'"
@@ -99,7 +121,7 @@ def build_where(f):
     if f.get("status"):
         clauses.append("status = ?")
         params.append(f["status"])
-    return (" WHERE " + " AND ".join(clauses)) if clauses else "", params
+    return scoped((" WHERE " + " AND ".join(clauses)) if clauses else "", params)
 
 
 def active_filters(f):
@@ -123,12 +145,14 @@ def search():
         f"SELECT * FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
         params + [PAGE_SIZE, (page - 1) * PAGE_SIZE],
     ).fetchall()
-    parties = [r[0] for r in db.execute("SELECT DISTINCT party FROM voters WHERE party != '' ORDER BY party")]
+    w, p = scoped(" WHERE party != ''")
+    parties = [r[0] for r in db.execute(f"SELECT DISTINCT party FROM voters{w} ORDER BY party", p)]
+    w, p = scoped(" WHERE house_name != ''")
     houses = [r[0] for r in db.execute(
-        "SELECT DISTINCT house_name FROM voters WHERE house_name != '' ORDER BY house_name COLLATE NOCASE"
-    )]
+        f"SELECT DISTINCT house_name FROM voters{w} ORDER BY house_name COLLATE NOCASE", p)]
+    w, p = scoped()
     stats = db.execute(
-        "SELECT COUNT(*) AS total, SUM(sex = 'M') AS male, SUM(sex = 'F') AS female FROM voters"
+        f"SELECT COUNT(*) AS total, SUM(sex = 'M') AS male, SUM(sex = 'F') AS female FROM voters{w}", p
     ).fetchone()
     query_args = {k: v for k, v in request.args.items() if k != "page"}
     # Counts per canvassing status for the chips, within every filter except the status itself
@@ -161,6 +185,7 @@ def filter_chips(f, query_args):
         "q": lambda v: f"“{v}”",
         "national_id": lambda v: f"ID {v}",
         "house": lambda v: f"House: {v}",
+        "h": lambda v: f"🏠 {v}",
         "party": lambda v: "No party" if v == "(none)" else v,
         "sex": lambda v: {"M": "Male", "F": "Female", "unknown": "Sex not recorded"}[v],
         "age_min": lambda v: f"Age ≥ {v}",
@@ -176,7 +201,8 @@ def filter_chips(f, query_args):
 
 
 def get_voter_or_404(national_id):
-    row = get_db().execute("SELECT * FROM voters WHERE national_id = ?", (national_id,)).fetchone()
+    w, p = scoped(" WHERE national_id = ?", [national_id])
+    row = get_db().execute(f"SELECT * FROM voters{w}", p).fetchone()
     if row is None:
         abort(404)
     return row

@@ -49,3 +49,13 @@ document.addEventListener("change", async (event) => {
     form.submit();  // fall back to a normal post (shows the error page if the session expired)
   }
 });
+
+// Type-to-filter for long lists (house assignments).
+document.addEventListener("input", (event) => {
+  const input = event.target.closest("[data-filter-rows]");
+  if (!input) return;
+  const term = input.value.trim().toLowerCase();
+  document.querySelectorAll(`${input.dataset.filterRows} > [data-filter-text]`).forEach((row) => {
+    row.hidden = term !== "" && !row.dataset.filterText.includes(term);
+  });
+});

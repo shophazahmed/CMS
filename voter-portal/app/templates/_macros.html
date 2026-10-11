@@ -16,6 +16,7 @@
 {%- elif name == 'edit' %}<path d="M4 20h4L19 9l-4-4L4 16v4zM14 6l4 4"/>
 {%- elif name == 'trash' %}<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>
 {%- elif name == 'home' %}<path d="M3 11 12 4l9 7M5 10v10h14V10"/>
+{%- elif name == 'chart' %}<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>
 {%- elif name == 'logo' %}<path d="m5 12.5 4.5 4.5L19 7.5"/>
 {%- endif %}
 </svg>
@@ -40,3 +41,27 @@
 {% endmacro %}
 
 {% macro sex_label(s) %}{{ {'M': 'Male', 'F': 'Female'}.get(s, '—') }}{% endmacro %}
+
+{# Stacked canvassing bar: contacted / follow up / no answer; the rest is the "not contacted" track.
+   Inline SVG so widths are attributes (the CSP forbids inline style attributes). #}
+{% macro progress(r, size='') -%}
+{% set total = r.total or 0 %}
+<svg class="pbar {{ size }}" viewBox="0 0 100 10" preserveAspectRatio="none" role="img"
+     aria-label="{{ r.reached or 0 }} of {{ total }} reached: {{ r.contacted or 0 }} contacted, {{ r.followup or 0 }} follow up, {{ r.noanswer or 0 }} no answer">
+  {%- if total %}{% set ns = namespace(x=0) %}
+  {%- for key, label in [('contacted', 'Contacted'), ('followup', 'Follow up'), ('noanswer', 'No answer')] %}
+  {%- set n = r[key] or 0 %}
+  {%- if n %}{% set w = 100 * n / total %}<rect class="seg-{{ key }}" x="{{ ns.x|round(3) }}" y="0" width="{{ w|round(3) }}" height="10"><title>{{ label }}: {{ n }} of {{ total }}</title></rect>{% set ns.x = ns.x + w %}{% endif %}
+  {%- endfor %}
+  {%- endif %}
+</svg>
+{%- endmacro %}
+
+{% macro legend() -%}
+<p class="legend" aria-hidden="true">
+  <span><i class="seg-contacted"></i>Contacted</span>
+  <span><i class="seg-followup"></i>Follow up</span>
+  <span><i class="seg-noanswer"></i>No answer</span>
+  <span><i class="seg-track"></i>Not contacted</span>
+</p>
+{%- endmacro %}

@@ -1,0 +1,114 @@
+import re
+import sqlite3
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.auth import hash_password  # noqa: E402
+from app.canvass import plan_assignment  # noqa: E402
+from app.db import connect, init_schema, now_iso  # noqa: E402
+from tests.test_app import ADMIN_PW, USER_PW, app, csrf, login  # noqa: E402,F401
+
+AGENT_PW = "agent-pass-1234"
+
+
+def add_agent(app, name="ali"):
+    conn = connect(app.config["DATABASE"])
+    stamp = now_iso(precise=True)
+    conn.execute("INSERT INTO users (username, password_hash, role, must_change_password, password_changed_at,"
+                 " created_at) VALUES (?, ?, 'agent', 0, ?, ?)", (name, hash_password(AGENT_PW), stamp, stamp))
+    conn.commit()
+    return conn.execute("SELECT id FROM users WHERE username = ?", (name,)).fetchone()[0]
+
+
+def test_agent_sees_only_assigned_houses(app):
+    agent_id = add_agent(app)
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    token = csrf(a, "/admin/agents")
+    houses = re.findall(r'name="house" value="([^"]+)"', a.get("/admin/agents").get_data(as_text=True))
+    assert houses == ["Blue Ge", "Rose Villa"]
+    a.post("/admin/agents/assign", data={"csrf_token": token, "house": houses,
+                                         "agent": ["", str(agent_id)]})
+
+    g = app.test_client()
+    r = login(g, "ali", AGENT_PW)
+    assert r.headers["Location"].endswith("/my")  # agents land on their houses
+    my = g.get("/my").get_data(as_text=True)
+    assert "Rose Villa" in my and "Blue Ge" not in my and "Suggested next" in my
+    page = g.get("/").get_data(as_text=True)
+    assert page.count('id="v-A2000') == 2 and "Moosa Beta" not in page
+    assert g.get("/?q=Moosa").get_data(as_text=True).count('id="v-A2000') == 0
+    assert g.get("/voters/A200002").status_code == 404             # another agent's house
+    token = csrf(g, "/")
+    assert g.post("/voters/A200002/canvass", data={"csrf_token": token, "status": "contacted"}).status_code == 404
+    assert g.post("/voters/A200001/canvass", data={"csrf_token": token, "status": "contacted"}).status_code == 302
+    assert g.get("/dashboard").status_code == 403
+    assert g.get("/admin/agents").status_code == 403
+    assert g.get("/export.csv").status_code == 403
+    page = g.get("/?h=Rose+Villa").get_data(as_text=True)          # exact-house link from My houses
+    assert page.count('id="v-A2000') == 2
+
+    # the dashboard (admin) shows the progress and who owns the house
+    dash = a.get("/dashboard").get_data(as_text=True)
+    assert "1/2" in dash and "ali" in dash and "Updates today" in dash
+    assert "Blue Ge" in a.get("/dashboard?agent=none").get_data(as_text=True)
+    assert "Blue Ge" not in a.get(f"/dashboard?agent={agent_id}").get_data(as_text=True)
+    assert "Rose Villa" in a.get(f"/my?agent={agent_id}").get_data(as_text=True)
+
+
+def test_read_only_user_sees_dashboard(app):
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    page = u.get("/dashboard").get_data(as_text=True)
+    assert "Canvassing dashboard" in page and "0%" in page
+    assert u.get("/admin/agents").status_code == 403
+
+
+def test_auto_assign_balances_work(app):
+    a_id, b_id = add_agent(app, "aa"), add_agent(app, "bb")
+    conn = connect(app.config["DATABASE"])
+    stamp = now_iso()
+    for i in range(6):  # house sizes 1..6
+        for j in range(i + 1):
+            conn.execute("INSERT INTO voters (national_id, full_name, house_name, created_at, updated_at)"
+                         " VALUES (?, ?, ?, ?, ?)", (f"A9{i}{j:04d}", "X", f"H{i}", stamp, stamp))
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    token = csrf(a, "/admin/agents")
+    r = a.post("/admin/agents/auto", data={"csrf_token": token, "agents": [str(a_id), str(b_id)],
+                                           "scope": "unassigned"}, follow_redirects=True)
+    assert "Assigned 8 houses" in r.get_data(as_text=True)
+    load = dict(conn.execute("SELECT a.user_id, COUNT(*) FROM house_assignments a JOIN voters v"
+                             " ON v.house_name = a.house_name GROUP BY a.user_id").fetchall())
+    assert sum(load.values()) == 24 and abs(load[a_id] - load[b_id]) <= 1
+
+
+def test_plan_assignment_largest_first():
+    houses = [{"house": h, "work": w} for h, w in [("a", 8), ("b", 7), ("c", 6), ("d", 5), ("e", 4)]]
+    plan, load = plan_assignment(houses, [1, 2], {2: 3})
+    assert load == {1: 18, 2: 15}  # a→1, b→2, c→1, d→2, e→1
+    assert plan["a"] == 1 and plan["b"] == 2
+
+
+def test_old_database_gains_agent_role(tmp_path):
+    db = tmp_path / "old.db"
+    conn = sqlite3.connect(db)
+    conn.executescript("""
+      CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE COLLATE NOCASE,
+        password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('admin', 'user')),
+        is_active INTEGER NOT NULL DEFAULT 1, must_change_password INTEGER NOT NULL DEFAULT 1,
+        failed_logins INTEGER NOT NULL DEFAULT 0, locked_until TEXT, password_changed_at TEXT NOT NULL,
+        last_login_at TEXT, created_at TEXT NOT NULL);
+      INSERT INTO users (username, password_hash, role, password_changed_at, created_at)
+        VALUES ('admin', 'x', 'admin', 't', 't');""")
+    conn.commit()
+    conn.close()
+    conn = connect(db)
+    init_schema(conn)
+    init_schema(conn)  # idempotent
+    conn.execute("INSERT INTO users (username, password_hash, role, password_changed_at, created_at)"
+                 " VALUES ('ali', 'x', 'agent', 't', 't')")
+    assert [r[0] for r in conn.execute("SELECT username FROM users ORDER BY id")] == ["admin", "ali"]

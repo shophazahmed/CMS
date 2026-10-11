@@ -42,6 +42,33 @@ can record visits; they still can't change any other voter detail.
 - **Imports never touch canvassing data.** Replace mode removes voters missing from the files and
   overwrites the rest in place, so their status and notes are kept.
 
+## Dashboard and agents
+
+**Dashboard** (admins and users): overall progress (voters reached, contacted, follow up, no answer,
+not contacted, houses finished, updates today and this week), then one progress bar per house with
+its agent. You can filter by party or agent (including "Unassigned houses") and sort by least
+progress, most voters left, biggest house, recently updated or name. Tap a house to canvass its
+voters. "Most active this week" ranks people by their canvassing updates.
+
+**Agents** are canvassers. Create a user with the role **agent**, then assign houses under **Agents**:
+- **Assigning:** pick an agent for each house in the list (type to filter), or use **Auto-assign**.
+  Auto-assign shares out the unassigned houses, or re-balances all of them, so each agent gets a
+  similar amount of work left (voters not yet reached plus follow-ups), handing out the biggest
+  houses first.
+- **What agents see:** only the voters in their own houses, in search, voter pages, photos and status
+  updates. They don't see the dashboard and can't export.
+- **My houses:** an agent lands here after signing in. It shows their progress, follow-ups and
+  not-contacted counts (tap to list them), and a **Suggested next** house: follow-ups first, then the
+  house with the most voters not yet reached.
+- **Admins** can open any agent's page from the Agents list.
+
+| | Admin | User | Agent |
+|---|---|---|---|
+| Search and view voters | all | all | assigned houses only |
+| Set canvassing status and notes | ✓ | ✓ | assigned houses only |
+| Dashboard | ✓ | ✓ | (My houses) |
+| Edit voters, export, import, users, agents, activity log | ✓ | — | — |
+
 ## Security
 
 - Passwords are hashed with **Argon2id** and must be at least 10 characters. Seeded and
