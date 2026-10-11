@@ -11,6 +11,7 @@ from flask import (
     abort,
     flash,
     g,
+    make_response,
     redirect,
     render_template,
     request,
@@ -87,12 +88,28 @@ def csrf_token():
     return token
 
 
+def _same_origin():
+    """True when the browser says the request came from one of our own pages."""
+    source = request.headers.get("Origin") or request.headers.get("Referer") or ""
+    own = request.host_url.rstrip("/")
+    return source == own or source.startswith(own + "/")
+
+
 def check_csrf():
     if request.method in ("GET", "HEAD", "OPTIONS"):
         return
     sent = request.form.get("csrf_token") or request.headers.get("X-CSRF-Token", "")
-    if not sent or not hmac.compare_digest(sent, session.get("csrf", "")):
-        abort(400, description="Your form expired. Reload the page and try again.")
+    if sent and hmac.compare_digest(sent, session.get("csrf", "")):
+        return
+    if request.endpoint == "auth.login":
+        # Some phone browsers (Brave, private tabs, a page restored from the back cache) post the
+        # sign-in form without the cookie the token lives in. Sign-in only needs proof that the form
+        # is ours, which the Origin/Referer header gives; everything after sign-in still needs the token.
+        if _same_origin():
+            return
+        flash("That sign-in page had expired. Please sign in again.", "error")
+        return redirect(url_for("auth.login", next=request.form.get("next", "")))
+    abort(400, description="Your form expired. Reload the page and try again.")
 
 
 # --- decorators --------------------------------------------------------------
@@ -152,9 +169,17 @@ def home_url(user=None):
 @bp.route("/login", methods=["GET", "POST"])
 def login():
     if g.user is not None:
-        return redirect(home_url())
+        target = request.args.get("next")
+        return redirect(_safe_next(target) if target else home_url())
     if request.method != "POST":
-        return render_template("login.html", next=request.args.get("next", ""))
+        if request.args.get("check"):
+            # We just signed them in, but the browser didn't keep the session cookie.
+            flash("Your browser is blocking cookies for this site, so you can't stay signed in. "
+                  "In Brave, tap the lion icon and turn Shields off for this site, or use Safari or Chrome. "
+                  "Private tabs that block cookies won't work either.", "error")
+        resp = make_response(render_template("login.html", next=request.args.get("next", "")))
+        resp.headers["Cache-Control"] = "no-store"
+        return resp
 
     db = get_db()
     username = request.form.get("username", "").strip()
@@ -192,7 +217,9 @@ def login():
         session["uid"] = user["id"]
         session["pwd_at"] = user["password_changed_at"]
         audit.log("login", user=user)
-        return redirect(_safe_next(request.form.get("next"), user))
+        # Go through /login once more: a signed-in browser is sent straight on to the page,
+        # one that dropped the cookie sees why instead of a silent loop back to sign-in.
+        return redirect(url_for("auth.login", check=1, next=_safe_next(request.form.get("next"), user)))
 
     flash(error, "error")
     return render_template("login.html", next=request.form.get("next", ""), username=username), 401

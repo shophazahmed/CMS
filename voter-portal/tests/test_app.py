@@ -55,7 +55,30 @@ def test_requires_login(app):
 def test_csrf_enforced(app):
     c = app.test_client()
     c.get("/login")
-    assert c.post("/login", data={"username": "boss", "password": ADMIN_PW}).status_code == 400
+    creds = {"username": "boss", "password": ADMIN_PW}
+    # No token and no proof the form is ours: back to sign-in, not signed in
+    r = c.post("/login", data=creds)
+    assert r.status_code == 302 and "check=1" not in r.headers["Location"]
+    assert c.get("/").status_code == 302
+    r = c.post("/login", data=creds, headers={"Origin": "https://evil.example"})
+    assert "check=1" not in r.headers["Location"]
+    assert c.get("/").status_code == 302
+    # Other forms still need the token
+    assert c.post("/logout").status_code == 400
+
+
+def test_login_without_cookie_from_own_page(app):
+    """Brave / private tabs can post the sign-in form without the session cookie."""
+    c = app.test_client()
+    r = c.post("/login", data={"username": "boss", "password": ADMIN_PW},
+               headers={"Origin": "http://localhost"})
+    assert r.status_code == 302 and "check=1" in r.headers["Location"]
+    r = c.get(r.headers["Location"])  # cookie kept: sent on to the portal
+    assert r.status_code == 302 and "/login" not in r.headers["Location"]
+    # A browser that dropped the cookie is told why instead of looping
+    fresh = app.test_client()
+    page = fresh.get("/login?check=1&next=/").get_data(as_text=True)
+    assert "blocking cookies" in page
 
 
 def test_user_is_read_only(app):
