@@ -606,3 +606,11 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .recent-list li:first-child { border-top: 0; }
 .recent-list a { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
 .recent-list .muted { flex-basis: 100%; }
+
+/* Dashboard date range */
+.range-picker { display: grid; gap: .5rem; margin: 0 0 1rem; }
+.range-picker .chips { margin: 0; }
+.range-dates { display: flex; flex-wrap: wrap; align-items: flex-end; gap: .5rem; }
+.range-dates label { display: grid; gap: .2rem; font-size: .85rem; color: var(--muted); flex: 1 1 8.5rem; min-width: 0; }
+.range-dates input { width: 100%; min-width: 0; }
+.leaders a { color: inherit; }

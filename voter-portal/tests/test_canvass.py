@@ -232,3 +232,39 @@ def test_filter_by_who_contacted(app):
     # set back to "not contacted": no longer counts as contacted by anyone
     u.post("/voters/A200001/canvass", data={"csrf_token": csrf(u, "/"), "status": "new"})
     assert a.get(f"/?by={ids['viewer']}").get_data(as_text=True).count('id="v-A2000') == 0
+
+
+def test_dashboard_date_range_and_user_filter(app):
+    from datetime import date, timedelta
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    u.post("/voters/A200001/canvass", data={"csrf_token": csrf(u, "/"), "status": "contacted"})
+    a.post("/voters/A200002/canvass", data={"csrf_token": csrf(a, "/"), "status": "followup"})
+    ids = {r[1]: r[0] for r in connect(app.config["DATABASE"]).execute("SELECT id, username FROM users")}
+
+    dash = a.get("/dashboard").get_data(as_text=True)
+    assert "Last 7 days" in dash and "Reached by" in dash and "2 of 3" in dash
+
+    # one person: only the houses where they reached someone
+    dash = a.get(f"/dashboard?user={ids['viewer']}").get_data(as_text=True)
+    assert "reached by <strong>viewer</strong>" in dash and "Rose Villa" in dash and "Blue Ge" not in dash
+    assert "1 of 2" in dash
+
+    today = (date.today()).isoformat()
+    long_ago = (date.today() - timedelta(days=400)).isoformat()
+    dash = a.get(f"/dashboard?from={long_ago}&to={long_ago}").get_data(as_text=True)
+    assert "0 of 3" in dash
+    dash = a.get(f"/dashboard?user={ids['viewer']}&from={long_ago}&to={long_ago}").get_data(as_text=True)
+    assert "Nobody was reached by viewer in this period" in dash
+    dash = a.get(f"/dashboard?from={long_ago}&to={today}").get_data(as_text=True)
+    assert "2 of 3" in dash
+    # bad dates are ignored, reversed dates are swapped
+    assert a.get("/dashboard?from=nope&to=2026-13-40").status_code == 200
+    assert "2 of 3" in a.get(f"/dashboard?from={today}&to={long_ago}").get_data(as_text=True)
+
+    # own dashboard follows the range too
+    page = u.get(f"/my?from={long_ago}&to={long_ago}").get_data(as_text=True)
+    assert "Aminath Alpha" not in page
+    assert "Aminath Alpha" in u.get(f"/my?from={long_ago}&to={today}").get_data(as_text=True)

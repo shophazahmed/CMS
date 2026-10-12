@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import progress, legend, icon %}
+{% from "_macros.html" import progress, legend, icon, range_picker %}
 {% block title %}My dashboard{% endblock %}
 {% block content %}
 {% set is_agent = agent.role == 'agent' %}
@@ -13,7 +13,8 @@
   {% endif %}
 </div>
 
-<h2>{{ 'Their' if viewing_other else 'Your' }} canvassing</h2>
+<h2>{{ 'Their' if viewing_other else 'Your' }} canvassing{% if rng.label %} · {{ rng.label }}{% endif %}</h2>
+{{ range_picker(rng, 'canvass.my_houses', request.args.to_dict()) }}
 <section class="kpis" aria-label="Canvassing by {{ agent.username }}">
   <a class="kpi link-kpi hero" href="{{ url_for('voters.search', by=agent.id, sort='house') }}">
     <span class="kpi-label">Voters reached by {{ agent.username if viewing_other else 'you' }}</span>
@@ -24,7 +25,11 @@
   <a class="kpi link-kpi" href="{{ url_for('voters.search', by=agent.id, status='followup', sort='house') }}">
     <span class="kpi-label"><i class="dot seg-followup"></i>{{ 'Their' if viewing_other else 'Your' }} follow-ups</span><strong>{{ mine.followup or 0 }}</strong>
     <span class="muted">Tap to see them</span></a>
+  {% if rng.label %}
+  <div class="kpi"><span class="kpi-label">Updates · {{ rng.label }}</span><strong>{{ act.in_range }}</strong></div>
+  {% else %}
   <div class="kpi"><span class="kpi-label">Updates today</span><strong>{{ act.today }}</strong><span class="muted">{{ act.week }} this week</span></div>
+  {% endif %}
 </section>
 
 {% if recent %}

@@ -20,14 +20,15 @@ SORTS = {
     "recent": "last_at IS NULL, last_at DESC",
 }
 
+# {c} limits what counts as reached (a date range, one person); "1" counts every status
 HOUSE_STATS = """
 SELECT v.house_name AS house,
        COUNT(*) AS total,
-       SUM(v.status = 'contacted') AS contacted,
-       SUM(v.status = 'followup') AS followup,
-       SUM(v.status = 'noanswer') AS noanswer,
-       SUM(v.status != 'new') AS reached,
-       MAX(v.status_at) AS last_at,
+       SUM(v.status = 'contacted' AND {c}) AS contacted,
+       SUM(v.status = 'followup' AND {c}) AS followup,
+       SUM(v.status = 'noanswer' AND {c}) AS noanswer,
+       SUM(v.status != 'new' AND {c}) AS reached,
+       MAX(CASE WHEN {c} THEN v.status_at END) AS last_at,
        a.user_id AS agent_id,
        u.username AS agent,
        u.is_active AS agent_active
@@ -43,12 +44,57 @@ def local_day_start_utc():
     return (start_local - LOCAL_OFFSET).isoformat(timespec="seconds")
 
 
-def house_rows(where="", params=(), sort="progress"):
+def house_rows(where="", params=(), sort="progress", count_if=("1", []), having=""):
     clause, extra = campaign.party_scope("v.party")
     if clause:
         where, params = f"{where} AND {clause}", list(params) + extra
-    sql = f"{HOUSE_STATS} WHERE v.house_name != '' {where} GROUP BY v.house_name ORDER BY {SORTS[sort]}"
-    return get_db().execute(sql, list(params)).fetchall()
+    cond, cond_params = count_if
+    sql = (f"{HOUSE_STATS.format(c=f'({cond})')} WHERE v.house_name != '' {where} GROUP BY v.house_name"
+           f" {having} ORDER BY {SORTS[sort]}")
+    return get_db().execute(sql, list(cond_params) * 5 + list(params)).fetchall()
+
+
+def _parse_day(text):
+    try:
+        return datetime.strptime(text, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        return None
+
+
+def read_range(args):
+    """Date range from ?from=YYYY-MM-DD&to=YYYY-MM-DD (Maldives days, both ends included)."""
+    start, end = _parse_day(args.get("from")), _parse_day(args.get("to"))
+    if start and end and start > end:
+        start, end = end, start
+    to_utc = lambda d: (datetime(d.year, d.month, d.day, tzinfo=timezone.utc) - LOCAL_OFFSET).isoformat(  # noqa: E731
+        timespec="seconds")
+    today = (datetime.now(timezone.utc) + LOCAL_OFFSET).date()
+    presets = [("Today", today, today), ("Last 7 days", today - timedelta(days=6), today),
+               ("Last 30 days", today - timedelta(days=29), today)]
+    label = ""
+    if start or end:
+        fmt = lambda d: d.strftime("%-d %b")  # noqa: E731
+        label = (fmt(start) if start == end else
+                 f"{fmt(start) if start else 'start'} – {fmt(end) if end else 'today'}")
+        label = next((name for name, a, b in presets if (a, b) == (start, end)), label)
+    return {
+        "from": start.isoformat() if start else "", "to": end.isoformat() if end else "",
+        "start_utc": to_utc(start) if start else None,
+        "end_utc": to_utc(end + timedelta(days=1)) if end else None,
+        "label": label,
+        "presets": [(name, a.isoformat(), b.isoformat()) for name, a, b in presets],
+    }
+
+
+def range_condition(rng, column="v.status_at"):
+    parts, params = [], []
+    if rng["start_utc"]:
+        parts.append(f"{column} >= ?")
+        params.append(rng["start_utc"])
+    if rng["end_utc"]:
+        parts.append(f"{column} < ?")
+        params.append(rng["end_utc"])
+    return parts, params
 
 
 def totals(rows):
@@ -63,8 +109,20 @@ def totals(rows):
     return t
 
 
-def activity(user_id=None):
+def activity(user_id=None, rng=None):
     db = get_db()
+    if rng and (rng["start_utc"] or rng["end_utc"]):
+        parts, params = range_condition(rng, "at")
+        if user_id:
+            parts.append("user_id = ?")
+            params.append(user_id)
+        cond = "".join(f" AND {p}" for p in parts)
+        n = db.execute(f"SELECT COUNT(*) FROM audit_log WHERE action = 'voter_canvass'{cond}", params).fetchone()[0]
+        leaders = db.execute(
+            "SELECT username, COUNT(*) AS n, MAX(at) AS last FROM audit_log WHERE action = 'voter_canvass'"
+            f"{''.join(f' AND {p}' for p in range_condition(rng, 'at')[0])} GROUP BY username ORDER BY n DESC LIMIT 10",
+            range_condition(rng, "at")[1]).fetchall()
+        return {"in_range": n, "leaders": leaders}
     since_today = local_day_start_utc()
     since_week = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
     cond, params = ("AND user_id = ?", [user_id]) if user_id else ("", [])
@@ -85,9 +143,18 @@ def dashboard():
     db = get_db()
     party = request.args.get("party", "")
     agent = request.args.get("agent", "")
+    who = request.args.get("user", "")
+    who = who if who.isdigit() else ""
+    rng = read_range(request.args)
     sort = request.args.get("sort", "progress")
     if sort not in SORTS:
         sort = "progress"
+    # What counts as reached: changed in the date range, and by that person
+    parts, cond_params = range_condition(rng)
+    if who:
+        parts.append("v.status_by = ?")
+        cond_params.append(int(who))
+    count_if = (" AND ".join(parts) or "1", cond_params)
     where, params = "", []
     if party:
         where += " AND v.party = ?"
@@ -97,25 +164,32 @@ def dashboard():
     elif agent.isdigit():
         where += " AND a.user_id = ?"
         params.append(int(agent))
-    rows = house_rows(where, params, sort)
+    # Looking at one person: only the houses where they reached someone
+    rows = house_rows(where, params, sort, count_if, having="HAVING reached > 0" if who else "")
     clause, extra = campaign.party_scope()
     scope = f" AND {clause}" if clause else ""
     parties = [r[0] for r in db.execute(
         f"SELECT DISTINCT party FROM voters WHERE party != ''{scope} ORDER BY party", extra)]
     agents = db.execute("SELECT id, username FROM users WHERE role = 'agent' ORDER BY username").fetchall()
+    people = db.execute("SELECT id, username, role FROM users ORDER BY username COLLATE NOCASE").fetchall()
+    who_name = next((u["username"] for u in people if str(u["id"]) == who), "")
     no_house = db.execute(f"SELECT COUNT(*) FROM voters WHERE house_name = ''{scope}", extra).fetchone()[0]
     return render_template(
-        "canvass/dashboard.html", rows=rows, t=totals(rows), act=activity(), parties=parties, agents=agents,
+        "canvass/dashboard.html", rows=rows, t=totals(rows), act=activity(int(who) if who else None, rng),
+        parties=parties, agents=agents, people=people, who=who, who_name=who_name, rng=rng,
         party=party, agent=agent, sort=sort, sorts=SORTS, no_house=no_house,
+        leaders=activity(None, rng)["leaders"],
     )
 
 
-def personal(user_id):
+def personal(user_id, rng=None):
     """One person's own canvassing: voters they last marked as reached, and their latest ones."""
     from .voters import scoped  # here to avoid a circular import at load time
 
     db = get_db()
-    w, p = scoped(" WHERE status_by = ? AND status != 'new'", [user_id])
+    parts, extra = range_condition(rng, "status_at") if rng else ([], [])
+    w, p = scoped(" WHERE status_by = ? AND status != 'new'" + "".join(f" AND {x}" for x in parts),
+                  [user_id] + extra)
     mine = db.execute(
         "SELECT COUNT(*) AS total, SUM(status = 'contacted') AS contacted, SUM(status = 'followup') AS followup,"
         f" SUM(status = 'noanswer') AS noanswer FROM voters{w}", p).fetchone()
@@ -155,8 +229,10 @@ def my_houses():
     suggestion = None
     if open_rows:
         suggestion = max(open_rows, key=lambda r: (r["followup"] or 0, r["total"] - r["reached"], -len(r["house"])))
-    mine, recent = personal(user["id"])
-    return render_template("canvass/my.html", rows=rows, t=t, act=activity(user["id"]), agent=user, singles=singles,
+    rng = read_range(request.args)
+    mine, recent = personal(user["id"], rng)
+    return render_template("canvass/my.html", rows=rows, t=t, act=activity(user["id"], rng), agent=user, singles=singles,
+                           rng=rng,
                            mine=mine, recent=recent, statuses=STATUS_LABELS,
                            suggestion=suggestion, sort=sort, viewing_other=user["id"] != g.user["id"])
 

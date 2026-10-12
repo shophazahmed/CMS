@@ -67,3 +67,22 @@
   <span><i class="seg-track"></i>Not contacted</span>
 </p>
 {%- endmacro %}
+
+{# Date range for the dashboards: quick chips plus from/to dates. `args` keeps the page's other filters. #}
+{% macro range_picker(rng, endpoint, args) -%}
+{% set rest = dict(args) %}{% set _ = rest.pop('from', None) %}{% set _ = rest.pop('to', None) %}
+<div class="range-picker">
+  <div class="chips" aria-label="Date range">
+    <a class="chip {{ 'on' if not rng.from and not rng.to }}" href="{{ url_for(endpoint, **rest) }}">All time</a>
+    {% for name, a, b in rng.presets %}
+    <a class="chip {{ 'on' if rng.from == a and rng.to == b }}" href="{{ url_for(endpoint, **dict(rest, **{'from': a, 'to': b})) }}">{{ name }}</a>
+    {% endfor %}
+  </div>
+  <form class="range-dates" method="get" action="{{ url_for(endpoint) }}">
+    {% for k, v in rest.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+    <label>From <input type="date" name="from" value="{{ rng.from }}"></label>
+    <label>To <input type="date" name="to" value="{{ rng.to }}"></label>
+    <button class="small">Apply</button>
+  </form>
+</div>
+{%- endmacro %}

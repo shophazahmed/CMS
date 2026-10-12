@@ -1,15 +1,18 @@
 {% extends "base.html" %}
-{% from "_macros.html" import progress, legend, icon %}
+{% from "_macros.html" import progress, legend, icon, range_picker %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Canvassing dashboard</h1>
-  <p class="muted">Progress per house{{ ' · ' ~ party if party }}{% if agent == 'none' %} · unassigned houses{% endif %}</p>
+  <p class="muted">Progress per house{{ ' · ' ~ party if party }}{% if agent == 'none' %} · unassigned houses{% endif %}
+    {%- if who_name %} · reached by <strong>{{ who_name }}</strong>{% endif %}{% if rng.label %} · <strong>{{ rng.label }}</strong>{% endif %}</p>
 </div>
+
+{{ range_picker(rng, 'canvass.dashboard', request.args.to_dict()) }}
 
 <section class="kpis" aria-label="Totals">
   <div class="kpi hero">
-    <span class="kpi-label">Voters reached</span>
+    <span class="kpi-label">Voters reached{% if who_name %} by {{ who_name }}{% endif %}{% if rng.label %} · {{ rng.label }}{% endif %}</span>
     <strong>{{ t.pct }}%</strong>
     <span class="muted">{{ t.reached }} of {{ t.total }}</span>
     {{ progress(t, 'lg') }}
@@ -17,9 +20,13 @@
   <div class="kpi"><span class="kpi-label"><i class="dot seg-contacted"></i>Contacted</span><strong>{{ t.contacted }}</strong></div>
   <div class="kpi"><span class="kpi-label"><i class="dot seg-followup"></i>Follow up</span><strong>{{ t.followup }}</strong></div>
   <div class="kpi"><span class="kpi-label"><i class="dot seg-noanswer"></i>No answer</span><strong>{{ t.noanswer }}</strong></div>
-  <div class="kpi"><span class="kpi-label"><i class="dot seg-track"></i>Not contacted</span><strong>{{ t.new }}</strong></div>
+  <div class="kpi"><span class="kpi-label"><i class="dot seg-track"></i>{{ 'Not reached' if (who or rng.label) else 'Not contacted' }}</span><strong>{{ t.new }}</strong></div>
   <div class="kpi"><span class="kpi-label">Houses finished</span><strong>{{ t.done_houses }}<small class="muted"> / {{ t.houses }}</small></strong></div>
-  <div class="kpi"><span class="kpi-label">Updates today</span><strong>{{ act.today }}</strong><span class="muted">{{ act.week }} this week</span></div>
+  {% if rng.label %}
+  <div class="kpi"><span class="kpi-label">Updates · {{ rng.label }}</span><strong>{{ act.in_range }}</strong>{% if who_name %}<span class="muted">by {{ who_name }}</span>{% endif %}</div>
+  {% else %}
+  <div class="kpi"><span class="kpi-label">Updates today{% if who_name %} · {{ who_name }}{% endif %}</span><strong>{{ act.today }}</strong><span class="muted">{{ act.week }} this week</span></div>
+  {% endif %}
 </section>
 
 <form class="card filters dash-filters" method="get">
@@ -36,6 +43,14 @@
       {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if agent == a.id|string }}>{{ a.username }}</option>{% endfor %}
     </select>
   </label>
+  <label>Reached by
+    <select name="user" data-autosubmit>
+      <option value="">Anyone</option>
+      {% for u in people %}<option value="{{ u.id }}" {{ 'selected' if who == u.id|string }}>{{ u.username }}{{ ' (admin)' if u.role == 'admin' }}</option>{% endfor %}
+    </select>
+  </label>
+  {% if rng.from %}<input type="hidden" name="from" value="{{ rng.from }}">{% endif %}
+  {% if rng.to %}<input type="hidden" name="to" value="{{ rng.to }}">{% endif %}
   <label>Sort
     <select name="sort" data-autosubmit>
       {% for key, label in [('progress', 'Least progress first'), ('remaining', 'Most voters left'), ('voters', 'Biggest houses'), ('recent', 'Recently updated'), ('name', 'House name')] %}
@@ -66,16 +81,16 @@
   {% endfor %}
 </ul>
 {% else %}
-<div class="empty card"><p>No houses match.</p></div>
+<div class="empty card"><p>{{ 'Nobody was reached' ~ (' by ' ~ who_name if who_name else '') ~ (' in this period' if rng.label else '') ~ '.' if (who or rng.label) else 'No houses match.' }}</p></div>
 {% endif %}
 {% if no_house %}<p class="muted small-text">{{ no_house }} voters have no house name and aren't counted per house.</p>{% endif %}
 
-{% if act.leaders %}
+{% if leaders %}
 <section class="card">
-  <h2>Most active this week</h2>
+  <h2>Most active {{ '· ' ~ rng.label if rng.label else 'this week' }}</h2>
   <ol class="leaders">
-    {% for l in act.leaders %}
-    <li><span>{{ l.username or '—' }}</span><span class="muted">{{ l.n }} update{{ 's' if l.n != 1 }}</span></li>
+    {% for l in leaders %}
+    <li><span>{% set uid = (people|selectattr('username', 'equalto', l.username)|first or {}).id %}{% if uid %}<a href="{{ url_for('canvass.dashboard', **dict(request.args.to_dict(), user=uid)) }}">{{ l.username }}</a>{% else %}{{ l.username or '—' }}{% endif %}</span><span class="muted">{{ l.n }} update{{ 's' if l.n != 1 }}</span></li>
     {% endfor %}
   </ol>
 </section>

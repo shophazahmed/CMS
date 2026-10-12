@@ -92,6 +92,11 @@ Everyone else gets **My dashboard**: the voters they personally reached (by stat
 updates today and this week, and their latest contacts. For agents it also shows their houses, their
 one-by-one voters and a suggested next house. Admins can open anyone's from **Users → Dashboard ›**
 or the Agents page.
+- **Date range:** both dashboards have **All time / Today / Last 7 days / Last 30 days** and From/To
+  dates (Maldives days). Only status changes made in that period count as reached, and "Updates" and
+  "Most active" cover the same period.
+- **Reached by (admin dashboard):** pick a person to see only the voters they reached and only the
+  houses where they reached someone. Tap a name under "Most active" to do the same.
 
 **Agents** are canvassers. Create a user with the role **agent**, then assign houses under **Agents**:
 - **Assigning:** pick an agent for each house in the list (type to filter), or use **Auto-assign**.
