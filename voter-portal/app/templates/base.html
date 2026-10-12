@@ -26,10 +26,12 @@
     </a>
     <nav class="topnav" aria-label="Main">
       {% if role == 'agent' %}
-      <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>My houses</a>
+      <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>My dashboard</a>
       {% endif %}
       <a href="{{ url_for('voters.search') }}" {{ 'aria-current=page' if ep.startswith('voters.') and ep != 'voters.create' }}>Search</a>
-      {% if role in ('admin', 'user') %}
+      {% if role == 'user' %}
+      <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>My dashboard</a>
+      {% elif role == 'admin' %}
       <a href="{{ url_for('canvass.dashboard') }}" {{ 'aria-current=page' if ep == 'canvass.dashboard' }}>Dashboard</a>
       {% endif %}
       {% if is_admin %}
@@ -97,10 +99,12 @@
   {% if current_user %}
   <nav class="tabbar" aria-label="Main">
     {% if role == 'agent' %}
-    <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>{{ icon('home') }}<span>My houses</span></a>
+    <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>{{ icon('home') }}<span>My dashboard</span></a>
     {% endif %}
     <a href="{{ url_for('voters.search') }}" {{ 'aria-current=page' if ep.startswith('voters.') }}>{{ icon('search') }}<span>Search</span></a>
-    {% if role in ('admin', 'user') %}
+    {% if role == 'user' %}
+    <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>{{ icon('chart') }}<span>My dashboard</span></a>
+    {% elif role == 'admin' %}
     <a href="{{ url_for('canvass.dashboard') }}" {{ 'aria-current=page' if ep == 'canvass.dashboard' }}>{{ icon('chart') }}<span>Dashboard</span></a>
     {% endif %}
     {% if is_admin %}

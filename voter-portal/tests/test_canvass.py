@@ -58,12 +58,36 @@ def test_agent_sees_only_assigned_houses(app):
     assert "Rose Villa" in a.get(f"/my?agent={agent_id}").get_data(as_text=True)
 
 
-def test_read_only_user_sees_dashboard(app):
+def test_own_dashboards(app):
+    agent_id = add_agent(app)
     u = app.test_client()
     login(u, "viewer", USER_PW)
-    page = u.get("/dashboard").get_data(as_text=True)
-    assert "Canvassing dashboard" in page and "0%" in page
+    assert u.get("/dashboard").status_code == 403                   # the full dashboard is admin-only
     assert u.get("/admin/agents").status_code == 403
+    page = u.get("/my").get_data(as_text=True)
+    assert "My dashboard" in page and "Nothing yet" in page and "No houses assigned" not in page
+    token = csrf(u, "/")
+    u.post("/voters/A200001/canvass", data={"csrf_token": token, "status": "followup"})
+    u.post("/voters/A200002/canvass", data={"csrf_token": token, "status": "contacted"})
+    page = u.get("/my").get_data(as_text=True)
+    assert "Aminath Alpha" in page and "Moosa Beta" in page and "1 contacted · 1 follow up" in page
+    assert u.get("/my?agent=1").status_code == 200 and "viewer" in u.get("/my?agent=1").get_data(as_text=True)
+
+    # another person's work doesn't count on someone's own dashboard
+    g = app.test_client()
+    login(g, "ali", AGENT_PW)
+    page = g.get("/my").get_data(as_text=True)
+    assert "Aminath Alpha" not in page and "No houses assigned" in page
+    assert g.get("/dashboard").status_code == 403
+
+    # admins have the full dashboard and can open anyone's own
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    assert a.get("/dashboard").status_code == 200
+    viewer_id = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    page = a.get(f"/my?agent={viewer_id}").get_data(as_text=True)
+    assert "viewer's dashboard" in page and "Moosa Beta" in page
+    assert f"/my?agent={agent_id}" in a.get("/admin/users").get_data(as_text=True)
 
 
 def test_auto_assign_balances_work(app):

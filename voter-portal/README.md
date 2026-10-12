@@ -87,6 +87,12 @@ its agent. You can filter by party or agent (including "Unassigned houses") and 
 progress, most voters left, biggest house, recently updated or name. Tap a house to canvass its
 voters. "Most active this week" ranks people by their canvassing updates.
 
+**Dashboards:** only admins see the full **Dashboard** (every house, every agent, the leaderboard).
+Everyone else gets **My dashboard**: the voters they personally reached (by status, with links), their
+updates today and this week, and their latest contacts. For agents it also shows their houses, their
+one-by-one voters and a suggested next house. Admins can open anyone's from **Users → Dashboard ›**
+or the Agents page.
+
 **Agents** are canvassers. Create a user with the role **agent**, then assign houses under **Agents**:
 - **Assigning:** pick an agent for each house in the list (type to filter), or use **Auto-assign**.
   Auto-assign shares out the unassigned houses, or re-balances all of them, so each agent gets a

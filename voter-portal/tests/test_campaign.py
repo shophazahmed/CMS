@@ -38,7 +38,8 @@ def test_campaign_hides_other_parties(app):
     assert u.post("/voters/A200002/canvass", data={"csrf_token": token, "status": "contacted"}).status_code == 404
     assert "Show all parties" not in u.get("/").get_data(as_text=True)   # users can't switch it off
     assert u.post("/admin/view-all", data={"csrf_token": token}).status_code == 403
-    dash = u.get("/dashboard").get_data(as_text=True)
+    assert u.get("/dashboard").status_code == 403                    # full dashboard is admin-only
+    dash = a.get("/dashboard").get_data(as_text=True)
     assert "Blue Ge" not in dash and "Rose Villa" in dash and "0 of 1" in dash
 
     # admin: campaign view by default, can switch to all parties for their own session only

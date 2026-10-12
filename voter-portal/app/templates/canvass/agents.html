@@ -27,7 +27,7 @@
     {{ progress(a) }}
     <p class="small-text agent-foot">
       <span class="muted">Last sign-in {{ a.last_login_at[:16].replace('T', ' ') if a.last_login_at else 'never' }}</span>
-      <a href="{{ url_for('canvass.my_houses', agent=a.id) }}">Open their houses ›</a>
+      <a href="{{ url_for('canvass.my_houses', agent=a.id) }}">Open their dashboard ›</a>
     </p>
   </li>
   {% endfor %}

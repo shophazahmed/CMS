@@ -597,3 +597,12 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .vcard-who { margin: 0; display: flex; flex-wrap: wrap; gap: .1rem .9rem; }
 .vcard-who:empty { display: none; }
 .vcard-who strong { color: var(--text); font-weight: 600; }
+
+/* My dashboard: latest voters this person reached */
+.st-tag-contacted { background: color-mix(in srgb, var(--st-contacted) 15%, var(--surface)); color: var(--text); border-color: transparent; }
+.st-tag-noanswer { background: color-mix(in srgb, var(--st-noanswer) 15%, var(--surface)); color: var(--text); border-color: transparent; }
+.recent-list { list-style: none; margin: 0; padding: 0; }
+.recent-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .6rem; padding: .6rem 0; border-top: 1px solid var(--border); min-width: 0; }
+.recent-list li:first-child { border-top: 0; }
+.recent-list a { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.recent-list .muted { flex-basis: 100%; }

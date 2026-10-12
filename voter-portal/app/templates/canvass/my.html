@@ -1,17 +1,57 @@
 {% extends "base.html" %}
 {% from "_macros.html" import progress, legend, icon %}
-{% block title %}My houses{% endblock %}
+{% block title %}My dashboard{% endblock %}
 {% block content %}
+{% set is_agent = agent.role == 'agent' %}
 <div class="page-head">
   {% if viewing_other %}
-  <p><a href="{{ url_for('canvass.agents') }}">‹ Agents</a></p>
-  <h1>{{ agent.username }}'s houses</h1>
+  <p><a href="{{ url_for('canvass.agents') if is_agent else url_for('admin.users') }}">‹ {{ 'Agents' if is_agent else 'Users' }}</a></p>
+  <h1>{{ agent.username }}'s dashboard</h1>
   {% else %}
   <h1>Hi {{ agent.username }}</h1>
-  <p class="muted">Your houses and what's left to do.</p>
+  <p class="muted">{{ 'Your houses, your voters and what you have done.' if is_agent else 'What you have done so far.' }}</p>
   {% endif %}
 </div>
 
+<h2>{{ 'Their' if viewing_other else 'Your' }} canvassing</h2>
+<section class="kpis" aria-label="Canvassing by {{ agent.username }}">
+  <a class="kpi link-kpi hero" href="{{ url_for('voters.search', by=agent.id, sort='house') }}">
+    <span class="kpi-label">Voters reached by {{ agent.username if viewing_other else 'you' }}</span>
+    <strong>{{ mine.total }}</strong>
+    <span class="muted">{{ mine.contacted or 0 }} contacted · {{ mine.followup or 0 }} follow up · {{ mine.noanswer or 0 }} no answer</span>
+    {{ progress({'total': mine.total, 'reached': mine.total, 'contacted': mine.contacted, 'followup': mine.followup, 'noanswer': mine.noanswer}, 'lg') }}
+  </a>
+  <a class="kpi link-kpi" href="{{ url_for('voters.search', by=agent.id, status='followup', sort='house') }}">
+    <span class="kpi-label"><i class="dot seg-followup"></i>{{ 'Their' if viewing_other else 'Your' }} follow-ups</span><strong>{{ mine.followup or 0 }}</strong>
+    <span class="muted">Tap to see them</span></a>
+  <div class="kpi"><span class="kpi-label">Updates today</span><strong>{{ act.today }}</strong><span class="muted">{{ act.week }} this week</span></div>
+</section>
+
+{% if recent %}
+<div class="card">
+  <div class="list-head">
+    <h2>Latest</h2>
+    <a href="{{ url_for('voters.search', by=agent.id) }}">See all ›</a>
+  </div>
+  <ul class="recent-list">
+    {% for r in recent %}
+    <li>
+      <a href="{{ url_for('voters.detail', national_id=r.national_id, back=request.full_path.rstrip('?')) }}">{{ r.full_name or r.national_id }}</a>
+      <span class="tag st-tag-{{ r.status }}">{{ statuses[r.status] }}</span>
+      <span class="muted small-text">{{ r.house_name }}{% if r.house_name %} · {% endif %}{{ r.status_at|local }}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% elif not viewing_other %}
+<div class="empty card">
+  <p><strong>Nothing yet.</strong></p>
+  <p class="muted">Find a voter in <a href="{{ url_for('voters.search') }}">Search</a> and set their canvassing status.
+    Everyone you mark as contacted, follow up or no answer shows up here.</p>
+</div>
+{% endif %}
+
+{% if is_agent %}
 {% if singles.total %}
 <a class="card next-up" href="{{ url_for('voters.search', va=agent.id, sort='house') }}">
   <span class="kpi-label">Voters given to {{ agent.username if viewing_other else 'you' }} one by one</span>
@@ -27,11 +67,12 @@
   <p class="muted">Ask an admin to assign houses to {{ 'this agent' if viewing_other else 'you' }}.</p>
 </div>
 {% elif rows %}
-<section class="kpis" aria-label="Progress">
+<h2>{{ 'Their' if viewing_other else 'Your' }} houses</h2>
+<section class="kpis" aria-label="Progress in the houses">
   <div class="kpi hero">
-    <span class="kpi-label">Voters reached</span>
+    <span class="kpi-label">Voters reached in {{ 'their' if viewing_other else 'your' }} houses</span>
     <strong>{{ t.pct }}%</strong>
-    <span class="muted">{{ t.reached }} of {{ t.total }} in {{ t.houses }} house{{ 's' if t.houses != 1 }}</span>
+    <span class="muted">{{ t.reached }} of {{ t.total }} in {{ t.houses }} house{{ 's' if t.houses != 1 }}, by anyone</span>
     {{ progress(t, 'lg') }}
   </div>
   <a class="kpi link-kpi" href="{{ url_for('voters.search', status='followup', sort='house') }}">
@@ -40,7 +81,6 @@
   <a class="kpi link-kpi" href="{{ url_for('voters.search', status='new', sort='house') }}">
     <span class="kpi-label"><i class="dot seg-track"></i>Not contacted</span><strong>{{ t.new }}</strong>
     <span class="muted">Tap to see them</span></a>
-  <div class="kpi"><span class="kpi-label">Your updates today</span><strong>{{ act.today }}</strong><span class="muted">{{ act.week }} this week</span></div>
 </section>
 
 {% if suggestion and not viewing_other %}
@@ -81,5 +121,6 @@
   </li>
   {% endfor %}
 </ul>
+{% endif %}
 {% endif %}
 {% endblock %}

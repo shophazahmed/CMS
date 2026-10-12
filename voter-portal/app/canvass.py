@@ -11,6 +11,7 @@ bp = Blueprint("canvass", __name__)
 
 LOCAL_OFFSET = timedelta(hours=5)  # Maldives time, no daylight saving
 REACHED = ("contacted", "followup", "noanswer")
+STATUS_LABELS = {"new": "Not contacted", "contacted": "Contacted", "followup": "Follow up", "noanswer": "No answer"}
 SORTS = {
     "progress": "reached * 1.0 / total, total DESC, house",
     "remaining": "(total - reached) DESC, house",
@@ -79,7 +80,7 @@ def activity(user_id=None):
 
 
 @bp.route("/dashboard")
-@role_required("admin", "user")
+@role_required("admin")
 def dashboard():
     db = get_db()
     party = request.args.get("party", "")
@@ -109,10 +110,26 @@ def dashboard():
     )
 
 
+def personal(user_id):
+    """One person's own canvassing: voters they last marked as reached, and their latest ones."""
+    from .voters import scoped  # here to avoid a circular import at load time
+
+    db = get_db()
+    w, p = scoped(" WHERE status_by = ? AND status != 'new'", [user_id])
+    mine = db.execute(
+        "SELECT COUNT(*) AS total, SUM(status = 'contacted') AS contacted, SUM(status = 'followup') AS followup,"
+        f" SUM(status = 'noanswer') AS noanswer FROM voters{w}", p).fetchone()
+    recent = db.execute(
+        f"SELECT national_id, full_name, house_name, status, status_at FROM voters{w}"
+        " ORDER BY status_at DESC LIMIT 8", p).fetchall()
+    return mine, recent
+
+
 @bp.route("/my")
-@role_required("agent", "admin")
+@role_required("agent", "admin", "user")
 def my_houses():
-    """An agent's own houses. Admins can look at any agent's page with ?agent=<id>."""
+    """Everyone's own dashboard (admins have the full one): their canvassing, and for agents their houses.
+    Admins can open anyone's with ?agent=<id>."""
     user = g.user
     if g.user["role"] == "admin":
         agent_id = request.args.get("agent", type=int)
@@ -138,7 +155,9 @@ def my_houses():
     suggestion = None
     if open_rows:
         suggestion = max(open_rows, key=lambda r: (r["followup"] or 0, r["total"] - r["reached"], -len(r["house"])))
+    mine, recent = personal(user["id"])
     return render_template("canvass/my.html", rows=rows, t=t, act=activity(user["id"]), agent=user, singles=singles,
+                           mine=mine, recent=recent, statuses=STATUS_LABELS,
                            suggestion=suggestion, sort=sort, viewing_other=user["id"] != g.user["id"])
 
 

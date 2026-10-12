@@ -8,7 +8,8 @@
   <tbody>
   {% for u in users %}
   <tr class="{{ '' if u.is_active else 'inactive' }}">
-    <td data-label="User">{{ u.username }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}</td>
+    <td data-label="User">{{ u.username }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}
+      {% if u.role != 'admin' %}<a class="small-text" href="{{ url_for('canvass.my_houses', agent=u.id) }}">Dashboard ›</a>{% endif %}</td>
     <td data-label="Role">
       <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
