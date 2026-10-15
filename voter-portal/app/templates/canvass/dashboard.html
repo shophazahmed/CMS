@@ -8,6 +8,15 @@
     {%- if who_name %} · reached by <strong>{{ who_name }}</strong>{% endif %}{% if rng.label %} · <strong>{{ rng.label }}</strong>{% endif %}</p>
 </div>
 
+{% if is_owner %}{% set cm = confirmed_metrics() %}
+<a class="card cf-widget" href="{{ url_for('confirmed.overview') }}">
+  <span class="kpi-label">{{ icon('check', 14) }} 100% confirmed · {{ cm.label }} voters · only you see this</span>
+  <strong>{{ cm.pct }}%</strong>
+  <span class="muted">{{ cm.confirmed }} of {{ cm.total }}{% if cm.this_week %} · +{{ cm.this_week }} this week{% endif %}</span>
+  {{ progress({'total': cm.total, 'contacted': cm.confirmed, 'reached': cm.confirmed}, 'lg') }}
+</a>
+{% endif %}
+
 {{ range_picker(rng, 'canvass.dashboard', request.args.to_dict()) }}
 
 <section class="kpis" aria-label="Totals">

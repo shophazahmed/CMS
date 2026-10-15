@@ -172,8 +172,15 @@ def showing_all():
 
 def party_scope(column="party"):
     """SQL limiting voters to the campaign parties, or (None, []) when nothing is hidden."""
+    if showing_all():
+        return None, []
+    return campaign_clause(column)
+
+
+def campaign_clause(column="party"):
+    """The campaign's parties as SQL, even while an admin is viewing all parties (for fixed metrics)."""
     parties = visible_parties()
-    if not parties or showing_all():
+    if not parties:
         return None, []
     named = [p for p in parties if p != NO_PARTY]
     parts, params = [], []

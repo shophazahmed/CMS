@@ -144,6 +144,28 @@ def role_required(*roles):
 
 admin_required = role_required("admin")
 
+# The candidate's own account. Only it may see or change the "100% confirmed" voters.
+OWNER_USERNAME = "admin"
+CONFIRMED_ACTIONS = ("voter_confirm", "voter_unconfirm", "confirmed_export")
+
+
+def is_owner(user=None):
+    user = user if user is not None else g.get("user")
+    return user is not None and user["role"] == "admin" and user["username"].casefold() == OWNER_USERNAME
+
+
+def can_manage_confirmed_voters(view):
+    """Strict rule for every confirmed-voter route: only the 'admin' account, nobody else."""
+    @functools.wraps(view)
+    @login_required
+    def wrapped(*args, **kwargs):
+        if not is_owner():
+            audit.log("access_denied", target=request.path)
+            abort(403)
+        return view(*args, **kwargs)
+
+    return wrapped
+
 
 def is_admin():
     return g.get("user") is not None and g.user["role"] == "admin"

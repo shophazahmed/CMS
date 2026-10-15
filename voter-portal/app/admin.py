@@ -4,7 +4,8 @@ import re
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
 from . import audit
-from .auth import ROLE_LABELS, ROLES, admin_required, generate_password, hash_password, password_problem
+from .auth import (CONFIRMED_ACTIONS, ROLE_LABELS, ROLES, admin_required, generate_password, hash_password, is_owner,
+                   password_problem)
 from .db import get_db, now_iso
 
 bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -76,6 +77,11 @@ def update_user(user_id):
     action = request.form.get("action")
     is_self = user["id"] == g.user["id"]
     last_admin = user["role"] == "admin" and user["is_active"] and _active_admins() <= 1
+    # The 'admin' account holds the confirmed-voter list: other admins can't take it over
+    if is_owner(user) and not is_self and action in ("toggle_active", "set_role", "reset_password"):
+        audit.log("access_denied", target=f"user {user['username']}", detail={"action": action})
+        flash(f"Only {user['username']} can change the {user['username']} account.", "error")
+        return redirect(url_for("admin.users"))
 
     if action == "toggle_active":
         if is_self or last_admin:
@@ -141,6 +147,9 @@ def audit_log():
     if target:
         clauses.append("target = ? COLLATE NOCASE")
         params.append(target)
+    if not is_owner():  # confirmed-voter changes are private to the 'admin' account
+        clauses.append(f"action NOT IN ({','.join('?' * len(CONFIRMED_ACTIONS))})")
+        params += list(CONFIRMED_ACTIONS)
     where = (" WHERE " + " AND ".join(clauses)) if clauses else ""
     total = db.execute(f"SELECT COUNT(*) FROM audit_log{where}", params).fetchone()[0]
     pages = max(1, -(-total // AUDIT_PAGE_SIZE))
@@ -148,7 +157,8 @@ def audit_log():
         f"SELECT * FROM audit_log{where} ORDER BY id DESC LIMIT ? OFFSET ?",
         params + [AUDIT_PAGE_SIZE, (min(page, pages) - 1) * AUDIT_PAGE_SIZE],
     ).fetchall()
-    actions = [r[0] for r in db.execute("SELECT DISTINCT action FROM audit_log ORDER BY action")]
+    actions = [r[0] for r in db.execute("SELECT DISTINCT action FROM audit_log ORDER BY action")
+               if is_owner() or r[0] not in CONFIRMED_ACTIONS]
     query_args = {k: v for k, v in request.args.items() if k != "page"}
     return render_template(
         "admin/audit.html", rows=rows, actions=actions, action=action, username=username,

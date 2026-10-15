@@ -118,3 +118,32 @@ document.addEventListener("click", async (event) => {
     } catch (err) { /* cancelled */ }
   });
 })();
+
+// 100% confirmed toggle on the voter cards ('admin' account only): save in the background.
+document.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-confirm-toggle]");
+  if (!form) return;
+  event.preventDefault();
+  const input = form.querySelector("input[name=confirmed]");
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    const response = await fetch(form.action, {
+      method: "POST",
+      body: new FormData(form),
+      headers: { "X-Requested-With": "fetch" },
+      credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error(response.status);
+    const data = await response.json();
+    input.value = data.confirmed ? "0" : "1";
+    button.classList.toggle("on", data.confirmed);
+    button.setAttribute("aria-pressed", data.confirmed ? "true" : "false");
+    button.querySelector("span").textContent = data.confirmed ? "100% confirmed" : "Mark confirmed";
+    toast(`${data.confirmed ? "Confirmed" : "Removed"} · ${data.metrics.confirmed} of ${data.metrics.total} (${data.metrics.pct}%)`);
+  } catch (err) {
+    form.submit();
+  } finally {
+    button.disabled = false;
+  }
+});

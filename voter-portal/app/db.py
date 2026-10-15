@@ -61,6 +61,16 @@ CREATE TABLE IF NOT EXISTS voter_assignments (
 );
 CREATE INDEX IF NOT EXISTS ix_vassign_user ON voter_assignments (user_id);
 
+-- "100% confirmed": the candidate's own supporters. Only the 'admin' account reads or writes this
+-- (auth.can_manage_confirmed_voters). Kept out of the voters table so no existing page or export
+-- can show it by accident, and so imports never touch it. No foreign key, like voter_assignments.
+CREATE TABLE IF NOT EXISTS confirmed_voters (
+    national_id  TEXT PRIMARY KEY,
+    confirmed_at TEXT NOT NULL,
+    note         TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_confirmed_at ON confirmed_voters (confirmed_at);
+
 CREATE TABLE IF NOT EXISTS audit_log (
     id       INTEGER PRIMARY KEY AUTOINCREMENT,
     at       TEXT NOT NULL,

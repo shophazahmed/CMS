@@ -47,6 +47,27 @@
     </div>
   </form>
 
+  {% if is_owner %}
+  <form class="confirm-box {{ 'on' if confirmation }}" method="post" action="{{ url_for('confirmed.set_confirmed', national_id=v.national_id) }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+    <p class="confirm-head"><strong>{{ icon('check', 18) }} {{ '100% confirmed' if confirmation else 'Not confirmed yet' }}</strong>
+      {% if confirmation %}<span class="muted small-text">since {{ confirmation.confirmed_at|local }} · only you can see this</span>
+      {% else %}<span class="muted small-text">Only you can see this</span>{% endif %}</p>
+    <label>Private note <span class="muted">(optional)</span>
+      <input name="note" maxlength="300" value="{{ confirmation.note if confirmation }}" placeholder="e.g. needs transport on voting day">
+    </label>
+    <div class="actions">
+      {% if confirmation %}
+      <button class="primary" name="confirmed" value="1">Save note</button>
+      <button name="confirmed" value="0">Remove confirmation</button>
+      {% else %}
+      <button class="primary" name="confirmed" value="1">{{ icon('check', 18) }} Mark 100% confirmed</button>
+      {% endif %}
+    </div>
+  </form>
+  {% endif %}
+
   {% if is_admin %}
   <form class="assign-one" method="post" action="{{ url_for('voters.assign', national_id=v.national_id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -108,6 +129,7 @@
           <strong>{{ m.full_name or '(no name)' }}</strong>
           <span class="muted small-text">{% if m.age is not none %}{{ m.age }} · {% endif %}{{ m.sex or '—' }}{% if m.phone %} · <span class="mono">{{ m.phone }}</span>{% endif %}</span>
         </span>
+        {% if is_owner and m.confirmed %}<span class="tag cf-tag">{{ icon('check', 12) }} confirmed</span>{% endif %}
         <span class="tag st-tag-{{ m.status }}">{{ statuses[m.status] }}</span>
       </a>
     </li>

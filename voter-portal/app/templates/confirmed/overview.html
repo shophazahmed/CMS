@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_macros.html" import progress, icon %}
+{% block title %}100% confirmed{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>100% confirmed voters</h1>
+  <p class="muted">Voters who will vote for you. Only you (the <strong>admin</strong> account) can see or change this list;
+    other admins, users and agents never see it.</p>
+</div>
+
+<section class="kpis" aria-label="Confirmed">
+  <div class="kpi hero cf-hero">
+    <span class="kpi-label">Confirmed · {{ m.label }} voters</span>
+    <strong>{{ m.pct }}%</strong>
+    <span class="muted">{{ m.confirmed }} of {{ m.total }}</span>
+    {{ progress({'total': m.total, 'contacted': m.confirmed, 'reached': m.confirmed}, 'lg') }}
+  </div>
+  <div class="kpi"><span class="kpi-label">This week</span><strong>+{{ m.this_week }}</strong></div>
+  <div class="kpi"><span class="kpi-label">Still to confirm</span><strong>{{ m.total - m.confirmed }}</strong></div>
+  <div class="kpi"><span class="kpi-label">Out of all voters</span><strong>{{ m.all_pct }}%</strong>
+    <span class="muted">{{ m.all_confirmed }} of {{ m.all_total }}</span></div>
+</section>
+
+<div class="actions cf-actions">
+  <a class="button primary" href="{{ url_for('voters.search', cf='1', sort='house') }}">{{ icon('check', 18) }} See the confirmed list</a>
+  <a class="button" href="{{ url_for('voters.search', cf='0', sort='house') }}">Not confirmed yet</a>
+  <a class="button" href="{{ url_for('voters.export', fmt='csv', cf='1', sort='house') }}">{{ icon('download', 16) }} CSV</a>
+  <a class="button" href="{{ url_for('voters.export', fmt='xlsx', cf='1', sort='house') }}">{{ icon('download', 16) }} Excel</a>
+</div>
+
+{% if houses %}
+<section class="card">
+  <h2>By house</h2>
+  <input type="search" class="wide" placeholder="Filter houses…" aria-label="Filter houses" data-filter-rows="#cf-houses">
+  <ul class="house-list" id="cf-houses">
+    {% for h in houses %}
+    <li class="house-row" data-filter-text="{{ h.house|lower }}">
+      <a class="house-link" href="{{ url_for('voters.search', h=h.house, sort='house') }}">
+        <span class="house-name">{{ h.house }}</span>
+        <span class="house-meta"><span class="mono">{{ h.confirmed }}/{{ h.total }}</span></span>
+      </a>
+      {{ progress({'total': h.total, 'contacted': h.confirmed, 'reached': h.confirmed}) }}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endblock %}

@@ -20,7 +20,7 @@ from flask import (
 )
 
 from . import audit, campaign
-from .auth import admin_required, is_admin, login_required
+from .auth import admin_required, is_admin, is_owner, login_required
 from .db import get_db, now_iso
 from .normalize import clean_text, normalize_age, normalize_id, normalize_party, normalize_phone, normalize_sex
 
@@ -68,6 +68,8 @@ def read_filters(args):
         "by": args.get("by", "") if args.get("by", "").isdigit() else "",
         # Responsible agent (house or one by one): an agent's id, or "none"
         "ag": args.get("ag", "") if args.get("ag", "") == "none" or args.get("ag", "").isdigit() else "",
+        # 100% confirmed (1) / not (0): only the 'admin' account may filter on it
+        "cf": args.get("cf", "") if args.get("cf", "") in ("0", "1") and is_owner() else "",
         "va": args.get("va", "") if args.get("va", "") == "any" or args.get("va", "").isdigit() else "",
         "sort": args.get("sort", "name") if args.get("sort") in SORTS else "name",
     }
@@ -145,6 +147,10 @@ def build_where(f):
     if f.get("by"):
         clauses.append("status_by = ? AND status != 'new'")
         params.append(int(f["by"]))
+    if f.get("cf") == "1":
+        clauses.append("national_id IN (SELECT national_id FROM confirmed_voters)")
+    elif f.get("cf") == "0":
+        clauses.append("national_id NOT IN (SELECT national_id FROM confirmed_voters)")
     if f.get("ag") == "none":
         clauses.append(NO_AGENT)
     elif f.get("ag"):
@@ -178,7 +184,8 @@ def search():
     pages = max(1, -(-total // size))
     page = min(page, pages)
     rows = db.execute(
-        f"SELECT *, ({ASSIGNED_TO}) AS assigned_to, {WHO} FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
+        f"SELECT *, ({ASSIGNED_TO}) AS assigned_to, {WHO}{owner_columns()} FROM voters{where}"
+        f" ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
         params + [size, (page - 1) * size],
     ).fetchall()
     w, p = scoped(" WHERE party != ''")
@@ -224,6 +231,13 @@ def search():
     )
 
 
+def owner_columns():
+    """Extra SELECT columns only the 'admin' account gets (whether a voter is 100% confirmed)."""
+    from .confirmed import CONFIRMED_COLUMN
+
+    return f", {CONFIRMED_COLUMN}" if is_owner() else ""
+
+
 WHO = ("(SELECT username FROM users WHERE id = voters.status_by) AS status_by_name,"
        " (SELECT username FROM users WHERE id = voters.updated_by) AS updated_by_name")
 
@@ -256,6 +270,7 @@ def filter_chips(f, query_args):
         "age_min": lambda v: f"Age ≥ {v}",
         "age_max": lambda v: f"Age ≤ {v}",
         "va": _agent_name,
+        "cf": lambda v: "100% confirmed" if v == "1" else "Not confirmed",
         "by": lambda v: _agent_name(v).replace("Assigned to", "Contacted by"),
         "ag": lambda v: "No agent" if v == "none" else _agent_name(v).replace("Assigned to", "Agent:"),
     }
@@ -293,13 +308,16 @@ def detail(national_id):
     house_agent = db.execute(
         "SELECT u.id, u.username FROM house_assignments a JOIN users u ON u.id = a.user_id WHERE a.house_name = ?",
         (voter["house_name"],)).fetchone() if voter["house_name"] else None
+    confirmation = db.execute("SELECT * FROM confirmed_voters WHERE national_id = ?",
+                              (national_id,)).fetchone() if is_owner() else None
     housemates = []
     if voter["house_name"]:
         w, p = scoped(" WHERE house_name = ? AND national_id != ?", [voter["house_name"], national_id])
         housemates = db.execute(
-            f"SELECT *, {WHO} FROM voters{w} ORDER BY age IS NULL, age DESC, full_name COLLATE NOCASE LIMIT 60", p
+            f"SELECT *, {WHO}{owner_columns()} FROM voters{w} ORDER BY age IS NULL, age DESC, full_name COLLATE NOCASE LIMIT 60", p
         ).fetchall()
     return render_template("voters/detail.html", v=voter, editor=editor, statuses=STATUSES, housemates=housemates,
+                           confirmation=confirmation,
                            status_user=status_user, back=_safe_back(request.args.get("back")),
                            assigned=assigned, house_agent=house_agent,
                            agents=agent_list() if is_admin() else [])
@@ -575,6 +593,7 @@ def delete(national_id):
     db = get_db()
     db.execute("DELETE FROM voters WHERE national_id = ?", (national_id,))
     db.execute("DELETE FROM voter_assignments WHERE national_id = ?", (national_id,))
+    db.execute("DELETE FROM confirmed_voters WHERE national_id = ?", (national_id,))
     audit.log("voter_delete", target=national_id, detail={k: voter[k] for k in FIELDS}, commit=False)
     db.commit()
     flash(f"Voter {national_id} deleted.", "success")
@@ -621,8 +640,11 @@ def export(fmt):
         abort(404)
     f = read_filters(request.args)
     where, params = build_where(f)
+    owner = is_owner()
+    extra = (", (SELECT confirmed_at FROM confirmed_voters cv WHERE cv.national_id = voters.national_id)"
+             " AS confirmed_at") if owner else ""
     rows = get_db().execute(
-        f"SELECT *, {EXPORT_AGENT}, {WHO} FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
+        f"SELECT *, {EXPORT_AGENT}, {WHO}{extra} FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
     table = [
         [_safe_cell(r["national_id"]), _safe_cell(r["full_name"]), r["sex"], r["age"],
          _safe_cell(r["house_name"]), _safe_cell(r["party"]), r["phone"], "yes" if r["photo_path"] else "",
@@ -631,16 +653,20 @@ def export(fmt):
          _safe_cell(r["status_by_name"] or ""), _safe_cell(r["notes"]),
          _local(r["updated_at"]) if r["updated_by"] else "",
          _safe_cell(r["updated_by_name"] or "")]
+        + (["yes" if r["confirmed_at"] else "", _local(r["confirmed_at"])] if owner else [])
         for r in rows
     ]
-    audit.log("export", target=fmt, detail={"filters": active_filters(f), "rows": len(rows)})
+    headers = EXPORT_HEADERS + (["100% confirmed", "Confirmed on"] if owner else [])
+    # An export of the confirmed list is private to the 'admin' account, like the list itself
+    audit.log("confirmed_export" if f.get("cf") else "export", target=fmt,
+              detail={"filters": active_filters(f), "rows": len(rows)})
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     filename = f"voters-{stamp}.{fmt}"
 
     if fmt == "csv":
         buf = io.StringIO()
         writer = csv.writer(buf)
-        writer.writerow(EXPORT_HEADERS)
+        writer.writerow(headers)
         writer.writerows(table)
         # BOM so Excel opens UTF-8 (Thaana) text correctly
         return Response(
@@ -655,14 +681,14 @@ def export(fmt):
     wb = Workbook()
     ws = wb.active
     ws.title = "Voters"
-    ws.append(EXPORT_HEADERS)
+    ws.append(headers)
     for cell in ws[1]:
         cell.font = Font(bold=True)
     for row in table:
         ws.append(row)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
-    for col, width in zip("ABCDEFGHIJKLMNOP", (11, 32, 6, 6, 28, 14, 12, 10, 16, 12, 14, 17, 14, 40, 17, 14)):
+    for col, width in zip("ABCDEFGHIJKLMNOPQR", (11, 32, 6, 6, 28, 14, 12, 10, 16, 12, 14, 17, 14, 40, 17, 14, 14, 17)):
         ws.column_dimensions[col].width = width
     out = io.BytesIO()
     wb.save(out)

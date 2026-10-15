@@ -90,6 +90,22 @@ or Ooredoo bulk SMS, or Twilio) and is not set up.
 - **Agents** see only their own voters (their houses plus voters handed to them).
 - Each voter page lists everyone else at the same address (within what that person may see).
 
+## 100% confirmed voters (private to the `admin` account)
+
+Voters who will vote for the candidate. Only the account named **admin** can see or change them;
+other admins, read-only users and agents never see them (every route is behind
+`can_manage_confirmed_voters`, and they live in their own `confirmed_voters` table that no other page
+or export reads).
+- **Mark / unmark:** the "Mark confirmed" pill on each voter card (saves in the background), or the
+  box on the voter page, which also takes a private note.
+- **Numbers:** **Confirmed** page (top bar or account menu) and a widget on the Dashboard: confirmed
+  out of the campaign's voters (e.g. MDP), this week, still to confirm, out of all voters, per house.
+  JSON at `/confirmed/metrics.json`.
+- **List and export:** Search → More filters → **100% confirmed**; CSV/Excel then include
+  "100% confirmed" and "Confirmed on" columns. Only `admin` gets these.
+- **Privacy:** confirm/unconfirm and confirmed-list exports are hidden from other admins' activity log,
+  and other admins can't reset the `admin` password, change its role or deactivate it.
+
 ## Colours
 
 - **Settings → Portal colour** sets the main colour for everyone: MDP yellow, teal, blue, green,

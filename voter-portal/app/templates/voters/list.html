@@ -6,7 +6,7 @@
     {{ icon('search') }}
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone"
            aria-label="Search name, ID, house or phone" autocomplete="off" enterkeyhint="search">
-    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'by', 'sort', 'n') %}
+    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'by', 'cf', 'sort', 'n') %}
       {% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}
     {% endfor %}
     <button class="primary" type="submit">Search</button>
@@ -65,6 +65,15 @@
         <input type="number" inputmode="numeric" name="age_max" min="0" max="130" value="{{ f.age_max if f.age_max is not none }}" placeholder="to" aria-label="Age to">
       </span>
     </label>
+    {% if is_owner %}
+    <label>100% confirmed
+      <select name="cf">
+        <option value="">Any</option>
+        <option value="1" {{ 'selected' if f.cf == '1' }}>Confirmed</option>
+        <option value="0" {{ 'selected' if f.cf == '0' }}>Not confirmed</option>
+      </select>
+    </label>
+    {% endif %}
     {% if contacted_by %}
     <label>Contacted by
       <select name="by">
@@ -161,6 +170,14 @@
         {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}
         {% if v.assigned_to and current_user.role != 'agent' %}<span class="tag agent-tag">{{ icon('user', 12) }} {{ v.assigned_to }}</span>{% endif %}
       </p>
+      {% if is_owner %}
+      <form class="cf-form" method="post" action="{{ url_for('confirmed.set_confirmed', national_id=v.national_id) }}" data-confirm-toggle>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="back" value="{{ back_url }}#v-{{ v.national_id }}">
+        <input type="hidden" name="confirmed" value="{{ '0' if v.confirmed else '1' }}">
+        <button class="cf-btn {{ 'on' if v.confirmed }}" aria-pressed="{{ 'true' if v.confirmed else 'false' }}">{{ icon('check', 14) }} <span>{{ '100% confirmed' if v.confirmed else 'Mark confirmed' }}</span></button>
+      </form>
+      {% endif %}
     </div>
     </div>
     <form class="status-form" method="post" action="{{ url_for('voters.canvass', national_id=v.national_id) }}" data-status-form>
