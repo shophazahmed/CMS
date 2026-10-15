@@ -83,12 +83,10 @@ or Ooredoo bulk SMS, or Twilio) and is not set up.
 
 ## Who can see the voter list
 
-- **Admins** see the whole list (100%), can browse, filter, page through it (25/50/100/200 per page,
-  or type a page number) and export it, and are the only ones who can add, edit or delete voters.
-- **Read-only users** can only look voters up: Search shows nothing until they type at least 3
-  letters of a name, or an ID card or phone number, and then shows at most the first 20 matches. They
-  never see totals for the whole list, the house list or the party chips. They can always open the
-  voters they contacted themselves (My dashboard, or "See the voters you've contacted").
+- **Admins** see the whole list, can page through it (25/50/100/200 per page, or type a page number),
+  export it, and are the only ones who can add, edit or delete voters.
+- **Read-only users** can browse and search the list (within the campaign's parties) and record
+  canvassing, but can't add, edit, delete or export.
 - **Agents** see only their own voters (their houses plus voters handed to them).
 - Each voter page lists everyone else at the same address (within what that person may see).
 

@@ -84,16 +84,13 @@ def test_login_without_cookie_from_own_page(app):
 def test_user_is_read_only(app):
     c = app.test_client()
     assert login(c, "viewer", USER_PW).status_code == 302
-    # lookup only: no list without a name / ID / phone to search for
-    count = lambda path: c.get(path).get_data(as_text=True).count('id="v-A2000')  # noqa: E731
-    html = c.get("/").get_data(as_text=True)
-    assert "Find a voter" in html and 'id="v-A2000' not in html and "Export" not in html
-    assert count("/?party=AAA") == 0 and count("/?house=rose") == 0 and count("/?sex=M") == 0
-    assert count("/?q=Am") == 0                                   # too short
-    html = c.get("/?q=Amin").get_data(as_text=True)
-    assert html.count('id="v-A2000') == 1 and "in total" not in html and "Voters per page" not in html
-    assert count("/?national_id=a200002") == 1
-    assert count("/?q=A2000&n=200") == 3
+    html = c.get("/?party=AAA").get_data(as_text=True)
+    assert "Aminath Alpha" in html and "Moosa Beta" not in html
+    assert "Export" not in html
+    assert c.get("/?sex=M&age_min=50&age_max=60").get_data(as_text=True).count('id="v-A2000') == 1
+    assert c.get("/?house=rose").get_data(as_text=True).count('id="v-A2000') == 2
+    assert c.get("/?national_id=a200002").get_data(as_text=True).count('id="v-A2000') == 1
+    assert c.get("/").get_data(as_text=True).count('id="v-A2000') == 3          # can browse the list
     assert c.get("/voters/new").status_code == 403
     assert c.get("/voters/A200001").status_code == 200
     token = csrf(c, "/")

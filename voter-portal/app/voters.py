@@ -28,9 +28,6 @@ bp = Blueprint("voters", __name__)
 
 PAGE_SIZE = 50
 PAGE_SIZES = (25, 50, 100, 200)
-# Read-only users can look voters up but not browse the list: they need a name, ID or phone
-LOOKUP_LIMIT = 20
-LOOKUP_MIN = 3
 FIELDS = ("national_id", "full_name", "sex", "age", "house_name", "party", "phone")
 SORTS = {
     "name": "full_name COLLATE NOCASE, national_id",
@@ -170,14 +167,6 @@ def active_filters(f):
 def search():
     db = get_db()
     f = read_filters(request.args)
-    lookup_only = g.user["role"] == "user"
-    if lookup_only:
-        # Their own contacts are the only list they may open without searching
-        if f["by"] and f["by"] != str(g.user["id"]):
-            f["by"] = ""
-        f["ag"] = f["va"] = ""
-        if not (len(f["q"]) >= LOOKUP_MIN or len(f["national_id"]) >= LOOKUP_MIN or f["by"]):
-            return render_template("voters/lookup.html", f=f, min_chars=LOOKUP_MIN)
     where, params = build_where(f)
     size = request.args.get("n", type=int)
     size = size if size in PAGE_SIZES else PAGE_SIZE
@@ -186,11 +175,7 @@ def search():
     except ValueError:
         page = 1
     total = db.execute(f"SELECT COUNT(*) FROM voters{where}", params).fetchone()[0]
-    if lookup_only and not f["by"]:
-        size, page = LOOKUP_LIMIT, 1
     pages = max(1, -(-total // size))
-    if lookup_only and not f["by"]:
-        pages = 1
     page = min(page, pages)
     rows = db.execute(
         f"SELECT *, ({ASSIGNED_TO}) AS assigned_to, {WHO} FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
@@ -209,9 +194,6 @@ def search():
     stats = db.execute(
         f"SELECT COUNT(*) AS total, SUM(sex = 'M') AS male, SUM(sex = 'F') AS female FROM voters{w}", p
     ).fetchone()
-    if lookup_only:  # nothing that reveals the size or shape of the whole list
-        houses, stats = [], None
-        contacted_by = [u for u in contacted_by if u["id"] == g.user["id"]]
     query_args = {k: v for k, v in request.args.items() if k != "page"}
     # Counts per canvassing status for the chips, within every filter except the status itself
     where_all, params_all = build_where(dict(f, status=""))
@@ -236,8 +218,8 @@ def search():
         query_args=query_args,
         agents=agent_list() if is_admin() else [],
         contacted_by=contacted_by,
-        agent_options=agent_list() if g.user["role"] == "admin" else [],
-        lookup_only=lookup_only, lookup_limit=LOOKUP_LIMIT, size=size, sizes=PAGE_SIZES,
+        agent_options=agent_list() if g.user["role"] in ("admin", "user") else [],
+        size=size, sizes=PAGE_SIZES,
         first=(page - 1) * size + 1 if total else 0, last=min(page * size, total),
     )
 
