@@ -73,3 +73,48 @@ document.addEventListener("click", (event) => {
   const button = event.target.closest("[data-confirm-click]");
   if (button && !window.confirm(button.dataset.confirmClick)) event.preventDefault();
 });
+
+// Small message at the bottom of the screen.
+function toast(text) {
+  const el = document.createElement("div");
+  el.className = "toast";
+  el.setAttribute("role", "status");
+  el.textContent = text;
+  document.body.append(el);
+  setTimeout(() => el.remove(), 3500);
+}
+
+// Viber can't pre-fill text for a number: copy the campaign message, then open the chat.
+document.addEventListener("click", async (event) => {
+  const link = event.target.closest("a[data-copy]");
+  if (!link) return;
+  event.preventDefault();
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(link.dataset.copy);
+    copied = true;
+  } catch (err) { /* no clipboard access: open the chat anyway */ }
+  toast(copied ? "Message copied. In Viber, long-press the text box and tap Paste."
+               : "Couldn't copy the message. Type it in Viber.");
+  setTimeout(() => { window.location.href = link.href; }, 400);
+});
+
+// Send the campaign picture with the message through the phone's share sheet (pick WhatsApp,
+// then the voter). Only shown on browsers that can share files.
+(async () => {
+  const button = document.querySelector("[data-share-picture]");
+  if (!button || !navigator.canShare) return;
+  let file = null;
+  try {
+    const response = await fetch(button.dataset.sharePicture);
+    file = new File([await response.blob()], "campaign.jpg", { type: "image/jpeg" });
+  } catch (err) { return; }
+  if (!navigator.canShare({ files: [file] })) return;
+  button.hidden = false;
+  button.addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(button.dataset.shareText).catch(() => {});
+      await navigator.share({ files: [file], text: button.dataset.shareText });
+    } catch (err) { /* cancelled */ }
+  });
+})();

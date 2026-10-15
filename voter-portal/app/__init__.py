@@ -30,6 +30,7 @@ def create_app(test_config=None):
         DATABASE=os.environ.get("VOTER_PORTAL_DB", os.path.join(base, "voter_portal.db")),
         PHOTOS_DIR=os.environ.get("VOTER_PORTAL_PHOTOS", os.path.join(base, "photos")),
         IMPORTS_DIR=os.path.join(base, "imports"),
+        CAMPAIGN_DIR=os.path.join(base, "campaign"),
         SESSION_COOKIE_NAME="vp_session",
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE="Lax",
@@ -46,6 +47,7 @@ def create_app(test_config=None):
     os.makedirs(os.path.dirname(os.path.abspath(app.config["DATABASE"])), exist_ok=True)
     os.makedirs(app.config["PHOTOS_DIR"], exist_ok=True)
     os.makedirs(app.config["IMPORTS_DIR"], mode=0o700, exist_ok=True)
+    os.makedirs(app.config["CAMPAIGN_DIR"], exist_ok=True)
 
     # Nginx sits in front: trust one hop of X-Forwarded-For / -Proto.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -60,6 +62,7 @@ def create_app(test_config=None):
     app.register_blueprint(canvass.bp)
     app.register_blueprint(campaign.bp)
     app.register_blueprint(campaign.themes_bp)
+    app.register_blueprint(campaign.picture_bp)
 
     @app.template_filter("local")
     def local_time(value):
@@ -78,7 +81,8 @@ def create_app(test_config=None):
     def inject():
         return {"csrf_token": auth.csrf_token, "current_user": g.get("user"), "is_admin": auth.is_admin(),
                 "campaign_banner": campaign.banner, "whatsapp_url": campaign.whatsapp_url,
-                "sms_url": campaign.sms_url, "theme_name": campaign.theme_name, "themes": campaign.THEMES,
+                "sms_url": campaign.sms_url, "viber_url": campaign.viber_url, "campaign_message": campaign.message,
+                "picture_token": campaign.picture_token, "theme_name": campaign.theme_name, "themes": campaign.THEMES,
                 "appearance": campaign.appearance}
 
     @app.after_request

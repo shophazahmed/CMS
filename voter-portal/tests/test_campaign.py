@@ -31,7 +31,7 @@ def test_campaign_hides_other_parties(app):
 
     u = app.test_client()
     login(u, "viewer", USER_PW)
-    assert cards(u) == 1
+    assert cards(u, "/?q=A2000") == 1
     assert cards(u, "/?q=Moosa") == 0
     assert u.get("/voters/A200002").status_code == 404              # direct link to a hidden voter
     token = csrf(u, "/")
@@ -48,16 +48,16 @@ def test_campaign_hides_other_parties(app):
     a.post("/admin/view-all", data={"csrf_token": token, "back": "/"})
     assert cards(a) == 3 and a.get("/voters/A200002").status_code == 200
     assert "Moosa" in a.get("/export.csv").get_data(as_text=True)
-    assert cards(u) == 1                                             # other users unaffected
+    assert cards(u, "/?q=A2000") == 1                                             # other users unaffected
     a.post("/admin/view-all", data={"csrf_token": token})
     assert cards(a) == 1 and "Moosa" not in a.get("/export.csv").get_data(as_text=True)
 
     # no party can be part of the campaign too; clearing shows everyone again
     set_parties(a, ["AAA", "(none)"])
-    assert cards(u) == 2
+    assert cards(u, "/?q=A2000") == 2
     token = csrf(a, "/admin/settings")
     a.post("/admin/settings", data={"csrf_token": token, "mode": "all"})
-    assert cards(u) == 3
+    assert cards(u, "/?q=A2000") == 3
     assert "campaign_parties" in a.get("/admin/audit").get_data(as_text=True)
 
 
@@ -87,7 +87,7 @@ def test_whatsapp_button(app):
     conn.commit()
     u = app.test_client()
     login(u, "viewer", USER_PW)
-    page = u.get("/").get_data(as_text=True)
+    page = u.get("/?q=A2000").get_data(as_text=True)
     assert page.count('class="wa"') == 1
     assert 'href="https://wa.me/9607771234?text=Assalaamu%20alaikum%20Aminath%2C%20"' in page
     assert "wa.me" in u.get("/voters/A200001").get_data(as_text=True)
@@ -114,7 +114,7 @@ def test_theme_appearance_and_sms(app):
     conn.commit()
     u = app.test_client()
     login(u, "viewer", USER_PW)
-    page = u.get("/").get_data(as_text=True)
+    page = u.get("/?q=A2000").get_data(as_text=True)
     assert page.count('class="sms"') == 1
     sms = page.split('class="sms" href="')[1].split('"')[0]
     assert sms.startswith("sms:+9609771234?&amp;body=") and "Aminath" in unquote(sms)
@@ -142,3 +142,57 @@ def test_theme_appearance_and_sms(app):
     assert 'data-theme="dark"' not in a.get("/").get_data(as_text=True).split("<head>")[0]
     u.post("/account/appearance", data={"appearance": "system", "back": "/", "csrf_token": csrf(u, "/")})
     assert "data-theme" not in u.get("/").get_data(as_text=True).split("<head>")[0]
+
+
+def test_separate_messages_picture_and_viber(app):
+    import io
+    from urllib.parse import unquote
+
+    from PIL import Image
+
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET phone = '7771234' WHERE national_id = 'A200001'")
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    token = csrf(a, "/admin/settings")
+    page = a.get("/admin/settings").get_data(as_text=True)
+    assert 'id="msg-whatsapp"' in page and 'id="msg-sms"' in page and 'id="msg-viber"' in page
+    a.post("/admin/settings", data={"csrf_token": token, "form": "whatsapp", "template": "WA hi {first_name}",
+                                    "picture_link": "1"})
+    a.post("/admin/settings", data={"csrf_token": token, "form": "sms", "template": "SMS hi {first_name}"})
+    detail = a.get("/voters/A200001").get_data(as_text=True)
+    wa = unquote(detail.split('href="https://wa.me/')[1].split('"')[0])
+    sms = unquote(detail.split('href="sms:')[1].split('"')[0])
+    assert "WA hi Aminath" in wa and "SMS hi Aminath" in sms
+    # Viber: opens the chat; the (here: WhatsApp's, until it has its own) text is copied by the page
+    assert 'href="viber://chat?number=%2B9607771234"' in detail and 'data-copy="WA hi Aminath' in detail
+
+    # picture: upload, public link in the WhatsApp text, served without sign-in
+    buf = io.BytesIO()
+    Image.new("RGB", (40, 30), "red").save(buf, "PNG")
+    r = a.post("/admin/picture", data={"csrf_token": token, "picture": (io.BytesIO(buf.getvalue()), "p.png")},
+               content_type="multipart/form-data")
+    assert r.status_code == 302
+    detail = a.get("/voters/A200001").get_data(as_text=True)
+    wa = unquote(detail.split('href="https://wa.me/')[1].split('"')[0])
+    link = wa.split("http://localhost")[1].strip()
+    assert link.startswith("/c/") and "data-share-picture" in detail
+    anon = app.test_client()
+    page = anon.get(link)
+    assert page.status_code == 200 and 'property="og:image"' in page.get_data(as_text=True)
+    img = anon.get(link + ".jpg")
+    assert img.status_code == 200 and img.mimetype == "image/jpeg"
+    assert anon.get("/c/wrong-token").status_code == 404 and anon.get("/c/wrong-token.jpg").status_code == 404
+    # a bad file is refused; removing makes the old link stop working
+    r = a.post("/admin/picture", data={"csrf_token": token, "picture": (io.BytesIO(b"nope"), "x.png")},
+               content_type="multipart/form-data", follow_redirects=True)
+    assert "a JPEG, PNG or WebP picture" in r.get_data(as_text=True)
+    a.post("/admin/picture", data={"csrf_token": token, "remove": "1"})
+    assert anon.get(link + ".jpg").status_code == 404
+    assert "/c/" not in unquote(a.get("/voters/A200001").get_data(as_text=True))
+
+    # only admins can change any of it
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    assert u.post("/admin/picture", data={"csrf_token": csrf(u, "/")}).status_code == 403

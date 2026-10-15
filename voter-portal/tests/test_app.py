@@ -17,7 +17,7 @@ ADMIN_PW, USER_PW = "admin-pass-123", "user-pass-1234"
 def app(tmp_path):
     app = create_app({"TESTING": True, "SECRET_KEY": "test", "DATABASE": str(tmp_path / "t.db"),
                       "PHOTOS_DIR": str(tmp_path / "photos"), "IMPORTS_DIR": str(tmp_path / "imports"),
-                      "SESSION_COOKIE_SECURE": False})
+                      "CAMPAIGN_DIR": str(tmp_path / "campaign"), "SESSION_COOKIE_SECURE": False})
     conn = connect(app.config["DATABASE"])
     stamp = now_iso(precise=True)
     for name, role, pw in (("boss", "admin", ADMIN_PW), ("viewer", "user", USER_PW)):
@@ -84,12 +84,17 @@ def test_login_without_cookie_from_own_page(app):
 def test_user_is_read_only(app):
     c = app.test_client()
     assert login(c, "viewer", USER_PW).status_code == 302
-    html = c.get("/?party=AAA").get_data(as_text=True)
-    assert "Aminath Alpha" in html and "Moosa Beta" not in html
-    assert "Export" not in html
-    assert c.get("/?sex=M&age_min=50&age_max=60").get_data(as_text=True).count('id="v-A2000') == 1
-    assert c.get("/?house=rose").get_data(as_text=True).count('id="v-A2000') == 2
-    assert c.get("/?national_id=a200002").get_data(as_text=True).count('id="v-A2000') == 1
+    # lookup only: no list without a name / ID / phone to search for
+    count = lambda path: c.get(path).get_data(as_text=True).count('id="v-A2000')  # noqa: E731
+    html = c.get("/").get_data(as_text=True)
+    assert "Find a voter" in html and 'id="v-A2000' not in html and "Export" not in html
+    assert count("/?party=AAA") == 0 and count("/?house=rose") == 0 and count("/?sex=M") == 0
+    assert count("/?q=Am") == 0                                   # too short
+    html = c.get("/?q=Amin").get_data(as_text=True)
+    assert html.count('id="v-A2000') == 1 and "in total" not in html and "Voters per page" not in html
+    assert count("/?national_id=a200002") == 1
+    assert count("/?q=A2000&n=200") == 3
+    assert c.get("/voters/new").status_code == 403
     assert c.get("/voters/A200001").status_code == 200
     token = csrf(c, "/")
     for method, path in (("get", "/export.csv"), ("get", "/export.xlsx"), ("get", "/voters/new"),
@@ -163,7 +168,7 @@ def test_security_headers(app):
 def test_bootstrap_admin(tmp_path, monkeypatch):
     monkeypatch.setenv("VOTER_PORTAL_ADMIN_PASSWORD", "first-admin-pass-1")
     cfg = {"TESTING": True, "SECRET_KEY": "t", "DATABASE": str(tmp_path / "b.db"), "PHOTOS_DIR": str(tmp_path / "p"),
-           "IMPORTS_DIR": str(tmp_path / "i")}
+           "IMPORTS_DIR": str(tmp_path / "i"), "CAMPAIGN_DIR": str(tmp_path / "c")}
     create_app(cfg)
     create_app(cfg)  # second start: no duplicate, no error
     conn = connect(cfg["DATABASE"])
@@ -195,7 +200,7 @@ def test_canvassing_status_and_notes(app):
     u = app.test_client()
     login(u, "viewer", USER_PW)  # read-only users canvass too
     token = csrf(u, "/")
-    page = u.get("/").get_data(as_text=True)
+    page = u.get("/?q=A2000").get_data(as_text=True)
     assert "Not contacted <b data-count=\"new\">3</b>" in page
 
     # background save from a card
@@ -211,8 +216,8 @@ def test_canvassing_status_and_notes(app):
     detail = u.get("/voters/A200002").get_data(as_text=True)
     assert "Wants a call after 5pm" in detail and "by viewer" in detail
 
-    assert u.get("/?status=contacted").get_data(as_text=True).count('id="v-A2000') == 1
-    page = u.get("/?status=followup").get_data(as_text=True)
+    assert u.get("/?q=A2000&status=contacted").get_data(as_text=True).count('id="v-A2000') == 1
+    page = u.get("/?q=A2000&status=followup").get_data(as_text=True)
     assert page.count('id="v-A2000') == 1 and "Wants a call after 5pm" in page
     assert u.get("/?q=after+5pm").get_data(as_text=True).count('id="v-A2000') == 1  # notes are searchable
     assert u.post("/voters/A200001/canvass", data={"csrf_token": token, "status": "bogus"}).status_code == 400
@@ -228,3 +233,27 @@ def test_canvassing_status_and_notes(app):
     assert "voter_canvass" in a.get("/admin/audit").get_data(as_text=True)
     header = a.get("/export.csv").get_data(as_text=True).splitlines()[0]
     assert "Status,Status changed,Status by,Notes" in header
+
+
+def test_pages_and_housemates(app):
+    conn = connect(app.config["DATABASE"])
+    stamp = now_iso()
+    for i in range(60):
+        conn.execute("INSERT INTO voters (national_id, full_name, house_name, created_at, updated_at)"
+                     " VALUES (?, ?, 'Big House', ?, ?)", (f"A3{i:05d}", f"Person {i:02d}", stamp, stamp))
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    page = a.get("/").get_data(as_text=True)
+    assert page.count('class="vcard ') == 50 and "Voters per page" in page and 'name="page"' in page
+    assert "showing 1–50" in page
+    page = a.get("/?n=25&page=3").get_data(as_text=True)
+    assert page.count('class="vcard ') == 13 and "showing 51–63" in page
+    assert a.get("/?n=100").get_data(as_text=True).count('class="vcard ') == 63
+    assert a.get("/?n=7").get_data(as_text=True).count('class="vcard ') == 50       # only the offered sizes
+    assert a.get("/?page=999").get_data(as_text=True).count('class="vcard ') == 13    # clamped to the last page
+
+    detail = a.get("/voters/A300000").get_data(as_text=True)
+    assert "Also at Big House" in detail and detail.count('class="mate ') == 59 and "Person 59" in detail
+    detail = a.get("/voters/A200001").get_data(as_text=True)   # Rose Villa has two voters
+    assert detail.count('class="mate ') == 1

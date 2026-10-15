@@ -56,20 +56,41 @@ and save.
 - **"No party recorded"** can be included too. **Show all parties** on the settings page turns the
   filter off for everyone.
 
-## WhatsApp and SMS
+## WhatsApp, SMS and Viber
 
-Every voter with a mobile number (7 digits starting with 7 or 9) gets three buttons, on their card
+Every voter with a mobile number (7 digits starting with 7 or 9) gets these buttons, on their card
 and on the voter page:
 - **WhatsApp:** opens a chat (+960 added) with the campaign message already typed.
-- **SMS:** opens the phone's messaging app with the number and the same message. It's sent from the
+- **Viber:** copies the Viber message, then opens the voter's Viber chat; the canvasser pastes it
+  (Viber can't pre-fill text for a number). Works only if the voter uses Viber on that number.
+- **SMS:** opens the phone's messaging app with the number and the SMS message. It's sent from the
   canvasser's own phone, so it costs whatever their plan charges.
 - **Call.**
+- **Send picture** (voter page, phones only): shares the campaign picture plus the WhatsApp text through
+  the phone's share sheet; pick WhatsApp, then the voter.
 
-Landlines only get Call. Admins set the message under **Settings → WhatsApp & SMS message**, using
-`{first_name}`, `{name}` and `{house}`. Nothing is sent automatically: the canvasser always presses Send.
+Landlines only get Call. Admins set **three separate messages** under **Settings → Messages**, using
+`{first_name}`, `{name}`, `{house}` and `{id}`. SMS and Viber use the WhatsApp text until they're given
+their own. Nothing is sent automatically: the canvasser always presses Send.
+
+**WhatsApp picture:** upload a flyer under Settings → Messages. A WhatsApp link can't attach a file, so
+the WhatsApp message ends with a link (`/c/<random>`) that WhatsApp shows as a picture preview. That
+picture is public (no sign-in) so voters can see it; it holds no voter data, and each upload gets a new
+random address (the old one stops working). Untick "Add the picture link" to leave it out.
 
 Sending one SMS to many voters at once (bulk SMS) needs an account with an SMS gateway (e.g. Dhiraagu
 or Ooredoo bulk SMS, or Twilio) and is not set up.
+
+## Who can see the voter list
+
+- **Admins** see the whole list (100%), can browse, filter, page through it (25/50/100/200 per page,
+  or type a page number) and export it, and are the only ones who can add, edit or delete voters.
+- **Read-only users** can only look voters up: Search shows nothing until they type at least 3
+  letters of a name, or an ID card or phone number, and then shows at most the first 20 matches. They
+  never see totals for the whole list, the house list or the party chips. They can always open the
+  voters they contacted themselves (My dashboard, or "See the voters you've contacted").
+- **Agents** see only their own voters (their houses plus voters handed to them).
+- Each voter page lists everyone else at the same address (within what that person may see).
 
 ## Colours
 

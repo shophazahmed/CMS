@@ -4,11 +4,15 @@ Voters of other parties stay in the database and keep being updated by imports; 
 hidden. Users and agents never see them. Admins see the campaign view by default and can switch
 to "all parties" for their own session.
 """
+import io
 import json
+import os
 import re
+import secrets
 from urllib.parse import quote
 
-from flask import Blueprint, Response, flash, g, redirect, render_template, request, session, url_for
+from flask import (Blueprint, Response, abort, current_app, flash, g, redirect, render_template, request,
+                   send_from_directory, session, url_for)
 
 from . import audit
 from .auth import admin_required
@@ -19,6 +23,9 @@ bp = Blueprint("campaign", __name__, url_prefix="/admin")
 NO_PARTY = "(none)"  # how a blank party is stored in the setting
 DEFAULT_WHATSAPP = "Assalaamu alaikum {first_name}, "
 MAX_TEMPLATE = 600
+# One message per app; SMS and Viber fall back to the WhatsApp text until they get their own
+CHANNELS = {"whatsapp": "WhatsApp", "sms": "SMS", "viber": "Viber"}
+MAX_PICTURE_BYTES = 8 * 1024 * 1024
 PLACEHOLDER = re.compile(r"\{(first_name|name|house|id)\}")
 
 
@@ -92,19 +99,44 @@ def _mobile_number(voter):
     return None
 
 
-def _message(voter):
+def template_for(channel):
+    text = get_setting(f"{channel}_template")
+    if text is None and channel != "whatsapp":
+        text = get_setting("whatsapp_template")
+    return text if text is not None else DEFAULT_WHATSAPP
+
+
+def message(voter, channel="whatsapp"):
     name = (voter["full_name"] or "").strip()
     values = {"name": name, "first_name": name.split(" ")[0] if name else "",
               "house": voter["house_name"] or "", "id": voter["national_id"]}
     # Plain substitution, not str.format: the template is typed by an admin.
-    text = PLACEHOLDER.sub(lambda m: values[m.group(1)], get_setting("whatsapp_template") or DEFAULT_WHATSAPP)
-    return text.strip() + " "
+    text = PLACEHOLDER.sub(lambda m: values[m.group(1)], template_for(channel)).strip()
+    if channel == "whatsapp" and picture_token() and get_setting("picture_link", "1") == "1":
+        # WhatsApp shows the picture as a preview of this link
+        text = f"{text}\n\n{url_for('picture.page', token=picture_token(), _external=True)}".strip()
+    return text + " "
 
 
 def sms_url(voter):
     """sms: link with the campaign message; '?&body=' works on both iPhone and Android."""
     number = _mobile_number(voter)
-    return f"sms:+{number}?&body={quote(_message(voter))}" if number else None
+    return f"sms:+{number}?&body={quote(message(voter, 'sms'))}" if number else None
+
+
+def viber_url(voter):
+    """Opens the voter's Viber chat. Viber can't pre-fill text for a number, so the page copies
+    the message to the clipboard first (see app.js)."""
+    number = _mobile_number(voter)
+    return f"viber://chat?number=%2B{number}" if number else None
+
+
+def picture_token():
+    return get_setting("picture_token") or None
+
+
+def picture_dir():
+    return current_app.config["CAMPAIGN_DIR"]
 
 
 def whatsapp_url(voter):
@@ -114,7 +146,7 @@ def whatsapp_url(voter):
     no WhatsApp. Longer numbers are taken to include their own country code.
     """
     number = _mobile_number(voter)
-    return f"https://wa.me/{number}?text={quote(_message(voter))}" if number else None
+    return f"https://wa.me/{number}?text={quote(message(voter, 'whatsapp'))}" if number else None
 
 
 def init_schema(conn):
@@ -169,13 +201,16 @@ def settings():
     db = get_db()
     counts = db.execute("SELECT party, COUNT(*) FROM voters GROUP BY party ORDER BY COUNT(*) DESC").fetchall()
     options = [(p or NO_PARTY, n) for p, n in counts]
-    if request.method == "POST" and request.form.get("form") == "whatsapp":
+    if request.method == "POST" and request.form.get("form") in CHANNELS:
+        channel = request.form["form"]
         template = request.form.get("template", "").replace("\r\n", "\n").strip()[:MAX_TEMPLATE]
-        put_setting("whatsapp_template", template)
-        audit.log("whatsapp_template", detail={"template": template}, commit=False)
+        put_setting(f"{channel}_template", template)
+        if channel == "whatsapp":
+            put_setting("picture_link", "1" if request.form.get("picture_link") else "0")
+        audit.log(f"{channel}_template", detail={"template": template}, commit=False)
         db.commit()
-        flash("WhatsApp message saved.", "success")
-        return redirect(url_for("campaign.settings"))
+        flash(f"{CHANNELS[channel]} message saved.", "success")
+        return redirect(url_for("campaign.settings") + f"#msg-{channel}")
     if request.method == "POST":
         known = {p for p, _ in options} | set(visible_parties() or [])
         chosen = [p for p in request.form.getlist("parties") if p in known]
@@ -196,7 +231,9 @@ def settings():
     current = visible_parties() or []
     hidden = sum(n for p, n in options if current and p not in current)
     return render_template("admin/settings.html", options=options, current=current, hidden=hidden,
-                           template=get_setting("whatsapp_template") or DEFAULT_WHATSAPP,
+                           templates={c: template_for(c) for c in CHANNELS}, channels=CHANNELS,
+                           own_template={c: get_setting(f"{c}_template") is not None for c in CHANNELS},
+                           picture=picture_token(), picture_link=get_setting("picture_link", "1") == "1",
                            themes=THEMES, theme=theme_name())
 
 
@@ -219,6 +256,85 @@ def set_theme():
         get_db().commit()
         flash(f"Colour changed to {THEMES[name][0]}.", "success")
     return redirect(url_for("campaign.settings"))
+
+
+@bp.post("/picture")
+@admin_required
+def upload_picture():
+    """The campaign picture for WhatsApp: stored re-encoded (no EXIF), under a new random name each time."""
+    from PIL import Image, UnidentifiedImageError
+
+    os.makedirs(picture_dir(), exist_ok=True)
+    old = picture_token()
+    if request.form.get("remove"):
+        put_setting("picture_token", "")
+        audit.log("campaign_picture", detail={"removed": True}, commit=False)
+        get_db().commit()
+        _delete_picture(old)
+        flash("Picture removed.", "success")
+        return redirect(url_for("campaign.settings") + "#msg-whatsapp")
+    upload = request.files.get("picture")
+    blob = upload.read(MAX_PICTURE_BYTES + 1) if upload else b""
+    error = None
+    if not blob:
+        error = "Choose a picture first."
+    elif len(blob) > MAX_PICTURE_BYTES:
+        error = "The picture must be 8 MB or smaller."
+    else:
+        try:
+            img = Image.open(io.BytesIO(blob))
+            if img.format not in ("JPEG", "PNG", "WEBP"):
+                raise UnidentifiedImageError
+            img.load()
+        except (UnidentifiedImageError, OSError, Image.DecompressionBombError):
+            error = "That file isn't a JPEG, PNG or WebP picture."
+    if error:
+        flash(error, "error")
+        return redirect(url_for("campaign.settings") + "#msg-whatsapp")
+    img = img.convert("RGB")
+    img.thumbnail((1600, 1600))
+    token = secrets.token_urlsafe(12)
+    img.save(os.path.join(picture_dir(), f"{token}.jpg"), "JPEG", quality=85)
+    put_setting("picture_token", token)
+    audit.log("campaign_picture", detail={"size": list(img.size)}, commit=False)
+    get_db().commit()
+    _delete_picture(old)
+    flash("Picture saved. WhatsApp messages now carry a link that shows it.", "success")
+    return redirect(url_for("campaign.settings") + "#msg-whatsapp")
+
+
+def _delete_picture(token):
+    if token:
+        try:
+            os.remove(os.path.join(picture_dir(), f"{token}.jpg"))
+        except OSError:
+            pass
+
+
+# Public on purpose: WhatsApp (and the voter) must be able to load the campaign picture without
+# signing in. It holds no voter data, and the address is random and changes with every upload.
+picture_bp = Blueprint("picture", __name__)
+
+
+def _current_token_or_404(token):
+    if not token or token != picture_token():
+        abort(404)
+
+
+@picture_bp.route("/c/<token>")
+def page(token):
+    _current_token_or_404(token)
+    resp = Response(render_template("picture.html", token=token))
+    resp.headers["Cache-Control"] = "public, max-age=300"
+    return resp
+
+
+@picture_bp.route("/c/<token>.jpg")
+def image(token):
+    _current_token_or_404(token)
+    resp = send_from_directory(os.path.abspath(picture_dir()), f"{token}.jpg", max_age=86400)
+    resp.headers["Cache-Control"] = "public, max-age=86400"
+    return resp
 
 
 themes_bp = Blueprint("theme", __name__)

@@ -19,9 +19,13 @@
   {% if v.phone %}
   <div class="contact-wide">
     <a class="button primary big" href="tel:{{ v.phone }}">{{ icon('phone') }} Call {{ v.phone }}</a>
-    {% set wa = whatsapp_url(v) %}{% set sms = sms_url(v) %}
+    {% set wa = whatsapp_url(v) %}{% set sms = sms_url(v) %}{% set vb = viber_url(v) %}
     {% if wa %}<a class="button big wa-wide" href="{{ wa }}" target="_blank" rel="noopener noreferrer">{{ icon('chat') }} WhatsApp</a>{% endif %}
     {% if sms %}<a class="button big sms-wide" href="{{ sms }}">{{ icon('sms') }} SMS</a>{% endif %}
+    {% if vb %}<a class="button big viber-wide" href="{{ vb }}" data-copy="{{ campaign_message(v, 'viber') }}">{{ icon('viber') }} Viber</a>{% endif %}
+    {% if wa and picture_token() %}<button type="button" class="button big" hidden
+        data-share-picture="{{ url_for('picture.image', token=picture_token()) }}"
+        data-share-text="{{ campaign_message(v, 'whatsapp') }}">{{ icon('image') }} Send picture</button>{% endif %}
   </div>
   {% endif %}
 
@@ -87,4 +91,31 @@
   </div>
   {% endif %}
 </article>
+
+{% if v.house_name %}
+<section class="housemates">
+  <div class="list-head">
+    <h2>Also at {{ v.house_name }}</h2>
+    {% if housemates %}<a href="{{ url_for('voters.search', h=v.house_name, sort='house') }}">Open as list ›</a>{% endif %}
+  </div>
+  {% if housemates %}
+  <ul class="mate-list">
+    {% for m in housemates %}
+    <li class="mate st-{{ m.status }}">
+      <a href="{{ url_for('voters.detail', national_id=m.national_id, back=back) }}">
+        {{ avatar(m, 'sm') }}
+        <span class="mate-main">
+          <strong>{{ m.full_name or '(no name)' }}</strong>
+          <span class="muted small-text">{% if m.age is not none %}{{ m.age }} · {% endif %}{{ m.sex or '—' }}{% if m.phone %} · <span class="mono">{{ m.phone }}</span>{% endif %}</span>
+        </span>
+        <span class="tag st-tag-{{ m.status }}">{{ statuses[m.status] }}</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+  <p class="muted">Nobody else {{ 'you can see ' if current_user.role != 'admin' }}is registered at this address.</p>
+  {% endif %}
+</section>
+{% endif %}
 {% endblock %}

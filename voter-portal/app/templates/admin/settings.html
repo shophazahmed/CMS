@@ -32,18 +32,57 @@
   {% endif %}
 </form>
 
-<form class="card form" method="post">
-  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <input type="hidden" name="form" value="whatsapp">
-  <h2>WhatsApp &amp; SMS message</h2>
-  <p class="muted">The <strong>WhatsApp</strong> and <strong>SMS</strong> buttons on each voter open a message with this text already typed.
-    The canvasser can still change it before sending. Placeholders: <code>{first_name}</code>, <code>{name}</code>,
-    <code>{house}</code>.</p>
-  <label>Message
-    <textarea name="template" rows="4" maxlength="600">{{ template }}</textarea>
-  </label>
-  <button class="primary">Save message</button>
-</form>
+<section class="card" id="messages">
+  <h2>Messages</h2>
+  <p class="muted">The <strong>WhatsApp</strong>, <strong>SMS</strong> and <strong>Viber</strong> buttons on each voter start a
+    message with this text. The canvasser can still change it before sending. Placeholders: <code>{first_name}</code>,
+    <code>{name}</code>, <code>{house}</code>, <code>{id}</code>.</p>
+
+  {% for key, label in channels.items() %}
+  <form class="form msg-form" method="post" id="msg-{{ key }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="form" value="{{ key }}">
+    <h3>{{ label }}{% if key != 'whatsapp' and not own_template[key] %} <span class="badge">same as WhatsApp</span>{% endif %}</h3>
+    {% if key == 'sms' %}<p class="muted small-text">Keep it short: one SMS holds about 160 characters; longer ones are sent as several.</p>{% endif %}
+    {% if key == 'viber' %}<p class="muted small-text">Viber can't fill in text for a number, so the Viber button copies this message first.
+      The canvasser pastes it into the chat (long-press → Paste). The voter must use Viber on that number.</p>{% endif %}
+    <label>{{ label }} message
+      <textarea name="template" rows="4" maxlength="600">{{ templates[key] }}</textarea>
+    </label>
+    {% if key == 'whatsapp' %}
+    <label class="check"><input type="checkbox" name="picture_link" value="1" {{ 'checked' if picture_link }}>
+      Add the picture link at the end (WhatsApp shows the picture as a preview)</label>
+    {% endif %}
+    <button class="primary">Save {{ label }} message</button>
+  </form>
+  {% if key == 'whatsapp' %}
+  <div class="picture-box">
+    <h3>WhatsApp picture</h3>
+    {% if picture %}
+    <img class="picture-preview" src="{{ url_for('picture.image', token=picture) }}" alt="Current campaign picture">
+    <p class="muted small-text">Anyone with the link can open this picture (no sign-in), so it can show in WhatsApp.
+      Don't upload anything private. Uploading a new picture gives it a new link.</p>
+    {% else %}
+    <p class="muted small-text">No picture yet. Upload a flyer or poster (JPEG, PNG or WebP, up to 8 MB).</p>
+    {% endif %}
+    <form class="form" method="post" action="{{ url_for('campaign.upload_picture') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <label>{{ 'Replace picture' if picture else 'Picture' }}
+        <input type="file" name="picture" accept="image/jpeg,image/png,image/webp" required>
+      </label>
+      <button class="primary">Upload picture</button>
+    </form>
+    {% if picture %}
+    <form method="post" action="{{ url_for('campaign.upload_picture') }}" data-confirm="Remove the campaign picture?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="remove" value="1">
+      <button class="danger small">Remove picture</button>
+    </form>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% endfor %}
+</section>
 
 <form class="card form" method="post" action="{{ url_for('campaign.set_theme') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
