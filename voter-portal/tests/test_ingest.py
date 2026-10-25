@@ -244,3 +244,28 @@ def test_imports_keep_canvassing(tmp_path):
     rows = {r[0]: r[1:] for r in conn.execute("SELECT national_id, full_name, party, status, notes FROM voters")}
     assert rows == {"A700001": ("One Renamed", "MDP", "contacted", "n1"),
                     "A700002": ("Two Renamed", "MDP", "followup", "n2")}  # replace overwrites hand edits too
+
+
+def test_party_only_file_keeps_other_details(tmp_path):
+    import csv
+
+    db = tmp_path / "vp.db"
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    with open(first / "Gahdhdhoo.2026.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["ID Card No.", "Name", "Sex", "Age", "House", "Party"])
+        w.writerow(["A800001", "Joins", "M", 40, "One", "PPM"])
+        w.writerow(["A800002", "Leaves", "F", 35, "Two", "MDP"])
+    args = ["--db", str(db), "--photos-dir", str(tmp_path / "p"), "--no-seed-users"]
+    ingest.main(["--data-dir", str(first), "--log", str(tmp_path / "l1")] + args)
+    with open(second / "gadhoo-new voters.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["ID Card No.", "Name", "Sex", "Age", "House", "Party"])
+        w.writerow(["A800001", "", "", "", "", "MDP"])
+        w.writerow(["A800002", "", "", "", "", "OTHER"])
+    ingest.main(["--data-dir", str(second), "--log", str(tmp_path / "l2")] + args)
+    conn = sqlite3.connect(db)
+    rows = {r[0]: r[1:] for r in conn.execute("SELECT national_id, full_name, sex, age, house_name, party FROM voters")}
+    assert rows == {"A800001": ("Joins", "M", 40, "One", "MDP"), "A800002": ("Leaves", "F", 35, "Two", "OTHER")}

@@ -632,8 +632,11 @@ def load(conn, merged, mode, log):
             log.add("INFO", "KEPT_PORTAL_EDIT", nid, "edited in the portal since the last import; file data not applied")
             counts["kept_portal_edits"] += 1
         else:
+            # A blank in the files never erases what the portal already has (e.g. a party-only update file).
             conn.execute(
-                "UPDATE voters SET full_name = ?, sex = ?, age = ?, house_name = ?, party = ?,"
+                "UPDATE voters SET full_name = COALESCE(NULLIF(?, ''), full_name), sex = COALESCE(NULLIF(?, ''), sex),"
+                " age = COALESCE(?, age), house_name = COALESCE(NULLIF(?, ''), house_name),"
+                " party = COALESCE(NULLIF(?, ''), party),"
                 " phone = COALESCE(NULLIF(?, ''), phone), photo_path = COALESCE(?, photo_path),"
                 " source = ?, updated_at = ?, updated_by = NULL WHERE national_id = ?",
                 (v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"], v["photo_path"],
