@@ -266,6 +266,14 @@ form.card.filters { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 .vcard-name::after { content: ""; position: absolute; inset: 0; border-radius: var(--radius); } /* whole card is tappable */
 .vcard-meta { margin: .05rem 0 .3rem; color: var(--muted); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vcard-tags { display: flex; gap: .35rem; flex-wrap: wrap; margin: 0; }
+.vcard-tags:empty { display: none; }
+/* Where the voter is registered to vote: its own line, so it reads at a glance */
+.vcard-loc {
+  display: flex; align-items: center; gap: .3rem; margin: 0 0 .35rem;
+  font-size: .86rem; font-weight: 600; color: var(--accent-ink); min-width: 0;
+}
+.vcard-loc span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vcard-loc .icon { flex: none; }
 .tag {
   display: inline-block; padding: .05rem .5rem; border-radius: 6px; font-size: .78rem; font-weight: 600;
   background: var(--surface-2); color: var(--muted); border: 1px solid var(--border);

@@ -171,9 +171,9 @@
     {{ avatar(v, 'md') }}
     <div class="vcard-main">
       <a class="vcard-name" href="{{ url_for('voters.detail', national_id=v.national_id, back=back_url) }}">{{ v.full_name or '(no name)' }}</a>
-      <p class="vcard-meta">{{ v.house_name or 'No house' }}{% if v.location %} · {{ v.location }}{% endif %}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}{% if v.phone %} · <span class="mono">{{ v.phone }}</span>{% endif %}</p>
+      <p class="vcard-meta">{{ v.house_name or 'No house' }}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}{% if v.phone %} · <span class="mono">{{ v.phone }}</span>{% endif %}</p>
+      {% if v.location %}<p class="vcard-loc">{{ icon('pin', 14) }} <span>{{ v.location }}</span></p>{% endif %}
       <p class="vcard-tags">
-        <span class="tag mono">{{ v.national_id }}</span>
         {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}
         {% if v.assigned_to and current_user.role != 'agent' %}<span class="tag agent-tag">{{ icon('user', 12) }} {{ v.assigned_to }}</span>{% endif %}
       </p>
