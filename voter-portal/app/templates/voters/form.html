@@ -34,6 +34,10 @@
   <label>Party
     <input name="party" value="{{ v.party or '' }}" maxlength="50">
   </label>
+  <label>Location (where they vote)
+    <input name="location" value="{{ v.location or '' }}" maxlength="200" list="locations">
+    <datalist id="locations">{% for l in locations or [] %}<option value="{{ l }}">{% endfor %}</datalist>
+  </label>
   <label>Phone
     <input name="phone" type="tel" value="{{ v.phone or '' }}" maxlength="20" placeholder="7771234" inputmode="tel">
   </label>

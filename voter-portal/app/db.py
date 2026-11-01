@@ -28,6 +28,7 @@ CREATE TABLE IF NOT EXISTS voters (
     age         INTEGER CHECK (age IS NULL OR (age >= 0 AND age <= 130)),
     house_name  TEXT NOT NULL DEFAULT '',
     party       TEXT NOT NULL DEFAULT '',
+    location    TEXT NOT NULL DEFAULT '',  -- where the voter is registered to vote (ballot box)
     phone       TEXT NOT NULL DEFAULT '',
     status      TEXT NOT NULL DEFAULT 'new',
     status_at   TEXT,
@@ -132,6 +133,7 @@ def init_schema(conn):
         ("status_at", "status_at TEXT"),
         ("status_by", "status_by INTEGER REFERENCES users(id) ON DELETE SET NULL"),
         ("notes", "notes TEXT NOT NULL DEFAULT ''"),
+        ("location", "location TEXT NOT NULL DEFAULT ''"),
     ):
         if name not in columns:
             conn.execute(f"ALTER TABLE voters ADD COLUMN {ddl}")

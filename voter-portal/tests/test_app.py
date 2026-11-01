@@ -254,3 +254,20 @@ def test_pages_and_housemates(app):
     assert "Also at Big House" in detail and detail.count('class="mate ') == 59 and "Person 59" in detail
     detail = a.get("/voters/A200001").get_data(as_text=True)   # Rose Villa has two voters
     assert detail.count('class="mate ') == 1
+
+
+def test_location_filter_detail_and_export(app):
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Male hub' WHERE national_id = 'A200002'")
+    conn.commit()
+    conn.close()
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    html = client.get("/?loc=Male+hub").get_data(as_text=True)
+    assert "Moosa Beta" in html and "Aminath Alpha" not in html
+    assert "<option selected>Male hub</option>" in html
+    html = client.get("/?loc=(none)").get_data(as_text=True)
+    assert "Aminath Alpha" in html and "Moosa Beta" not in html
+    assert "Male hub" in client.get("/voters/A200002").get_data(as_text=True)
+    csv_text = client.get("/export.csv?loc=Male+hub").get_data(as_text=True)
+    assert "Location" in csv_text.splitlines()[0] and "Male hub" in csv_text

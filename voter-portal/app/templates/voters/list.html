@@ -6,7 +6,7 @@
     {{ icon('search') }}
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone"
            aria-label="Search name, ID, house or phone" autocomplete="off" enterkeyhint="search">
-    {% for k in ('national_id', 'house', 'h', 'party', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'by', 'cf', 'sort', 'n') %}
+    {% for k in ('national_id', 'house', 'h', 'party', 'loc', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'by', 'cf', 'sort', 'n') %}
       {% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}
     {% endfor %}
     <button class="primary" type="submit">Search</button>
@@ -48,6 +48,13 @@
         <option value="">Any</option>
         {% for p in parties %}<option {{ 'selected' if f.party == p }}>{{ p }}</option>{% endfor %}
         <option value="(none)" {{ 'selected' if f.party == '(none)' }}>No party</option>
+      </select>
+    </label>
+    <label>Location (where they vote)
+      <select name="loc">
+        <option value="">Any</option>
+        {% for l in locations %}<option {{ 'selected' if f.loc == l }}>{{ l }}</option>{% endfor %}
+        <option value="(none)" {{ 'selected' if f.loc == '(none)' }}>No location</option>
       </select>
     </label>
     <label>Sex
@@ -93,7 +100,7 @@
     {% endif %}
     <label>Sort by
       <select name="sort">
-        {% for key, label in [('name','Name'),('house','House'),('age','Age'),('party','Party'),('id','ID')] %}
+        {% for key, label in [('name','Name'),('house','House'),('location','Location'),('age','Age'),('party','Party'),('id','ID')] %}
         <option value="{{ key }}" {{ 'selected' if f.sort == key }}>{{ label }}</option>
         {% endfor %}
       </select>
@@ -164,7 +171,7 @@
     {{ avatar(v, 'md') }}
     <div class="vcard-main">
       <a class="vcard-name" href="{{ url_for('voters.detail', national_id=v.national_id, back=back_url) }}">{{ v.full_name or '(no name)' }}</a>
-      <p class="vcard-meta">{{ v.house_name or 'No house' }}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}{% if v.phone %} · <span class="mono">{{ v.phone }}</span>{% endif %}</p>
+      <p class="vcard-meta">{{ v.house_name or 'No house' }}{% if v.location %} · {{ v.location }}{% endif %}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}{% if v.phone %} · <span class="mono">{{ v.phone }}</span>{% endif %}</p>
       <p class="vcard-tags">
         <span class="tag mono">{{ v.national_id }}</span>
         {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}

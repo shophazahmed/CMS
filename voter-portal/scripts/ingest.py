@@ -74,7 +74,7 @@ LEFT_MDP_PARTY = "OTHER"
 def is_mdp(party):
     return compare_key(party) in {"mdp", "mpd", "maldiviandemocraticparty"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
-FIELDS = ("full_name", "sex", "age", "house_name", "party", "phone")
+FIELDS = ("full_name", "sex", "age", "house_name", "party", "phone", "location")
 
 # Header names, compared after lower-casing and removing everything but letters/digits.
 ALIASES = {
@@ -88,6 +88,8 @@ ALIASES = {
     "dob": {"dob", "dateofbirth", "birthdate", "birthday"},
     "house_name": {"house", "housename", "address", "houseaddress", "permanentaddress", "home", "residence",
                    "housenameaddress", "homename"},
+    "location": {"location", "ballotbox", "box", "boxlocation", "votinglocation", "votingplace", "pollingstation",
+                 "registeredlocation", "registeredat"},
     "party": {"party", "partyname", "politicalparty", "affiliation", "partyaffiliation"},
     "phone": {"phone", "phoneno", "phonenumber", "mobile", "mobileno", "mobilenumber", "contact", "contactno",
               "contactnumber", "tel", "telephone", "mob"},
@@ -396,6 +398,7 @@ def extract(path, priority, label, log, finder):
             if note:
                 log.add("INFO", "ID_NORMALISED", nid, f"{where}: {note}")
             values = {"full_name": clean_text(cell(row, "full_name")), "house_name": clean_text(cell(row, "house_name")),
+                      "location": clean_text(cell(row, "location")),
                       "party": normalize_party(cell(row, "party"))}
             values["phone"], note = normalize_phone(cell(row, "phone"))
             if note:
@@ -622,9 +625,9 @@ def load(conn, merged, mode, log):
         src = "import: " + ", ".join(v["sources"])
         if existing is None:
             conn.execute(
-                "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, photo_path,"
-                " source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (nid, v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"],
+                "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, location, photo_path,"
+                " source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (nid, v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"], v["location"],
                  v["photo_path"], src, stamp, stamp),
             )
             counts["inserted"] += 1
@@ -637,9 +640,11 @@ def load(conn, merged, mode, log):
                 "UPDATE voters SET full_name = COALESCE(NULLIF(?, ''), full_name), sex = COALESCE(NULLIF(?, ''), sex),"
                 " age = COALESCE(?, age), house_name = COALESCE(NULLIF(?, ''), house_name),"
                 " party = COALESCE(NULLIF(?, ''), party),"
-                " phone = COALESCE(NULLIF(?, ''), phone), photo_path = COALESCE(?, photo_path),"
-                " source = ?, updated_at = ?, updated_by = NULL WHERE national_id = ?",
-                (v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"], v["photo_path"],
+                " phone = COALESCE(NULLIF(?, ''), phone), location = COALESCE(NULLIF(?, ''), location),"
+                " photo_path = COALESCE(?, photo_path), source = ?, updated_at = ?, updated_by = NULL"
+                " WHERE national_id = ?",
+                (v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"], v["location"],
+                 v["photo_path"],
                  src, stamp, nid),
             )
             counts["updated"] += 1
@@ -754,10 +759,10 @@ def main(argv=None, out=None):
     if args.csv_out:
         with open(args.csv_out, "w", newline="", encoding="utf-8-sig") as fh:
             w = csv.writer(fh)
-            w.writerow(["ID", "full_name", "sex", "age", "house_name", "Party", "phone", "photo_path", "sources"])
+            w.writerow(["ID", "full_name", "sex", "age", "house_name", "Party", "phone", "location", "photo_path", "sources"])
             for nid in sorted(merged):
                 v = merged[nid]
-                w.writerow([nid, v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"],
+                w.writerow([nid, v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"], v["location"],
                             v["photo_path"] or "", "; ".join(v["sources"])])
         os.chmod(args.csv_out, 0o600)
 

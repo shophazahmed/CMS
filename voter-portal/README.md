@@ -226,6 +226,12 @@ How it works:
   set to `OTHER` and logged as `PARTY_LEFT_MDP`. The list can also be imported on its own: voters already in the
   portal as MDP who aren't on it are moved to `OTHER` too, except voters edited by hand in the portal. If the list isn't uploaded, nobody is moved
   (`MDP_LIST_NOT_LOADED`).
+- **Location:** where the voter is registered to vote (ballot box), read from a Location / Ballot box
+  column. Search has a **Location** filter and a Location sort, the voter page and card show it, admins can
+  edit it, and exports have it as the last column.
+- **Temporary IDs:** a voter without an ID card can be imported under a temporary ID such as `TP0001`
+  (logged as an unusual ID); it can't clash with a real `A123456`. When the real card is known, delete the
+  temporary record and add or import the voter under the real ID.
 - **Phone:** read from a Phone / Mobile / Contact column. A `960` country code is dropped, so
   `9607902314` becomes `7902314`. A blank in a newer file never erases a number already in the portal.
 - **De-duplication** is strictly on the ID. For each field, the highest-priority file that has a

@@ -269,3 +269,25 @@ def test_party_only_file_keeps_other_details(tmp_path):
     conn = sqlite3.connect(db)
     rows = {r[0]: r[1:] for r in conn.execute("SELECT national_id, full_name, sex, age, house_name, party FROM voters")}
     assert rows == {"A800001": ("Joins", "M", 40, "One", "MDP"), "A800002": ("Leaves", "F", 35, "Two", "OTHER")}
+
+
+def test_location_column_imported_and_kept(tmp_path):
+    import csv
+
+    db = tmp_path / "vp.db"
+    first, second = tmp_path / "first", tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    with open(first / "Gahdhdhoo.2026.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["ID Card No.", "Name", "Sex", "Age", "House", "Location"])
+        w.writerow(["A900001", "Boxed", "M", 40, "One", "Gdh. Gadhdhoo"])
+    args = ["--db", str(db), "--photos-dir", str(tmp_path / "p"), "--no-seed-users"]
+    ingest.main(["--data-dir", str(first), "--log", str(tmp_path / "l1")] + args)
+    with open(second / "gadhoo-new voters.csv", "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["ID Card No.", "Name", "Party"])
+        w.writerow(["A900001", "Boxed", "MDP"])
+    ingest.main(["--data-dir", str(second), "--log", str(tmp_path / "l2")] + args)
+    row = sqlite3.connect(db).execute("SELECT location, party FROM voters").fetchone()
+    assert row == ("Gdh. Gadhdhoo", "MDP")  # a file without a location keeps the stored one
