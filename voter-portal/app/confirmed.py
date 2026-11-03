@@ -3,6 +3,7 @@
 Private to the 'admin' account (auth.can_manage_confirmed_voters on every route). The list lives
 in its own table, so no other page, export or role can show it unless it is joined on purpose.
 """
+import re
 from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
@@ -14,6 +15,8 @@ from .db import get_db, now_iso
 bp = Blueprint("confirmed", __name__)
 
 MAX_NOTE = 300
+MAX_LIST = 5000
+LIST_ID_RE = re.compile(r"\b(A\d{6}|[A-Z]{1,2}\d{4,8})\b")
 # Search rows: whether the voter is confirmed (only added to the query for the 'admin' account)
 CONFIRMED_COLUMN = ("EXISTS (SELECT 1 FROM confirmed_voters cv WHERE cv.national_id = voters.national_id)"
                     " AS confirmed")
@@ -102,3 +105,69 @@ def overview():
 def metrics_json():
     resp = metrics()
     return resp
+
+
+def _ids_from_text(text):
+    """ID cards found anywhere in pasted text (one per line, or a copied spreadsheet column)."""
+    seen, ids = set(), []
+    for m in LIST_ID_RE.finditer((text or "").upper()):
+        if m.group(1) not in seen:
+            seen.add(m.group(1))
+            ids.append(m.group(1))
+    return ids[:MAX_LIST]
+
+
+def _sort_list(ids):
+    """Split pasted ID cards into: to confirm, already confirmed, not a campaign voter, not found."""
+    db = get_db()
+    clause, params = campaign.campaign_clause("v.party")
+    found = {}
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        marks = ",".join("?" * len(chunk))
+        for r in db.execute(
+                "SELECT v.national_id, v.full_name, v.house_name, v.location, v.party,"
+                " (c.national_id IS NOT NULL) AS confirmed"
+                + (f", ({clause}) AS in_campaign" if clause else ", 1 AS in_campaign")
+                + " FROM voters v LEFT JOIN confirmed_voters c ON c.national_id = v.national_id"
+                f" WHERE v.national_id IN ({marks})", (params if clause else []) + chunk):
+            found[r["national_id"]] = r
+    groups = {"new": [], "already": [], "other": [], "missing": []}
+    for nid in ids:
+        r = found.get(nid)
+        if r is None:
+            groups["missing"].append(nid)
+        elif r["confirmed"]:
+            groups["already"].append(r)
+        elif not r["in_campaign"]:
+            groups["other"].append(r)
+        else:
+            groups["new"].append(r)
+    return groups
+
+
+@bp.post("/confirmed/list")
+@can_manage_confirmed_voters
+def list_preview():
+    ids = _ids_from_text(request.form.get("ids", ""))
+    if not ids:
+        flash("No ID card numbers found. Paste them one per line, like A123456.", "error")
+        return redirect(url_for("confirmed.overview"))
+    return render_template("confirmed/list_preview.html", g_=_sort_list(ids), count=len(ids))
+
+
+@bp.post("/confirmed/list/apply")
+@can_manage_confirmed_voters
+def list_apply():
+    groups = _sort_list(_ids_from_text(request.form.get("ids", "")))
+    take = groups["new"] + (groups["other"] if request.form.get("include_other") else [])
+    db = get_db()
+    stamp = now_iso()
+    for r in take:
+        db.execute("INSERT OR IGNORE INTO confirmed_voters (national_id, confirmed_at, note) VALUES (?, ?, '')",
+                   (r["national_id"], stamp))
+        audit.log("voter_confirm", target=r["national_id"], detail="from a list", commit=False)
+    db.commit()
+    flash(f"{len(take)} voter{'s' if len(take) != 1 else ''} marked as 100% confirmed." if take else "Nothing changed.",
+          "success" if take else "info")
+    return redirect(url_for("confirmed.overview"))

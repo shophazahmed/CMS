@@ -28,6 +28,18 @@
   <a class="button" href="{{ url_for('voters.export', fmt='xlsx', cf='1', sort='house') }}">{{ icon('download', 16) }} Excel</a>
 </div>
 
+<details class="card cf-list"{{ ' open' if not m.confirmed }}>
+  <summary><h2>Add from a list</h2></summary>
+  <form method="post" action="{{ url_for('confirmed.list_preview') }}" class="form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>ID card numbers, one per line (or paste a column from Excel)
+      <textarea name="ids" rows="6" placeholder="A123456&#10;A234567" spellcheck="false" autocapitalize="characters" required></textarea>
+    </label>
+    <p class="muted small-text">Nothing is saved yet: you first see who will be confirmed, who already is, and any ID card that isn't in the portal.</p>
+    <div class="actions"><button class="primary">Check the list</button></div>
+  </form>
+</details>
+
 {% if houses %}
 <section class="card">
   <h2>By house</h2>

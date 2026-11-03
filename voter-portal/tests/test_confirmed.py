@@ -115,3 +115,32 @@ def test_a_differently_named_admin_is_not_the_owner(app):
     a = app.test_client()
     login(a, "boss", ADMIN_PW)
     assert a.get("/confirmed").status_code == 403
+
+
+def test_owner_confirms_from_a_pasted_list(app):
+    add_owner(app)
+    o = app.test_client()
+    login(o, "admin", OWNER_PW)
+    token = csrf(o, "/confirmed")
+    o.post("/voters/A200002/confirm", data={"csrf_token": token, "confirmed": "1"})  # already confirmed
+    set_parties(o, ["AAA"])                                   # campaign: party AAA (A200001 only)
+    token = csrf(o, "/confirmed")
+    page = o.post("/confirmed/list", data={"csrf_token": token,
+                                           "ids": "a200001\nA200002\tx\nA200003, A999999\nA200001"}).get_data(as_text=True)
+    assert "Will be confirmed" in page and "A999999" in page   # not found is listed
+    assert '<strong>1</strong>' in page                       # A200001 to confirm (duplicate pasted once)
+    o.post("/confirmed/list/apply", data={"csrf_token": token, "ids": "A200001 A200003"})
+    conn = connect(app.config["DATABASE"])
+    got = {r[0] for r in conn.execute("SELECT national_id FROM confirmed_voters")}
+    assert got == {"A200001", "A200002"}                      # A200003 (no party) needs the tick box
+    o.post("/confirmed/list/apply", data={"csrf_token": token, "ids": "A200003", "include_other": "1"})
+    assert conn.execute("SELECT COUNT(*) FROM confirmed_voters").fetchone()[0] == 3
+
+
+def test_confirmed_list_is_private_to_owner(app):
+    add_owner(app)
+    boss = app.test_client()
+    login(boss, "boss", ADMIN_PW)
+    token = csrf(boss, "/")
+    assert boss.post("/confirmed/list", data={"csrf_token": token, "ids": "A200001"}).status_code in (403, 404)
+    assert boss.post("/confirmed/list/apply", data={"csrf_token": token, "ids": "A200001"}).status_code in (403, 404)
