@@ -334,6 +334,7 @@ CHANGE_TYPES = {
     "work_moved": "Work moved",
     "unassign_all": "Everyone unassigned",
     "import_run": "Import",
+    "voter_share": "Shared on WhatsApp",
     "voter_confirm": "Confirmed (100%)",
     "voter_unconfirm": "Unconfirmed",
 }
@@ -367,6 +368,10 @@ def _describe(row, statuses, names):
     if a == "voters_assigned" and isinstance(d, dict):
         who = names.get(d.get("agent"), "their house's person") if d.get("agent") else "their house's person"
         return f"{row['target']} → {who}"
+    if a == "voter_share" and isinstance(d, dict):
+        return (f"{len(d.get('voters', []))} voter card(s) to {d.get('to')} · "
+                f"{'text' if d.get('mode') == 'text' else 'card'} · {'Dhivehi' if d.get('lang') == 'dv' else 'English'}"
+                + (f" · {d['assigned']} assigned" if d.get("assigned") else ""))
     if isinstance(d, dict):
         return ", ".join(f"{k}: {v}" for k, v in d.items() if not isinstance(v, (list, dict)))
     return d or ""

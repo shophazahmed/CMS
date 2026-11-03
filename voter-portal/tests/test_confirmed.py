@@ -199,3 +199,44 @@ def test_upgrade_flags_existing_admin_account_as_owner(tmp_path):
     conn = connect(db)
     init_schema(conn)
     assert dict(conn.execute("SELECT username, is_owner FROM users")) == {"admin": 1, "boss": 0}
+
+
+def test_owner_shares_voter_cards(app):
+    from urllib.parse import unquote
+
+    add_owner(app)
+    conn = connect(app.config["DATABASE"])
+    stamp = now_iso(precise=True)
+    conn.execute("INSERT INTO users (username, password_hash, role, must_change_password, password_changed_at,"
+                 " created_at, phone, can_login) VALUES ('Ali Agent', 'x', 'agent', 0, ?, ?, '7771234', 0)", (stamp, stamp))
+    conn.execute("UPDATE voters SET phone = '9990001', location = 'Gdh. Gadhdhoo', full_name_dv = 'އަމީނަތު'"
+                 " WHERE national_id = 'A200001'")
+    conn.commit()
+    ali = conn.execute("SELECT id FROM users WHERE username = 'Ali Agent'").fetchone()[0]
+    o = app.test_client()
+    login(o, "admin", OWNER_PW)
+    assert "Share on WhatsApp" in o.get("/voters/A200001").get_data(as_text=True)
+    hdr = {"X-Requested-With": "fetch"}
+    # text, straight to the agent's chat, and hand them the voter
+    r = o.post("/voters/share", headers=hdr, data={"csrf_token": csrf(o, "/"), "ids": ["A200001"], "to": str(ali),
+                                                   "lang": "en", "mode": "text", "assign": "1"}).get_json()
+    assert r["ok"] and r["direct"] and r["wa_url"].startswith("https://wa.me/9607771234?text=")
+    text = unquote(r["wa_url"].split("text=")[1])
+    assert "Aminath Alpha" in text and "Rose Villa" in text and "Gdh. Gadhdhoo" in text and "9990001" in text
+    assert "A200001" not in text                                    # no ID card number
+    assert conn.execute("SELECT user_id FROM voter_assignments WHERE national_id = 'A200001'").fetchone()[0] == ali
+    # a card image, to a typed number; and in Dhivehi
+    r = o.post("/voters/share", headers=hdr, data={"csrf_token": csrf(o, "/"), "ids": ["A200001", "A200002"],
+                                                   "to": "number", "number": "960 9123456", "lang": "dv"}).get_json()
+    assert r["wa_url"].startswith("https://wa.me/9609123456") and len(r["cards"]) == 2
+    png = o.get(r["cards"][0])
+    assert png.status_code == 200 and png.data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert "އަމީނަތު" in r["text"]
+    assert "Shared on WhatsApp" in o.get("/admin/changes").get_data(as_text=True)
+    # nobody else may share or fetch cards
+    boss = app.test_client()
+    login(boss, "boss", ADMIN_PW)
+    assert "Share on WhatsApp" not in boss.get("/voters/A200001").get_data(as_text=True)
+    assert boss.post("/voters/share", data={"csrf_token": csrf(boss, "/"), "ids": ["A200001"]}).status_code == 403
+    assert boss.get("/voters/A200001/card.png").status_code == 403
+    conn.close()

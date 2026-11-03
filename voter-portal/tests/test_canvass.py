@@ -235,7 +235,7 @@ def test_filter_by_who_contacted(app):
 
 
 def test_dashboard_date_range_and_user_filter(app):
-    from datetime import date, timedelta
+    from datetime import datetime, timedelta, timezone
     a = app.test_client()
     login(a, "boss", ADMIN_PW)
     u = app.test_client()
@@ -252,8 +252,9 @@ def test_dashboard_date_range_and_user_filter(app):
     assert "reached by <strong>viewer</strong>" in dash and "Rose Villa" in dash and "Blue Ge" not in dash
     assert "1 of 2" in dash
 
-    today = (date.today()).isoformat()
-    long_ago = (date.today() - timedelta(days=400)).isoformat()
+    maldives_today = (datetime.now(timezone.utc) + timedelta(hours=5)).date()  # the portal counts Maldives days
+    today = maldives_today.isoformat()
+    long_ago = (maldives_today - timedelta(days=400)).isoformat()
     dash = a.get(f"/dashboard?from={long_ago}&to={long_ago}").get_data(as_text=True)
     assert "0 of 3" in dash
     dash = a.get(f"/dashboard?user={ids['viewer']}&from={long_ago}&to={long_ago}").get_data(as_text=True)

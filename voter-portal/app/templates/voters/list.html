@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import pager, avatar, icon %}
+{% from "share/_panel.html" import share_panel with context %}
 {% block content %}
 <form class="searchbar" method="get" action="{{ url_for('voters.search') }}" role="search">
   <div class="search-input">
@@ -173,6 +174,8 @@
   </form>
 </details>
 {% endif %}
+
+{% if is_owner and rows and agents %}{{ share_panel() }}{% endif %}
 
 {% if rows %}
 <ul class="voter-list">

@@ -734,3 +734,9 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--danger);
 .change-voter { margin-top: .2rem !important; }
 .change-what { margin-top: .25rem !important; white-space: pre-wrap; }
 .note-meta form { display: inline; margin: 0; }
+.share-panel { margin: .75rem 0; }
+.share-panel > summary { cursor: pointer; font-weight: 600; display: flex; gap: .4rem; align-items: center; }
+.share-panel .checks { border: 0; padding: 0; margin: 0; }
+.share-cards { display: grid; gap: .6rem; margin: .8rem 0; }
+.share-card { width: 100%; max-width: 520px; border: 1px solid var(--border); border-radius: 10px; }
+.share-text { white-space: pre-wrap; background: var(--surface-2); padding: .7rem; border-radius: 8px; }

@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import avatar, sex_label, icon %}
+{% from "share/_panel.html" import share_panel with context %}
 {% block title %}{{ v.full_name }}{% endblock %}
 {% block content %}
 <a class="backlink" href="{{ back }}">{{ icon('back', 18) }} Back to results</a>
@@ -78,6 +79,8 @@
     </ul>
   </section>
   {% endif %}
+
+  {% if is_owner %}{{ share_panel(v.national_id) }}{% endif %}
 
   {% if is_owner %}
   <form class="confirm-box {{ 'on' if confirmation }}" method="post" action="{{ url_for('confirmed.set_confirmed', national_id=v.national_id) }}">

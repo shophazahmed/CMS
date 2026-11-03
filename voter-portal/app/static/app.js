@@ -194,3 +194,69 @@ document.addEventListener("click", async (event) => {
     link.innerHTML = label;
   }
 });
+
+// Share voter cards on WhatsApp (owner only). Step 1 prepares the cards; step 2 is a tap on
+// "Send on WhatsApp", because phones only open the share sheet straight after a tap.
+document.addEventListener("change", (event) => {
+  const to = event.target.closest("[data-share-to]");
+  if (!to) return;
+  const form = to.form;
+  form.querySelector("[data-share-number]").hidden = to.value !== "number";
+  form.querySelector("[data-share-assign]").hidden = !/^\d+$/.test(to.value);
+});
+
+document.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-share-form]");
+  if (!form) return;
+  event.preventDefault();
+  const status = form.querySelector("[data-share-status]");
+  const button = form.querySelector("button.primary");
+  const data = new FormData(form);
+  if (!data.getAll("ids").length) {
+    document.querySelectorAll("input.pick:checked").forEach((b) => data.append("ids", b.value));
+  }
+  if (!data.getAll("ids").length) { status.textContent = "Tick the voters to share first."; return; }
+  status.textContent = "Preparing…";
+  let reply;
+  try {
+    const response = await fetch(form.action, { method: "POST", body: data, credentials: "same-origin",
+                                                headers: { "X-Requested-With": "fetch" } });
+    reply = await response.json();
+    if (!reply.ok) { status.textContent = reply.error || "Couldn't share."; return; }
+  } catch (err) { status.textContent = "Couldn't reach the portal. Try again."; return; }
+  const who = reply.to ? ` for ${reply.to}` : "";
+  const assigned = reply.assigned ? ` ${reply.assigned} assigned to ${reply.to}.` : "";
+  if (reply.mode === "text") {
+    status.textContent = `Opening WhatsApp${who}…${assigned}`;
+    window.open(reply.wa_url, "_blank", "noopener");
+    return;
+  }
+  const files = [];
+  for (const [i, url] of reply.cards.entries()) {
+    const blob = await (await fetch(url, { credentials: "same-origin" })).blob();
+    files.push(new File([blob], reply.names[i], { type: "image/png" }));
+  }
+  if (navigator.canShare && navigator.canShare({ files })) {
+    status.textContent = `Ready: ${files.length} card${files.length > 1 ? "s" : ""}${who}.${assigned}` +
+      (reply.to ? ` In WhatsApp, pick ${reply.to}.` : "");
+    const send = document.createElement("button");
+    send.type = "button";
+    send.className = "button primary";
+    send.textContent = "Send on WhatsApp";
+    send.addEventListener("click", async () => {
+      try { await navigator.share({ files }); status.textContent = "Shared."; send.remove(); }
+      catch (err) { if (err.name !== "AbortError") status.textContent = "Sharing didn't work; try 'Text only'."; }
+    });
+    button.after(send);
+    return;
+  }
+  // A PC: save the cards, then open WhatsApp (Web) at the chat so they can be attached
+  files.forEach((file) => {
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(file);
+    a.download = file.name;
+    a.click();
+  });
+  status.textContent = `Saved ${files.length} card${files.length > 1 ? "s" : ""}${who}. Attach ${files.length > 1 ? "them" : "it"} in WhatsApp.${assigned}`;
+  if (reply.direct) window.open(reply.wa_url, "_blank", "noopener");
+});

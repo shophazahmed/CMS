@@ -7,7 +7,7 @@ import click
 from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from . import admin, auth, campaign, canvass, confirmed, imports, personal, voters
+from . import admin, auth, campaign, canvass, confirmed, imports, personal, share, voters
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -64,6 +64,8 @@ def create_app(test_config=None):
     app.register_blueprint(campaign.themes_bp)
     app.register_blueprint(campaign.picture_bp)
     app.register_blueprint(confirmed.bp)
+    app.register_blueprint(share.bp)
+    app.jinja_env.globals["share_people"] = share.people
 
     @app.template_filter("local")
     def local_time(value):
