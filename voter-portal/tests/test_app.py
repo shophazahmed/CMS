@@ -271,3 +271,22 @@ def test_location_filter_detail_and_export(app):
     assert "Male hub" in client.get("/voters/A200002").get_data(as_text=True)
     csv_text = client.get("/export.csv?loc=Male+hub").get_data(as_text=True)
     assert "Location" in csv_text.splitlines()[0] and "Male hub" in csv_text
+
+
+def test_deceased_marker(app):
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET phone = '7771234' WHERE national_id = 'A200002'")
+    conn.commit()
+    form = {"csrf_token": csrf(client, "/voters/A200002/edit"), "full_name": "Moosa Beta", "sex": "M", "age": "55",
+            "house_name": "Blue Ge", "party": "BBB", "phone": "7771234", "location": "", "deceased": "1"}
+    assert client.post("/voters/A200002/edit", data=form).status_code == 302
+    assert conn.execute("SELECT deceased FROM voters WHERE national_id = 'A200002'").fetchone()[0] == 1
+    page = client.get("/voters/A200002").get_data(as_text=True)
+    assert "Deceased" in page and "contact-wide" not in page  # no call / message buttons
+    assert "Moosa Beta" not in client.get("/?dc=0").get_data(as_text=True)
+    assert "Moosa Beta" in client.get("/?dc=1").get_data(as_text=True)
+    csv_text = client.get("/export.csv?dc=1").get_data(as_text=True)
+    assert csv_text.splitlines()[0].rstrip().endswith("Deceased") and "yes" in csv_text.splitlines()[1]
+    conn.close()

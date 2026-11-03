@@ -6,7 +6,7 @@
     {{ icon('search') }}
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone"
            aria-label="Search name, ID, house or phone" autocomplete="off" enterkeyhint="search">
-    {% for k in ('national_id', 'house', 'h', 'party', 'loc', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'by', 'cf', 'sort', 'n') %}
+    {% for k in ('national_id', 'house', 'h', 'party', 'loc', 'dc', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'by', 'cf', 'sort', 'n') %}
       {% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}
     {% endfor %}
     <button class="primary" type="submit">Search</button>
@@ -71,6 +71,13 @@
         <span class="muted">–</span>
         <input type="number" inputmode="numeric" name="age_max" min="0" max="130" value="{{ f.age_max if f.age_max is not none }}" placeholder="to" aria-label="Age to">
       </span>
+    </label>
+    <label>Deceased
+      <select name="dc">
+        <option value="">Show everyone</option>
+        <option value="0" {{ 'selected' if f.dc == '0' }}>Hide deceased</option>
+        <option value="1" {{ 'selected' if f.dc == '1' }}>Deceased only</option>
+      </select>
     </label>
     {% if is_owner %}
     <label>100% confirmed
@@ -165,7 +172,7 @@
   {% if f.sort == 'house' and loop.changed(v.house_name) %}
   <li class="house-head"><h2>{{ v.house_name or 'No house' }}</h2></li>
   {% endif %}
-  <li class="vcard st-{{ v.status }}" id="v-{{ v.national_id }}">
+  <li class="vcard st-{{ v.status }}{{ ' deceased' if v.deceased }}" id="v-{{ v.national_id }}">
     <div class="vcard-top">
     {% if is_admin and agents %}<input type="checkbox" class="pick" name="ids" value="{{ v.national_id }}" form="bulk-assign" aria-label="Select {{ v.full_name }}">{% endif %}
     {{ avatar(v, 'md') }}
@@ -174,6 +181,7 @@
       <p class="vcard-meta">{{ v.house_name or 'No house' }}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}{% if v.phone %} · <span class="mono">{{ v.phone }}</span>{% endif %}</p>
       {% if v.location %}<p class="vcard-loc">{{ icon('pin', 14) }} <span>{{ v.location }}</span></p>{% endif %}
       <p class="vcard-tags">
+        {% if v.deceased %}<span class="tag deceased">Deceased</span>{% endif %}
         {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}
         {% if v.assigned_to and current_user.role != 'agent' %}<span class="tag agent-tag">{{ icon('user', 12) }} {{ v.assigned_to }}</span>{% endif %}
       </p>
@@ -196,7 +204,7 @@
       </select>
       <noscript><button>Save</button></noscript>
       <span class="save-state" aria-live="polite"></span>
-      {% if v.phone %}
+      {% if v.phone and not v.deceased %}
       <span class="contact-btns">
         {% set wa = whatsapp_url(v) %}{% set sms = sms_url(v) %}{% set vb = viber_url(v) %}
         {% if wa %}<a class="wa" href="{{ wa }}" target="_blank" rel="noopener noreferrer" aria-label="WhatsApp {{ v.full_name }}" title="WhatsApp">{{ icon('chat', 18) }}</a>{% endif %}

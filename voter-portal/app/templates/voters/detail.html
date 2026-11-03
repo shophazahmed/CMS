@@ -11,12 +11,13 @@
       <h1>{{ v.full_name or '(no name)' }}</h1>
       <p class="vcard-tags">
         <span class="tag mono">{{ v.national_id }}</span>
+        {% if v.deceased %}<span class="tag deceased">Deceased</span>{% endif %}
         {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}
       </p>
     </div>
   </div>
 
-  {% if v.phone %}
+  {% if v.phone and not v.deceased %}
   <div class="contact-wide">
     <a class="button primary big" href="tel:{{ v.phone }}">{{ icon('phone') }} Call {{ v.phone }}</a>
     {% set wa = whatsapp_url(v) %}{% set sms = sms_url(v) %}{% set vb = viber_url(v) %}

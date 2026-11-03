@@ -267,6 +267,9 @@ form.card.filters { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
 .vcard-meta { margin: .05rem 0 .3rem; color: var(--muted); font-size: .9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vcard-tags { display: flex; gap: .35rem; flex-wrap: wrap; margin: 0; }
 .vcard-tags:empty { display: none; }
+.tag.deceased { background: var(--text); color: var(--surface); border-color: transparent; }
+.vcard.deceased { opacity: .62; }
+.vcard.deceased .vcard-name { text-decoration: line-through; text-decoration-thickness: 1px; }
 /* Where the voter is registered to vote: its own line, so it reads at a glance */
 .vcard-loc {
   display: flex; align-items: center; gap: .3rem; margin: 0 0 .35rem;

@@ -28,7 +28,7 @@ bp = Blueprint("voters", __name__)
 
 PAGE_SIZE = 50
 PAGE_SIZES = (25, 50, 100, 200)
-FIELDS = ("national_id", "full_name", "sex", "age", "house_name", "party", "phone", "location")
+FIELDS = ("national_id", "full_name", "sex", "age", "house_name", "party", "phone", "location", "deceased")
 SORTS = {
     "name": "full_name COLLATE NOCASE, national_id",
     "house": "house_name COLLATE NOCASE, full_name COLLATE NOCASE",
@@ -72,6 +72,7 @@ def read_filters(args):
         "ag": args.get("ag", "") if args.get("ag", "") == "none" or args.get("ag", "").isdigit() else "",
         # 100% confirmed (1) / not (0): only the 'admin' account may filter on it
         "cf": args.get("cf", "") if args.get("cf", "") in ("0", "1") and is_owner() else "",
+        "dc": args.get("dc", "") if args.get("dc", "") in ("0", "1") else "",
         "va": args.get("va", "") if args.get("va", "") == "any" or args.get("va", "").isdigit() else "",
         "sort": args.get("sort", "name") if args.get("sort") in SORTS else "name",
     }
@@ -155,6 +156,10 @@ def build_where(f):
     if f.get("by"):
         clauses.append("status_by = ? AND status != 'new'")
         params.append(int(f["by"]))
+    if f.get("dc") == "1":
+        clauses.append("deceased = 1")
+    elif f.get("dc") == "0":
+        clauses.append("deceased = 0")
     if f.get("cf") == "1":
         clauses.append("national_id IN (SELECT national_id FROM confirmed_voters)")
     elif f.get("cf") == "0":
@@ -284,6 +289,7 @@ def filter_chips(f, query_args):
         "age_max": lambda v: f"Age ≤ {v}",
         "va": _agent_name,
         "cf": lambda v: "100% confirmed" if v == "1" else "Not confirmed",
+        "dc": lambda v: "Deceased only" if v == "1" else "Hide deceased",
         "by": lambda v: _agent_name(v).replace("Assigned to", "Contacted by"),
         "ag": lambda v: "No agent" if v == "none" else _agent_name(v).replace("Assigned to", "Agent:"),
     }
@@ -500,6 +506,7 @@ def _parse_form(form, creating):
     data["house_name"] = clean_text(form.get("house_name", ""))[:200]
     data["party"] = normalize_party(form.get("party", ""))[:50]
     data["location"] = clean_text(form.get("location", ""))[:200]
+    data["deceased"] = 1 if form.get("deceased") else 0
     data["phone"], note = normalize_phone(form.get("phone", ""))
     if note and "unreadable" in note:
         errors.append("Phone must be a number such as 7771234.")
@@ -549,10 +556,10 @@ def create():
             return render_template("voters/form.html", v=request.form, creating=True), 400
         stamp = now_iso()
         db.execute(
-            "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, location, photo_path,"
-            " source, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)",
+            "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, location, deceased,"
+            " photo_path, source, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)",
             (data["national_id"], data["full_name"], data["sex"], data["age"], data["house_name"],
-             data["party"], data["phone"], data["location"], data.get("photo_path"), stamp, stamp, g.user["id"]),
+             data["party"], data["phone"], data["location"], data["deceased"], data.get("photo_path"), stamp, stamp, g.user["id"]),
         )
         audit.log("voter_create", target=data["national_id"], detail={k: data[k] for k in FIELDS}, commit=False)
         db.commit()
@@ -618,7 +625,7 @@ def delete(national_id):
 
 EXPORT_HEADERS = ["ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
                   "Agent", "Agent via", "Status", "Status changed", "Status by", "Notes",
-                  "Last edited", "Last edited by", "Location"]
+                  "Last edited", "Last edited by", "Location", "Deceased"]
 
 # The agent responsible for a voter: the one they were handed to individually, else their house's agent
 EXPORT_AGENT = (
@@ -666,7 +673,8 @@ def export(fmt):
          STATUSES.get(r["status"], r["status"]), _local(r["status_at"]),
          _safe_cell(r["status_by_name"] or ""), _safe_cell(r["notes"]),
          _local(r["updated_at"]) if r["updated_by"] else "",
-         _safe_cell(r["updated_by_name"] or ""), _safe_cell(r["location"])]
+         _safe_cell(r["updated_by_name"] or ""), _safe_cell(r["location"]),
+         "yes" if r["deceased"] else ""]
         + (["yes" if r["confirmed_at"] else "", _local(r["confirmed_at"])] if owner else [])
         for r in rows
     ]
