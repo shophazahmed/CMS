@@ -144,3 +144,58 @@ def test_confirmed_list_is_private_to_owner(app):
     token = csrf(boss, "/")
     assert boss.post("/confirmed/list", data={"csrf_token": token, "ids": "A200001"}).status_code in (403, 404)
     assert boss.post("/confirmed/list/apply", data={"csrf_token": token, "ids": "A200001"}).status_code in (403, 404)
+
+
+def test_owner_renamed_keeps_confirmed_list(app):
+    add_owner(app)
+    o = app.test_client()
+    login(o, "admin", OWNER_PW)
+    token = csrf(o, "/")
+    o.post("/voters/A200001/confirm", data={"csrf_token": token, "confirmed": "1"})
+    conn = connect(app.config["DATABASE"])
+    owner_id = conn.execute("SELECT id FROM users WHERE username = 'admin'").fetchone()[0]
+    # another admin can't rename the owner
+    boss = app.test_client()
+    login(boss, "boss", ADMIN_PW)
+    boss.post(f"/admin/users/{owner_id}", data={"csrf_token": csrf(boss, "/admin/users"), "action": "rename",
+                                                 "username": "mine"})
+    assert conn.execute("SELECT username FROM users WHERE id = ?", (owner_id,)).fetchone()[0] == "admin"
+    # the owner renames themself
+    o.post(f"/admin/users/{owner_id}", data={"csrf_token": csrf(o, "/admin/users"), "action": "rename",
+                                              "username": "administrator"})
+    row = conn.execute("SELECT username, is_owner FROM users WHERE id = ?", (owner_id,)).fetchone()
+    assert tuple(row) == ("administrator", 1)
+    assert o.get("/confirmed").status_code == 200                 # same session, still the owner
+    fresh = app.test_client()
+    login(fresh, "administrator", OWNER_PW)
+    assert fresh.get("/confirmed").status_code == 200
+    # someone creating a new 'admin' account doesn't become the owner
+    boss.post("/admin/users", data={"csrf_token": csrf(boss, "/admin/users"), "username": "admin", "role": "admin",
+                                    "password": "another-pass-123"})
+    conn.execute("UPDATE users SET must_change_password = 0 WHERE username = 'admin'")
+    conn.commit()
+    impostor = app.test_client()
+    login(impostor, "admin", "another-pass-123")
+    assert impostor.get("/confirmed").status_code == 403
+    conn.close()
+
+
+def test_upgrade_flags_existing_admin_account_as_owner(tmp_path):
+    import sqlite3
+
+    from app.db import init_schema
+
+    db = str(tmp_path / "old.db")
+    old = sqlite3.connect(db)
+    old.executescript("""CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('admin', 'agent', 'user')),
+        is_active INTEGER NOT NULL DEFAULT 1, must_change_password INTEGER NOT NULL DEFAULT 1,
+        failed_logins INTEGER NOT NULL DEFAULT 0, locked_until TEXT, password_changed_at TEXT NOT NULL,
+        last_login_at TEXT, created_at TEXT NOT NULL);
+        INSERT INTO users (username, password_hash, role, password_changed_at, created_at)
+        VALUES ('admin', 'x', 'admin', 't', 't'), ('boss', 'x', 'admin', 't', 't');""")
+    old.commit()
+    old.close()
+    conn = connect(db)
+    init_schema(conn)
+    assert dict(conn.execute("SELECT username, is_owner FROM users")) == {"admin": 1, "boss": 0}

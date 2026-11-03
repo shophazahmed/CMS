@@ -22,7 +22,8 @@ CREATE TABLE IF NOT EXISTS users (
     phone                TEXT NOT NULL DEFAULT '',
     note                 TEXT NOT NULL DEFAULT '',
     can_login            INTEGER NOT NULL DEFAULT 1,  -- 0: a canvasser listed by name, never signs in
-    deleted_at           TEXT                         -- set when deleted; kept so history keeps the name
+    deleted_at           TEXT,                        -- set when deleted; kept so history keeps the name
+    is_owner             INTEGER NOT NULL DEFAULT 0   -- the candidate's account (100% confirmed list); survives renames
 );
 
 CREATE TABLE IF NOT EXISTS voters (
@@ -166,6 +167,7 @@ def _add_user_columns(conn):
         ("note", "note TEXT NOT NULL DEFAULT ''"),
         ("can_login", "can_login INTEGER NOT NULL DEFAULT 1"),
         ("deleted_at", "deleted_at TEXT"),
+        ("is_owner", "is_owner INTEGER NOT NULL DEFAULT 0"),
     ):
         if name in columns:
             continue
@@ -177,6 +179,8 @@ def _add_user_columns(conn):
             continue  # another worker added it (and switched the agents) first
         if name == "can_login":
             conn.execute("UPDATE users SET can_login = 0 WHERE role = 'agent'")
+        if name == "is_owner":  # until now the owner was whoever was called 'admin'
+            conn.execute("UPDATE users SET is_owner = 1 WHERE role = 'admin' AND username = 'admin' COLLATE NOCASE")
     conn.commit()
 
 

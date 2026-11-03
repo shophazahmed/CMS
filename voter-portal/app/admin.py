@@ -40,7 +40,8 @@ def users():
     agents = [u for u in rows if not u["can_login"]]
     logins = [u for u in rows if u["can_login"]]
     people = [u for u in rows if u["role"] in ("agent", "user", "admin")]
-    return render_template("admin/users.html", agents=agents, users=logins, people=people,
+    owner_id = next((u["id"] for u in logins if is_owner(u)), None)
+    return render_template("admin/users.html", agents=agents, users=logins, people=people, owner_id=owner_id,
                            roles=("user", "admin"), role_labels=ROLE_LABELS)
 
 
@@ -145,8 +146,8 @@ def update_user(user_id):
     action = request.form.get("action")
     is_self = user["id"] == g.user["id"]
     last_admin = user["role"] == "admin" and user["is_active"] and _active_admins() <= 1
-    # The 'admin' account holds the confirmed-voter list: other admins can't take it over
-    if is_owner(user) and not is_self and action in ("toggle_active", "set_role", "reset_password"):
+    # The owner account holds the confirmed-voter list: other admins can't take it over
+    if is_owner(user) and not is_self and action in ("toggle_active", "set_role", "reset_password", "rename"):
         audit.log("access_denied", target=f"user {user['username']}", detail={"action": action})
         flash(f"Only {user['username']} can change the {user['username']} account.", "error")
         return redirect(url_for("admin.users"))
@@ -154,7 +155,25 @@ def update_user(user_id):
     if user["deleted_at"]:
         abort(404)
 
-    if action == "edit_agent":
+    if action == "rename":
+        new = request.form.get("username", "").strip()
+        if not user["can_login"]:
+            abort(400)  # agents are renamed with Edit
+        if not USERNAME_RE.match(new):
+            flash("Username: 3-32 letters, digits, dot, dash or underscore.", "error")
+        elif new.casefold() == user["username"].casefold() and new == user["username"]:
+            flash("That's already the username.", "info")
+        elif db.execute("SELECT 1 FROM users WHERE username = ? AND id != ?", (new, user_id)).fetchone():
+            flash(f"Username '{new}' is taken.", "error")
+        else:
+            owner = is_owner(user)  # decided before the rename: the flag keeps it afterwards
+            db.execute("UPDATE users SET username = ?, is_owner = ? WHERE id = ?",
+                       (new, 1 if owner else user["is_owner"], user_id))
+            audit.log("user_rename", target=new, detail={"from": user["username"]})
+            flash(f"{user['username']} is now {new}." + (" Sign in with the new username from now on." if is_self else ""),
+                  "success")
+
+    elif action == "edit_agent":
         name = _clean_name(request.form.get("name"))
         phone, _ = normalize_phone(request.form.get("phone", ""))
         note = clean_text(request.form.get("note", ""))[:200]

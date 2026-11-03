@@ -718,3 +718,6 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .unassign-all { margin-top: 1rem; }
 .unassign-all > summary { display: inline-block; }
 .agent-pdf { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: .4rem 0 0; }
+.rename-box > summary { cursor: pointer; padding: .3rem .65rem; border: 1px solid var(--border); border-radius: 8px; font-size: .9rem; list-style: none; display: inline-block; }
+.rename-box > summary::-webkit-details-marker { display: none; }
+.rename-box[open] > summary { margin-bottom: .4rem; }

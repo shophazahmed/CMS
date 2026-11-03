@@ -103,9 +103,9 @@
     <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>
     <tbody>
     {% for u in users %}
-    {% set locked_owner = u.username|lower == 'admin' and u.role == 'admin' and u.id != current_user.id %}
+    {% set locked_owner = u.id == owner_id and u.id != current_user.id %}
     <tr class="{{ '' if u.is_active else 'inactive' }}">
-      <td data-label="User">{{ u.username }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}
+      <td data-label="User">{{ u.username }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}{% if u.id == owner_id %} <span class="badge">owner</span>{% endif %}
         {% if u.role != 'admin' %}<a class="small-text" href="{{ url_for('canvass.my_houses', agent=u.id) }}">Dashboard ›</a>
         <span class="muted small-text">{{ u.houses }} houses · {{ u.singles }} one by one</span>{% endif %}</td>
       <td data-label="Role">
@@ -125,6 +125,17 @@
       </td>
       <td data-label="Last sign-in">{{ u.last_login_at[:16] if u.last_login_at else 'Never' }}</td>
       <td data-label=""><div class="actions">
+        {% if not locked_owner %}
+        <details class="rename-box">
+          <summary>Rename</summary>
+          <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="form">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="rename">
+            <label>New username <input name="username" value="{{ u.username }}" required pattern="[A-Za-z0-9._\-]{3,32}" maxlength="32"></label>
+            <button>Save</button>
+          </form>
+        </details>
+        {% endif %}
         {% if locked_owner %}<span class="muted small-text">Protected: only {{ u.username }} can change this account</span>
         {% elif u.id != current_user.id %}
         {% for action, label, confirm in [

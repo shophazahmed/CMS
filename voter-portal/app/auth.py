@@ -151,13 +151,25 @@ OWNER_USERNAME = "admin"
 CONFIRMED_ACTIONS = ("voter_confirm", "voter_unconfirm", "confirmed_export")
 
 
+def _owner_flagged():
+    if "owner_flagged" not in g:
+        g.owner_flagged = get_db().execute("SELECT 1 FROM users WHERE is_owner = 1 LIMIT 1").fetchone() is not None
+    return g.owner_flagged
+
+
 def is_owner(user=None):
+    """The candidate's account: flagged as owner, so it keeps the confirmed list when renamed. A fresh
+    install has no flag yet; then the account called 'admin' is the owner (and gets the flag on rename)."""
     user = user if user is not None else g.get("user")
-    return user is not None and user["role"] == "admin" and user["username"].casefold() == OWNER_USERNAME
+    if user is None or user["role"] != "admin":
+        return False
+    if user["is_owner"]:
+        return True
+    return user["username"].casefold() == OWNER_USERNAME and not _owner_flagged()
 
 
 def can_manage_confirmed_voters(view):
-    """Strict rule for every confirmed-voter route: only the 'admin' account, nobody else."""
+    """Strict rule for every confirmed-voter route: only the owner account, nobody else."""
     @functools.wraps(view)
     @login_required
     def wrapped(*args, **kwargs):
