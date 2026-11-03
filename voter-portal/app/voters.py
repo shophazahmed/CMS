@@ -2,6 +2,7 @@
 import csv
 import io
 import os
+import re
 from datetime import datetime, timedelta, timezone
 
 from flask import (
@@ -663,6 +664,38 @@ def _safe_cell(value):
     if isinstance(value, str) and value[:1] in ("=", "+", "-", "@", "\t", "\r"):
         return "'" + value
     return value
+
+
+@bp.route("/voters.pdf")
+@admin_required
+def export_pdf():
+    """Printable list with photos for an agent: follows the search filters, grouped by house."""
+    from .pdf_export import MAX_ROWS, build_pdf
+
+    f = read_filters(request.args)
+    where, params = build_where(f)
+    lang = "dv" if request.args.get("lang") == "dv" else "en"
+    rows = get_db().execute(
+        f"SELECT * FROM voters{where} ORDER BY house_name = '', house_name COLLATE NOCASE,"
+        " full_name COLLATE NOCASE LIMIT ?", params + [MAX_ROWS + 1]).fetchall()
+    if len(rows) > MAX_ROWS:
+        flash(f"That's more than {MAX_ROWS} voters for one PDF. Narrow the search first.", "error")
+        return redirect(url_for("voters.search", **{k: v for k, v in request.args.items() if k != "lang"}))
+    recipient = ""
+    if f.get("ag", "").isdigit():
+        row = get_db().execute("SELECT username FROM users WHERE id = ?", (int(f["ag"]),)).fetchone()
+        recipient = row["username"] if row else ""
+    labels = [label for label, _ in filter_chips(f, {})]
+    title = f"Voters for {recipient}" if recipient else "Voter list"
+    subtitle = f"{len(rows)} voter{'s' if len(rows) != 1 else ''}" + (" · " + " · ".join(labels) if labels else "")
+    pdf = build_pdf(rows, lang=lang, title=title, subtitle=subtitle, recipient=recipient,
+                    photos_dir=current_app.config["PHOTOS_DIR"])
+    audit.log("export", target="pdf", detail={"filters": active_filters(f), "rows": len(rows), "lang": lang,
+                                              "for": recipient})
+    safe = re.sub(r"[^A-Za-z0-9]+", "-", recipient).strip("-") or "voters"
+    filename = f"{safe}-{datetime.now().strftime('%Y%m%d')}{'-dhivehi' if lang == 'dv' else ''}.pdf"
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @bp.route("/export.<fmt>")

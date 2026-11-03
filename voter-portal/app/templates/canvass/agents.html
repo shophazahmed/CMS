@@ -29,6 +29,11 @@
       <span class="muted">{% if a.role == 'user' %}User · {% endif %}{% if not a.can_login %}{% if a.phone %}<a href="tel:{{ a.phone }}" class="mono">{{ a.phone }}</a>{% else %}No sign-in{% endif %}{% else %}Last sign-in {{ a.last_login_at[:16].replace('T', ' ') if a.last_login_at else 'never' }}{% endif %}</span>
       <a href="{{ url_for('canvass.my_houses', agent=a.id) }}">Open their dashboard ›</a>
     </p>
+    <p class="small-text agent-pdf">
+      <a class="button small" href="{{ url_for('voters.export_pdf', ag=a.id) }}" data-share-pdf>{{ icon('download', 16) }} PDF</a>
+      <a class="button small" href="{{ url_for('voters.export_pdf', ag=a.id, lang='dv') }}" data-share-pdf>{{ icon('download', 16) }} PDF ދިވެހި</a>
+      <a href="{{ url_for('voters.search', ag=a.id, sort='house') }}">See their voters ›</a>
+    </p>
   </li>
   {% endfor %}
 </ul>

@@ -459,3 +459,40 @@ def test_admins_can_be_given_voters_and_unassign_everyone(app):
     assert conn.execute("SELECT (SELECT COUNT(*) FROM voter_assignments) + (SELECT COUNT(*) FROM house_assignments)").fetchone()[0] == 0
     assert "Unassigned" in client.get("/").get_data(as_text=True)
     conn.close()
+
+
+def test_pdf_export_english_and_dhivehi(app):
+    import io as _io
+
+    import pymupdf
+    from PIL import Image
+
+    conn = connect(app.config["DATABASE"])
+    stamp = now_iso()
+    conn.execute("INSERT INTO users (username, password_hash, role, must_change_password, password_changed_at,"
+                 " created_at, can_login) VALUES ('Sara Agent', 'x', 'agent', 0, ?, ?, 0)", (stamp, stamp))
+    sara = conn.execute("SELECT id FROM users WHERE username = 'Sara Agent'").fetchone()[0]
+    conn.execute("INSERT INTO house_assignments VALUES ('Rose Villa', ?, ?, NULL)", (sara, stamp))
+    conn.execute("UPDATE voters SET phone = '7771234', location = 'Gdh. Gadhdhoo', full_name_dv = 'އަމީނަތު',"
+                 " house_name_dv = 'ރޯޒްވިލާ', photo_path = 'A200001.jpg' WHERE national_id = 'A200001'")
+    conn.commit()
+    import os
+    os.makedirs(app.config["PHOTOS_DIR"], exist_ok=True)
+    Image.new("RGB", (300, 400), "teal").save(os.path.join(app.config["PHOTOS_DIR"], "A200001.jpg"))
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    r = client.get(f"/voters.pdf?ag={sara}")
+    assert r.status_code == 200 and r.mimetype == "application/pdf"
+    assert "Sara-Agent" in r.headers["Content-Disposition"]
+    doc = pymupdf.open("pdf", r.data)
+    text = doc[0].get_text()
+    assert "Voters for Sara Agent" in text and "Aminath Alpha" in text and "7771234" in text
+    assert "Moosa Beta" not in text                          # Blue Ge isn't Sara's
+    assert "For Sara Agent" in text and "Do not forward" in text
+    assert doc[0].get_images()                               # the photo is in
+    dv = pymupdf.open("pdf", client.get(f"/voters.pdf?ag={sara}&lang=dv").data)[0].get_text()
+    assert "އަމީނަތު" in dv and "ރޯޒްވިލާ" in dv
+    viewer = app.test_client()
+    login(viewer, "viewer", USER_PW)
+    assert viewer.get("/voters.pdf").status_code in (302, 403)  # admins only
+    conn.close()

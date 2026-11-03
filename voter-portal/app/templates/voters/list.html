@@ -135,6 +135,8 @@
   <div class="export">
     <a class="button small" href="{{ url_for('voters.export', fmt='csv', **query_args) }}">{{ icon('download', 16) }} CSV</a>
     <a class="button small" href="{{ url_for('voters.export', fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
+    <a class="button small" href="{{ url_for('voters.export_pdf', **query_args) }}" data-share-pdf>{{ icon('download', 16) }} PDF</a>
+    <a class="button small" href="{{ url_for('voters.export_pdf', lang='dv', **query_args) }}" data-share-pdf>{{ icon('download', 16) }} PDF ދިވެހި</a>
   </div>
   {% endif %}
 </div>

@@ -717,3 +717,4 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .thaana { font-family: "Faruma", "MV Faseyha", "Noto Sans Thaana", "MV Boli", sans-serif; }
 .unassign-all { margin-top: 1rem; }
 .unassign-all > summary { display: inline-block; }
+.agent-pdf { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: .4rem 0 0; }
