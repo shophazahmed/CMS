@@ -290,3 +290,25 @@ def test_deceased_marker(app):
     csv_text = client.get("/export.csv?dc=1").get_data(as_text=True)
     assert csv_text.splitlines()[0].rstrip().endswith("Deceased") and "yes" in csv_text.splitlines()[1]
     conn.close()
+
+
+def test_schema_upgrade_tolerates_concurrent_workers(tmp_path):
+    from app.db import init_schema
+
+    db = str(tmp_path / "race.db")
+    init_schema(connect(db))  # the first worker added every new column
+
+    class Stale:
+        """The second worker read the column list before the first one added the new columns."""
+        def __init__(self, conn):
+            self.conn = conn
+
+        def execute(self, sql, *args):
+            if sql.startswith("PRAGMA table_info(voters)"):
+                return [r for r in self.conn.execute(sql) if r[1] not in ("location", "deceased")]
+            return self.conn.execute(sql, *args)
+
+        def __getattr__(self, name):
+            return getattr(self.conn, name)
+
+    init_schema(Stale(connect(db)))  # must not raise "duplicate column name"

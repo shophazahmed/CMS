@@ -138,7 +138,12 @@ def init_schema(conn):
         ("deceased", "deceased INTEGER NOT NULL DEFAULT 0"),
     ):
         if name not in columns:
-            conn.execute(f"ALTER TABLE voters ADD COLUMN {ddl}")
+            try:
+                conn.execute(f"ALTER TABLE voters ADD COLUMN {ddl}")
+            except sqlite3.OperationalError as exc:
+                # Gunicorn workers start together: another one may have just added it
+                if "duplicate column" not in str(exc):
+                    raise
     conn.execute("CREATE INDEX IF NOT EXISTS ix_voters_status ON voters (status)")
     conn.commit()
 
