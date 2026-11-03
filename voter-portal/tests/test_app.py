@@ -312,3 +312,78 @@ def test_schema_upgrade_tolerates_concurrent_workers(tmp_path):
             return getattr(self.conn, name)
 
     init_schema(Stale(connect(db)))  # must not raise "duplicate column name"
+
+
+def _post_user(client, uid, **data):
+    return client.post(f"/admin/users/{uid}", data={"csrf_token": csrf(client, "/admin/users"), **data})
+
+
+def test_agents_without_sign_in_assign_move_delete(app):
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    token = csrf(client, "/admin/users")
+    client.post("/admin/agents", data={"csrf_token": token, "name": "Ali Ahmed", "phone": "9607771234", "note": ""})
+    conn = connect(app.config["DATABASE"])
+    ali = conn.execute("SELECT * FROM users WHERE username = 'Ali Ahmed'").fetchone()
+    assert ali["role"] == "agent" and ali["can_login"] == 0 and ali["phone"] == "7771234"
+    # no sign-in, even with a guessed password
+    other = app.test_client()
+    r = other.post("/login", data={"username": "Ali Ahmed", "password": "x" * 12, "csrf_token": csrf(other)})
+    assert "/login" in r.headers.get("Location", "/login") and other.get("/").status_code in (302, 401)
+    # voters can go to an agent or to a read-only user
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    assert client.post("/voters/assign", data={"csrf_token": csrf(client, "/"), "agent": str(ali["id"]),
+                                               "ids": ["A200001", "A200002"]}).status_code == 302
+    assert client.post("/voters/assign", data={"csrf_token": csrf(client, "/"), "agent": str(viewer),
+                                               "ids": ["A200003"]}).status_code == 302
+    conn.execute("INSERT INTO house_assignments VALUES ('Rose Villa', ?, 't', NULL)", (ali["id"],))
+    conn.execute("UPDATE voters SET status = 'contacted', status_by = ? WHERE national_id = 'A200001'", (ali["id"],))
+    conn.commit()
+    # move all of Ali's work to the user
+    _post_user(client, ali["id"], action="move_work", to=str(viewer))
+    assert conn.execute("SELECT COUNT(*) FROM voter_assignments WHERE user_id = ?", (viewer,)).fetchone()[0] == 3
+    assert conn.execute("SELECT user_id FROM house_assignments").fetchone()[0] == viewer
+    # delete needs the typed name; history keeps the name, the name is free again
+    _post_user(client, ali["id"], action="delete", confirm="wrong")
+    assert conn.execute("SELECT deleted_at FROM users WHERE id = ?", (ali["id"],)).fetchone()[0] is None
+    _post_user(client, ali["id"], action="delete", confirm="ali ahmed")
+    row = conn.execute("SELECT username, deleted_at, is_active FROM users WHERE id = ?", (ali["id"],)).fetchone()
+    assert row["deleted_at"] and not row["is_active"] and row["username"] == "Ali Ahmed (deleted)"
+    assert conn.execute("SELECT status_by FROM voters WHERE national_id = 'A200001'").fetchone()[0] == ali["id"]
+    page = client.get("/admin/users").get_data(as_text=True)
+    assert "Ali Ahmed (deleted)" not in page
+    client.post("/admin/agents", data={"csrf_token": csrf(client, "/admin/users"), "name": "Ali Ahmed"})
+    assert conn.execute("SELECT COUNT(*) FROM users WHERE username = 'Ali Ahmed'").fetchone()[0] == 1
+    conn.close()
+
+
+def test_cannot_delete_self_or_owner(app):
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    conn = connect(app.config["DATABASE"])
+    boss = conn.execute("SELECT id FROM users WHERE username = 'boss'").fetchone()[0]
+    _post_user(client, boss, action="delete", confirm="boss")
+    assert conn.execute("SELECT deleted_at FROM users WHERE id = ?", (boss,)).fetchone()[0] is None
+    conn.close()
+
+
+def test_upgrade_turns_existing_agents_into_no_sign_in(tmp_path):
+    import sqlite3
+
+    from app.db import init_schema
+
+    db = str(tmp_path / "old.db")
+    old = sqlite3.connect(db)
+    old.executescript("""CREATE TABLE users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL, role TEXT NOT NULL CHECK (role IN ('admin', 'agent', 'user')),
+        is_active INTEGER NOT NULL DEFAULT 1, must_change_password INTEGER NOT NULL DEFAULT 1,
+        failed_logins INTEGER NOT NULL DEFAULT 0, locked_until TEXT, password_changed_at TEXT NOT NULL,
+        last_login_at TEXT, created_at TEXT NOT NULL);
+        INSERT INTO users (username, password_hash, role, password_changed_at, created_at)
+        VALUES ('sara', 'x', 'agent', 't', 't'), ('viewer', 'x', 'user', 't', 't');""")
+    old.commit()
+    old.close()
+    conn = connect(db)
+    init_schema(conn)
+    init_schema(conn)  # running again changes nothing
+    assert dict(conn.execute("SELECT username, can_login FROM users")) == {"sara": 0, "viewer": 1}

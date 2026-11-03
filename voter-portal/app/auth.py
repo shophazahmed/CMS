@@ -28,7 +28,7 @@ ROLES = ("admin", "agent", "user")
 ROLE_LABELS = {
     "admin": "Admin: everything, including users, imports and exports",
     "user": "User: read-only, all voters, can record canvassing",
-    "agent": "Agent: canvasser, sees only the houses assigned to them",
+    "agent": "Agent: canvasser listed by name, no sign-in",
 }
 MAX_FAILED_LOGINS = 5
 LOCKOUT = timedelta(minutes=15)
@@ -74,6 +74,8 @@ def load_user():
     if (
         user is None
         or not user["is_active"]
+        or not user["can_login"]
+        or user["deleted_at"]
         or session.get("pwd_at") != user["password_changed_at"]
     ):
         session.clear()
@@ -224,6 +226,9 @@ def login():
             (0 if locked else failed, locked, user["id"]),
         )
         audit.log("login_failed", target=user["username"], detail="locked" if locked else "bad password")
+    elif not user["can_login"] or user["deleted_at"]:
+        error = "This account doesn't sign in. Ask an admin."
+        audit.log("login_failed", target=user["username"], detail="no sign-in")
     elif not user["is_active"]:
         error = "This account is deactivated. Ask an admin."
         audit.log("login_failed", target=user["username"], detail="inactive")

@@ -264,7 +264,8 @@ ASSIGNED_TO = ("SELECT u.username FROM voter_assignments va JOIN users u ON u.id
 
 def agent_list():
     return get_db().execute(
-        "SELECT id, username, is_active FROM users WHERE role = 'agent' ORDER BY is_active DESC, username COLLATE NOCASE"
+        "SELECT id, username, is_active, role FROM users WHERE role IN ('agent', 'user') AND deleted_at IS NULL"
+        " ORDER BY is_active DESC, role, username COLLATE NOCASE"
     ).fetchall()
 
 
@@ -434,7 +435,7 @@ def _chosen_agent(value):
     """'' means 'no individual agent'; anything else must be an agent's id (else 400)."""
     if value == "":
         return None, None
-    row = get_db().execute("SELECT id, username FROM users WHERE id = ? AND role = 'agent'",
+    row = get_db().execute("SELECT id, username FROM users WHERE id = ? AND role IN ('agent', 'user') AND deleted_at IS NULL",
                            (int(value) if value.isdigit() else -1,)).fetchone()
     if row is None:
         abort(400)

@@ -18,7 +18,11 @@ CREATE TABLE IF NOT EXISTS users (
     locked_until         TEXT,
     password_changed_at  TEXT NOT NULL,
     last_login_at        TEXT,
-    created_at           TEXT NOT NULL
+    created_at           TEXT NOT NULL,
+    phone                TEXT NOT NULL DEFAULT '',
+    note                 TEXT NOT NULL DEFAULT '',
+    can_login            INTEGER NOT NULL DEFAULT 1,  -- 0: a canvasser listed by name, never signs in
+    deleted_at           TEXT                         -- set when deleted; kept so history keeps the name
 );
 
 CREATE TABLE IF NOT EXISTS voters (
@@ -145,6 +149,30 @@ def init_schema(conn):
                 if "duplicate column" not in str(exc):
                     raise
     conn.execute("CREATE INDEX IF NOT EXISTS ix_voters_status ON voters (status)")
+    _add_user_columns(conn)
+    conn.commit()
+
+
+def _add_user_columns(conn):
+    """Columns added to users later. When 'can_login' first appears, existing agents become
+    canvassers without sign-in (the admin updates the portal for them)."""
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(users)")}
+    for name, ddl in (
+        ("phone", "phone TEXT NOT NULL DEFAULT ''"),
+        ("note", "note TEXT NOT NULL DEFAULT ''"),
+        ("can_login", "can_login INTEGER NOT NULL DEFAULT 1"),
+        ("deleted_at", "deleted_at TEXT"),
+    ):
+        if name in columns:
+            continue
+        try:
+            conn.execute(f"ALTER TABLE users ADD COLUMN {ddl}")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column" not in str(exc):
+                raise
+            continue  # another worker added it (and switched the agents) first
+        if name == "can_login":
+            conn.execute("UPDATE users SET can_login = 0 WHERE role = 'agent'")
     conn.commit()
 
 

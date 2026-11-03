@@ -170,7 +170,7 @@ def dashboard():
     scope = f" AND {clause}" if clause else ""
     parties = [r[0] for r in db.execute(
         f"SELECT DISTINCT party FROM voters WHERE party != ''{scope} ORDER BY party", extra)]
-    agents = db.execute("SELECT id, username FROM users WHERE role = 'agent' ORDER BY username").fetchall()
+    agents = db.execute("SELECT id, username FROM users WHERE role IN ('agent', 'user') AND deleted_at IS NULL ORDER BY username").fetchall()
     people = db.execute("SELECT id, username, role FROM users ORDER BY username COLLATE NOCASE").fetchall()
     who_name = next((u["username"] for u in people if str(u["id"]) == who), "")
     no_house = db.execute(f"SELECT COUNT(*) FROM voters WHERE house_name = ''{scope}", extra).fetchone()[0]
@@ -244,7 +244,7 @@ def _agents(active_only=False):
     clause, extra = campaign.party_scope("v.party")
     join_scope = f" AND {clause}" if clause else ""
     return get_db().execute(
-        f"""SELECT u.id, u.username, u.is_active, u.last_login_at,
+        f"""SELECT u.id, u.username, u.is_active, u.last_login_at, u.role, u.phone, u.can_login,
                    (SELECT COUNT(*) FROM voter_assignments va WHERE va.user_id = u.id) AS singles,
                    COUNT(DISTINCT a.house_name) AS houses,
                    COUNT(v.national_id) AS voters,
@@ -256,8 +256,8 @@ def _agents(active_only=False):
             FROM users u
             LEFT JOIN house_assignments a ON a.user_id = u.id
             LEFT JOIN voters v ON v.house_name = a.house_name{join_scope}
-            WHERE u.role = 'agent'{cond}
-            GROUP BY u.id ORDER BY u.username COLLATE NOCASE""", extra
+            WHERE u.role IN ('agent', 'user') AND u.deleted_at IS NULL{cond}
+            GROUP BY u.id ORDER BY u.role, u.username COLLATE NOCASE""", extra
     ).fetchall()
 
 

@@ -694,3 +694,20 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .cf-actions { flex-wrap: wrap; margin: 0 0 1rem; }
 .confirm-box label { display: grid; gap: .25rem; min-width: 0; }
 .confirm-box input { width: 100%; min-width: 0; box-sizing: border-box; }
+
+/* Users and agents page */
+.person-list { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .6rem; }
+.person { border: 1px solid var(--border); border-radius: var(--radius); padding: .7rem .8rem; background: var(--surface); }
+.person.inactive { opacity: .6; }
+.person-head { display: flex; align-items: center; gap: .7rem; }
+.person-main { flex: 1; min-width: 0; }
+.person-main p { margin: .1rem 0 0; }
+.person-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-start; margin-top: .6rem; }
+.person-actions > form > button { padding: .35rem .7rem; font-size: .9rem; font-weight: 500; min-height: 0; }
+.person-actions details { flex: 1 1 100%; }
+.person-actions details:not([open]) { flex: 0 0 auto; }
+.person-actions summary { cursor: pointer; padding: .35rem .7rem; border: 1px solid var(--border); border-radius: 8px; font-size: .9rem; list-style: none; }
+.person-actions summary::-webkit-details-marker { display: none; }
+.person-actions details[open] > summary { margin-bottom: .5rem; }
+.danger-box summary { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
+.add-agent { border-top: 1px solid var(--border); padding-top: 1rem; }
