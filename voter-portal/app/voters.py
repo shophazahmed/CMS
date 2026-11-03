@@ -28,7 +28,8 @@ bp = Blueprint("voters", __name__)
 
 PAGE_SIZE = 50
 PAGE_SIZES = (25, 50, 100, 200)
-FIELDS = ("national_id", "full_name", "sex", "age", "house_name", "party", "phone", "location", "deceased")
+FIELDS = ("national_id", "full_name", "sex", "age", "house_name", "party", "phone", "location", "deceased",
+          "full_name_dv", "house_name_dv")
 SORTS = {
     "name": "full_name COLLATE NOCASE, national_id",
     "house": "house_name COLLATE NOCASE, full_name COLLATE NOCASE",
@@ -118,9 +119,10 @@ def build_where(f):
     if f["q"]:
         clauses.append(
             "(full_name LIKE ? ESCAPE '\\' OR national_id LIKE ? ESCAPE '\\' OR house_name LIKE ? ESCAPE '\\'"
-            " OR phone LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\')"
+            " OR phone LIKE ? ESCAPE '\\' OR notes LIKE ? ESCAPE '\\' OR full_name_dv LIKE ? ESCAPE '\\'"
+            " OR house_name_dv LIKE ? ESCAPE '\\')"
         )
-        params += [_like(f["q"])] * 5
+        params += [_like(f["q"])] * 7
     if f["national_id"]:
         clauses.append("national_id LIKE ? ESCAPE '\\'")
         params.append(_like(f["national_id"]))
@@ -512,6 +514,8 @@ def _parse_form(form, creating):
     data["party"] = normalize_party(form.get("party", ""))[:50]
     data["location"] = clean_text(form.get("location", ""))[:200]
     data["deceased"] = 1 if form.get("deceased") else 0
+    data["full_name_dv"] = clean_text(form.get("full_name_dv", ""))[:200]
+    data["house_name_dv"] = clean_text(form.get("house_name_dv", ""))[:200]
     data["phone"], note = normalize_phone(form.get("phone", ""))
     if note and "unreadable" in note:
         errors.append("Phone must be a number such as 7771234.")
@@ -562,9 +566,10 @@ def create():
         stamp = now_iso()
         db.execute(
             "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, location, deceased,"
-            " photo_path, source, created_at, updated_at, updated_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)",
+            " full_name_dv, house_name_dv, photo_path, source, created_at, updated_at, updated_by)"
+            " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'manual', ?, ?, ?)",
             (data["national_id"], data["full_name"], data["sex"], data["age"], data["house_name"],
-             data["party"], data["phone"], data["location"], data["deceased"], data.get("photo_path"), stamp, stamp, g.user["id"]),
+             data["party"], data["phone"], data["location"], data["deceased"], data["full_name_dv"], data["house_name_dv"], data.get("photo_path"), stamp, stamp, g.user["id"]),
         )
         audit.log("voter_create", target=data["national_id"], detail={k: data[k] for k in FIELDS}, commit=False)
         db.commit()
@@ -630,7 +635,8 @@ def delete(national_id):
 
 EXPORT_HEADERS = ["ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
                   "Agent", "Agent via", "Status", "Status changed", "Status by", "Notes",
-                  "Last edited", "Last edited by", "Location", "Deceased"]
+                  "Last edited", "Last edited by", "Location", "Deceased",
+                  "Name (Dhivehi)", "House (Dhivehi)"]
 
 # The agent responsible for a voter: the one they were handed to individually, else their house's agent
 EXPORT_AGENT = (
@@ -679,7 +685,7 @@ def export(fmt):
          _safe_cell(r["status_by_name"] or ""), _safe_cell(r["notes"]),
          _local(r["updated_at"]) if r["updated_by"] else "",
          _safe_cell(r["updated_by_name"] or ""), _safe_cell(r["location"]),
-         "yes" if r["deceased"] else ""]
+         "yes" if r["deceased"] else "", _safe_cell(r["full_name_dv"]), _safe_cell(r["house_name_dv"])]
         + (["yes" if r["confirmed_at"] else "", _local(r["confirmed_at"])] if owner else [])
         for r in rows
     ]

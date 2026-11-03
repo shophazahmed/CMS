@@ -92,6 +92,7 @@
     <div><dt>Sex</dt><dd>{{ sex_label(v.sex) }}</dd></div>
     <div><dt>Party</dt><dd>{{ v.party or '—' }}</dd></div>
     <div><dt>Location</dt><dd>{{ v.location or '—' }}</dd></div>
+    {% if v.full_name_dv or v.house_name_dv %}<div><dt>Dhivehi</dt><dd class="thaana" lang="dv" dir="rtl">{{ v.full_name_dv }}{% if v.house_name_dv %} · {{ v.house_name_dv }}{% endif %}</dd></div>{% endif %}
     <div><dt>Phone</dt><dd class="mono">{% if v.phone %}<a href="tel:{{ v.phone }}">{{ v.phone }}</a>{% else %}—{% endif %}</dd></div>
     <div><dt>ID card</dt><dd class="mono">{{ v.national_id }}</dd></div>
     {% if not is_admin and current_user.role == 'user' %}

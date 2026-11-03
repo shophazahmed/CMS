@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS voters (
     party       TEXT NOT NULL DEFAULT '',
     location    TEXT NOT NULL DEFAULT '',  -- where the voter is registered to vote (ballot box)
     deceased    INTEGER NOT NULL DEFAULT 0,
+    full_name_dv  TEXT NOT NULL DEFAULT '',  -- name in Dhivehi (Thaana)
+    house_name_dv TEXT NOT NULL DEFAULT '',
     phone       TEXT NOT NULL DEFAULT '',
     status      TEXT NOT NULL DEFAULT 'new',
     status_at   TEXT,
@@ -140,6 +142,8 @@ def init_schema(conn):
         ("notes", "notes TEXT NOT NULL DEFAULT ''"),
         ("location", "location TEXT NOT NULL DEFAULT ''"),
         ("deceased", "deceased INTEGER NOT NULL DEFAULT 0"),
+        ("full_name_dv", "full_name_dv TEXT NOT NULL DEFAULT ''"),
+        ("house_name_dv", "house_name_dv TEXT NOT NULL DEFAULT ''"),
     ):
         if name not in columns:
             try:

@@ -34,6 +34,10 @@
   <label>Party
     <input name="party" value="{{ v.party or '' }}" maxlength="50">
   </label>
+  <div class="row">
+    <label>Name in Dhivehi <input name="full_name_dv" value="{{ v.full_name_dv or '' }}" maxlength="200" lang="dv" dir="rtl" class="thaana"></label>
+    <label>House in Dhivehi <input name="house_name_dv" value="{{ v.house_name_dv or '' }}" maxlength="200" lang="dv" dir="rtl" class="thaana"></label>
+  </div>
   <label>Location (where they vote)
     <input name="location" value="{{ v.location or '' }}" maxlength="200" list="locations">
     <datalist id="locations">{% for l in locations or [] %}<option value="{{ l }}">{% endfor %}</datalist>

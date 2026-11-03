@@ -288,7 +288,9 @@ def test_deceased_marker(app):
     assert "Moosa Beta" not in client.get("/?dc=0").get_data(as_text=True)
     assert "Moosa Beta" in client.get("/?dc=1").get_data(as_text=True)
     csv_text = client.get("/export.csv?dc=1").get_data(as_text=True)
-    assert csv_text.splitlines()[0].rstrip().endswith("Deceased") and "yes" in csv_text.splitlines()[1]
+    import csv as _csv
+    rows = list(_csv.DictReader(csv_text.lstrip("\ufeff").splitlines()))
+    assert rows[0]["Deceased"] == "yes"
     conn.close()
 
 
@@ -407,4 +409,32 @@ def test_search_cards_show_who_is_responsible(app):
     assert "Unassigned" in cards[1]                         # A200002: Blue Ge has nobody
     assert "viewer" in cards[2] and "· house" not in cards[2]  # A200003: handed to a user one by one
     assert '<optgroup label="Users">' in html and "Tick all on this page" in html
+    conn.close()
+
+
+def test_dhivehi_names_import_edit_search_export(app, tmp_path):
+    import csv as _csv
+
+    from scripts import ingest
+
+    data = tmp_path / "dv"
+    data.mkdir()
+    with open(data / "gadhoo-new voters.csv", "w", newline="", encoding="utf-8") as fh:
+        w = _csv.writer(fh)
+        w.writerow(["ID Card No.", "Dhivehi name", "Dhivehi house"])
+        w.writerow(["A200001", "އަމީނަތު", "ރޯޒްވިލާ"])
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET phone = '7771234' WHERE national_id = 'A200001'")
+    conn.commit()
+    ingest.main(["--data-dir", str(data), "--db", app.config["DATABASE"], "--photos-dir", str(tmp_path / "p"),
+                 "--log", str(tmp_path / "log"), "--no-seed-users"])
+    row = conn.execute("SELECT full_name, house_name, phone, full_name_dv, house_name_dv FROM voters"
+                       " WHERE national_id = 'A200001'").fetchone()
+    assert tuple(row) == ("Aminath Alpha", "Rose Villa", "7771234", "އަމީނަތު", "ރޯޒްވިލާ")  # nothing else changed
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    assert "Aminath Alpha" in client.get("/?q=އަމީނަތު").get_data(as_text=True)
+    assert "ރޯޒްވިލާ" in client.get("/voters/A200001").get_data(as_text=True)
+    out = list(_csv.DictReader(client.get("/export.csv?q=Aminath").get_data(as_text=True).lstrip("\ufeff").splitlines()))
+    assert out[0]["Name (Dhivehi)"] == "އަމީނަތު"
     conn.close()

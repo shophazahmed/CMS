@@ -74,7 +74,7 @@ LEFT_MDP_PARTY = "OTHER"
 def is_mdp(party):
     return compare_key(party) in {"mdp", "mpd", "maldiviandemocraticparty"}
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}
-FIELDS = ("full_name", "sex", "age", "house_name", "party", "phone", "location")
+FIELDS = ("full_name", "sex", "age", "house_name", "party", "phone", "location", "full_name_dv", "house_name_dv")
 
 # Header names, compared after lower-casing and removing everything but letters/digits.
 ALIASES = {
@@ -88,6 +88,8 @@ ALIASES = {
     "dob": {"dob", "dateofbirth", "birthdate", "birthday"},
     "house_name": {"house", "housename", "address", "houseaddress", "permanentaddress", "home", "residence",
                    "housenameaddress", "homename"},
+    "full_name_dv": {"dhivehiname", "namedhivehi", "divehiname", "namedivehi", "thaananame", "nameindhivehi"},
+    "house_name_dv": {"dhivehihouse", "housedhivehi", "divehihouse", "dhivehihousename", "housenamedhivehi"},
     "location": {"location", "ballotbox", "box", "boxlocation", "votinglocation", "votingplace", "pollingstation",
                  "registeredlocation", "registeredat"},
     "party": {"party", "partyname", "politicalparty", "affiliation", "partyaffiliation"},
@@ -399,6 +401,8 @@ def extract(path, priority, label, log, finder):
                 log.add("INFO", "ID_NORMALISED", nid, f"{where}: {note}")
             values = {"full_name": clean_text(cell(row, "full_name")), "house_name": clean_text(cell(row, "house_name")),
                       "location": clean_text(cell(row, "location")),
+                      "full_name_dv": clean_text(cell(row, "full_name_dv")),
+                      "house_name_dv": clean_text(cell(row, "house_name_dv")),
                       "party": normalize_party(cell(row, "party"))}
             values["phone"], note = normalize_phone(cell(row, "phone"))
             if note:
@@ -625,9 +629,10 @@ def load(conn, merged, mode, log):
         src = "import: " + ", ".join(v["sources"])
         if existing is None:
             conn.execute(
-                "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, location, photo_path,"
-                " source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, location, full_name_dv,"
+                " house_name_dv, photo_path, source, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (nid, v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"], v["location"],
+                 v["full_name_dv"], v["house_name_dv"],
                  v["photo_path"], src, stamp, stamp),
             )
             counts["inserted"] += 1
@@ -641,9 +646,11 @@ def load(conn, merged, mode, log):
                 " age = COALESCE(?, age), house_name = COALESCE(NULLIF(?, ''), house_name),"
                 " party = COALESCE(NULLIF(?, ''), party),"
                 " phone = COALESCE(NULLIF(?, ''), phone), location = COALESCE(NULLIF(?, ''), location),"
+                " full_name_dv = COALESCE(NULLIF(?, ''), full_name_dv), house_name_dv = COALESCE(NULLIF(?, ''), house_name_dv),"
                 " photo_path = COALESCE(?, photo_path), source = ?, updated_at = ?, updated_by = NULL"
                 " WHERE national_id = ?",
                 (v["full_name"], v["sex"], v["age"], v["house_name"], v["party"], v["phone"], v["location"],
+                 v["full_name_dv"], v["house_name_dv"],
                  v["photo_path"],
                  src, stamp, nid),
             )
