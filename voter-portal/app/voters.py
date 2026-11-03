@@ -20,7 +20,7 @@ from flask import (
     url_for,
 )
 
-from . import audit, campaign
+from . import audit, campaign, personal
 from .auth import admin_required, is_admin, is_owner, login_required
 from .db import get_db, now_iso
 from .normalize import clean_text, normalize_age, normalize_id, normalize_party, normalize_phone, normalize_sex
@@ -157,7 +157,8 @@ def build_where(f):
         clauses.append("status = ?")
         params.append(f["status"])
     if f.get("by"):
-        clauses.append("status_by = ? AND status != 'new'")
+        # Anyone this person reached (their own status), not only voters they were last to update
+        clauses.append("national_id IN (SELECT national_id FROM canvass WHERE user_id = ? AND status != 'new')")
         params.append(int(f["by"]))
     if f.get("dc") == "1":
         clauses.append("deceased = 1")
@@ -196,11 +197,12 @@ def search():
         page = max(1, int(request.args.get("page", 1)))
     except ValueError:
         page = 1
-    total = db.execute(f"SELECT COUNT(*) FROM voters{where}", params).fetchone()[0]
+    src = personal.source()  # users and agents: their own status and notes
+    total = db.execute(f"SELECT COUNT(*) FROM {src}{where}", params).fetchone()[0]
     pages = max(1, -(-total // size))
     page = min(page, pages)
     rows = db.execute(
-        f"SELECT *, ({ASSIGNED_TO}) AS assigned_to, {ASSIGNED_ONE_BY_ONE} AS one_by_one, {WHO}{owner_columns()} FROM voters{where}"
+        f"SELECT *, ({ASSIGNED_TO}) AS assigned_to, {ASSIGNED_ONE_BY_ONE} AS one_by_one, {WHO}{owner_columns()} FROM {src}{where}"
         f" ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
         params + [size, (page - 1) * size],
     ).fetchall()
@@ -212,10 +214,9 @@ def search():
     w, p = scoped(" WHERE house_name != ''")
     houses = [r[0] for r in db.execute(
         f"SELECT DISTINCT house_name FROM voters{w} ORDER BY house_name COLLATE NOCASE", p)]
-    w, p = scoped(" WHERE status != 'new'")
     contacted_by = db.execute(
-        "SELECT id, username FROM users WHERE id IN"
-        f" (SELECT DISTINCT status_by FROM voters{w}) ORDER BY username COLLATE NOCASE", p).fetchall()
+        "SELECT id, username FROM users WHERE id IN (SELECT DISTINCT user_id FROM canvass WHERE status != 'new')"
+        " ORDER BY username COLLATE NOCASE").fetchall() if is_admin() else []
     w, p = scoped()
     stats = db.execute(
         f"SELECT COUNT(*) AS total, SUM(sex = 'M') AS male, SUM(sex = 'F') AS female FROM voters{w}", p
@@ -223,7 +224,7 @@ def search():
     query_args = {k: v for k, v in request.args.items() if k != "page"}
     # Counts per canvassing status for the chips, within every filter except the status itself
     where_all, params_all = build_where(dict(f, status=""))
-    by_status = dict(db.execute(f"SELECT status, COUNT(*) FROM voters{where_all} GROUP BY status", params_all).fetchall())
+    by_status = dict(db.execute(f"SELECT status, COUNT(*) FROM {src}{where_all} GROUP BY status", params_all).fetchall())
     status_counts = {k: by_status.get(k, 0) for k in STATUSES}
     status_counts["all"] = sum(by_status.values())
     return render_template(
@@ -310,9 +311,10 @@ def filter_chips(f, query_args):
     return chips
 
 
-def get_voter_or_404(national_id):
+def get_voter_or_404(national_id, own=False):
+    """own=True: as this person sees the voter (users and agents: their own status and latest note)."""
     w, p = scoped(" WHERE national_id = ?", [national_id])
-    row = get_db().execute(f"SELECT * FROM voters{w}", p).fetchone()
+    row = get_db().execute(f"SELECT * FROM {personal.source() if own else 'voters'}{w}", p).fetchone()
     if row is None:
         abort(404)
     return row
@@ -321,7 +323,7 @@ def get_voter_or_404(national_id):
 @bp.route("/voters/<national_id>")
 @login_required
 def detail(national_id):
-    voter = get_voter_or_404(national_id)
+    voter = get_voter_or_404(national_id, own=True)
     db = get_db()
     editor = None
     if voter["updated_by"] and is_admin():
@@ -341,10 +343,18 @@ def detail(national_id):
     if voter["house_name"]:
         w, p = scoped(" WHERE house_name = ? AND national_id != ?", [voter["house_name"], national_id])
         housemates = db.execute(
-            f"SELECT *, {WHO}{owner_columns()} FROM voters{w} ORDER BY age IS NULL, age DESC, full_name COLLATE NOCASE LIMIT 60", p
+            f"SELECT *, {WHO}{owner_columns()} FROM {personal.source()}{w} ORDER BY age IS NULL, age DESC, full_name COLLATE NOCASE LIMIT 60", p
         ).fetchall()
+    everyone = personal.sees_everyone()
+    notes = db.execute(
+        "SELECT n.*, u.username FROM voter_notes n LEFT JOIN users u ON u.id = n.user_id WHERE n.national_id = ?"
+        + ("" if everyone else " AND n.user_id = ?") + " ORDER BY n.at DESC, n.id DESC",
+        [national_id] + ([] if everyone else [g.user["id"]])).fetchall()
+    people = db.execute(
+        "SELECT c.*, u.username FROM canvass c JOIN users u ON u.id = c.user_id WHERE c.national_id = ?"
+        " ORDER BY c.status_at DESC", (national_id,)).fetchall() if everyone else []
     return render_template("voters/detail.html", v=voter, editor=editor, statuses=STATUSES, housemates=housemates,
-                           confirmation=confirmation,
+                           confirmation=confirmation, notes=notes, people=people, everyone=everyone,
                            status_user=status_user, back=_safe_back(request.args.get("back")),
                            assigned=assigned, house_agent=house_agent,
                            agents=agent_list() if is_admin() else [])
@@ -359,39 +369,68 @@ def _safe_back(target):
 @bp.post("/voters/<national_id>/canvass")
 @login_required
 def canvass(national_id):
-    """Set the canvassing status and/or notes. Open to every signed-in user (canvassers)."""
-    voter = get_voter_or_404(national_id)
+    """Set your own canvassing status and/or add a note. Open to every signed-in user (canvassers).
+    Each person keeps their own status; the voter row keeps the latest from anyone for admins."""
+    get_voter_or_404(national_id)
+    db = get_db()
+    uid = g.user["id"]
+    mine = db.execute("SELECT status FROM canvass WHERE national_id = ? AND user_id = ?", (national_id, uid)).fetchone()
+    current = mine["status"] if mine else "new"
     changes = {}
     status = request.form.get("status")
     if status is not None:
         if status not in STATUSES:
             abort(400)
-        if status != voter["status"]:
-            changes["status"] = {"from": voter["status"], "to": status}
-    notes = request.form.get("notes")
-    if notes is not None:
-        notes = notes.replace("\r\n", "\n").strip()[:MAX_NOTES]
-        if notes != voter["notes"]:
-            changes["notes"] = {"from": voter["notes"], "to": notes}
+        if status != current:
+            changes["status"] = {"from": current, "to": status}
+    note = (request.form.get("note") or "").replace("\r\n", "\n").strip()[:MAX_NOTES]
+    if note:
+        changes["note"] = note
     stamp = now_iso()
     if changes:
-        db = get_db()
-        db.execute(
-            "UPDATE voters SET status = ?, notes = ?, status_at = ?, status_by = ? WHERE national_id = ?",
-            (changes.get("status", {}).get("to", voter["status"]), changes.get("notes", {}).get("to", voter["notes"]),
-             stamp, g.user["id"], national_id),
-        )
+        if "status" in changes:
+            db.execute("INSERT INTO canvass (national_id, user_id, status, status_at) VALUES (?, ?, ?, ?)"
+                       " ON CONFLICT(national_id, user_id) DO UPDATE SET status = excluded.status,"
+                       " status_at = excluded.status_at", (national_id, uid, status, stamp))
+            db.execute("UPDATE voters SET status = ?, status_at = ?, status_by = ? WHERE national_id = ?",
+                       (status, stamp, uid, national_id))
+        if note:
+            db.execute("INSERT INTO voter_notes (national_id, user_id, at, text) VALUES (?, ?, ?, ?)",
+                       (national_id, uid, stamp, note))
+            db.execute("UPDATE voters SET notes = ? WHERE national_id = ?", (note, national_id))
         audit.log("voter_canvass", target=national_id, detail=changes, commit=False)
         db.commit()
+    shown = status or current
     if request.headers.get("X-Requested-With") == "fetch":
-        return {"ok": True, "changed": bool(changes), "status": status or voter["status"],
-                "label": STATUSES[status or voter["status"]], "by": g.user["username"],
+        return {"ok": True, "changed": bool(changes), "status": shown,
+                "label": STATUSES[shown], "by": g.user["username"],
                 "at": current_app.jinja_env.filters["local"](stamp) if changes else None}
     flash("Saved." if changes else "Nothing changed.", "success" if changes else "info")
     back = _safe_back(request.form.get("back"))
     if request.form.get("from") == "list":
         back += f"#v-{national_id}"
     return redirect(back)
+
+
+@bp.post("/voters/<national_id>/notes/<int:note_id>/delete")
+@login_required
+def delete_note(national_id, note_id):
+    """Writers delete their own notes; admins any note."""
+    get_voter_or_404(national_id)
+    db = get_db()
+    row = db.execute("SELECT * FROM voter_notes WHERE id = ? AND national_id = ?", (note_id, national_id)).fetchone()
+    if row is None:
+        abort(404)
+    if row["user_id"] != g.user["id"] and not is_admin():
+        abort(403)
+    db.execute("DELETE FROM voter_notes WHERE id = ?", (note_id,))
+    latest = db.execute("SELECT text FROM voter_notes WHERE national_id = ? ORDER BY at DESC, id DESC LIMIT 1",
+                        (national_id,)).fetchone()
+    db.execute("UPDATE voters SET notes = ? WHERE national_id = ?", (latest["text"] if latest else "", national_id))
+    audit.log("voter_note_delete", target=national_id, detail={"note": row["text"][:200], "at": row["at"]}, commit=False)
+    db.commit()
+    flash("Note deleted.", "success")
+    return redirect(_safe_back(request.form.get("back")))
 
 
 @bp.route("/photos/<national_id>")
@@ -649,6 +688,12 @@ EXPORT_AGENT = (
 )
 
 
+# Every note on the voter, newest first: "name 2026-11-03: text | ..."
+ALL_NOTES = ("(SELECT group_concat(line, ' | ') FROM (SELECT COALESCE(u.username, 'earlier') || ' '"
+             " || substr(n.at, 1, 10) || ': ' || n.text AS line FROM voter_notes n LEFT JOIN users u ON u.id = n.user_id"
+             " WHERE n.national_id = voters.national_id ORDER BY n.at DESC, n.id DESC)) AS all_notes")
+
+
 def _local(value):
     """Stored UTC timestamp -> Maldives time for spreadsheets ('2026-10-11 17:20')."""
     if not value:
@@ -709,13 +754,14 @@ def export(fmt):
     extra = (", (SELECT confirmed_at FROM confirmed_voters cv WHERE cv.national_id = voters.national_id)"
              " AS confirmed_at") if owner else ""
     rows = get_db().execute(
-        f"SELECT *, {EXPORT_AGENT}, {WHO}{extra} FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
+        f"SELECT *, {EXPORT_AGENT}, {WHO}, {ALL_NOTES}{extra} FROM voters{where} ORDER BY {SORTS[f['sort']]}",
+        params).fetchall()
     table = [
         [_safe_cell(r["national_id"]), _safe_cell(r["full_name"]), r["sex"], r["age"],
          _safe_cell(r["house_name"]), _safe_cell(r["party"]), r["phone"], "yes" if r["photo_path"] else "",
          _safe_cell(r["agent"] or ""), ("One by one" if r["one_by_one"] else "House") if r["agent"] else "",
          STATUSES.get(r["status"], r["status"]), _local(r["status_at"]),
-         _safe_cell(r["status_by_name"] or ""), _safe_cell(r["notes"]),
+         _safe_cell(r["status_by_name"] or ""), _safe_cell(r["all_notes"] or ""),
          _local(r["updated_at"]) if r["updated_by"] else "",
          _safe_cell(r["updated_by_name"] or ""), _safe_cell(r["location"]),
          "yes" if r["deceased"] else "", _safe_cell(r["full_name_dv"]), _safe_cell(r["house_name_dv"])]

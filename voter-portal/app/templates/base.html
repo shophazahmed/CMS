@@ -53,6 +53,7 @@
         <p><strong>{{ current_user.username }}</strong><br><span class="muted">{{ {'admin': 'Admin', 'agent': 'Agent (canvasser)', 'user': 'Read-only user'}[role] }}</span></p>
         {% if is_admin %}
         <a href="{{ url_for('voters.create') }}">Add a voter</a>
+        <a href="{{ url_for('admin.changes') }}">Changes</a>
         <a href="{{ url_for('admin.audit_log') }}">Activity log</a>
         <a href="{{ url_for('campaign.settings') }}">Campaign settings</a>
         {% endif %}

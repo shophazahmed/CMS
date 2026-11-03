@@ -721,3 +721,16 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .rename-box > summary { cursor: pointer; padding: .3rem .65rem; border: 1px solid var(--border); border-radius: 8px; font-size: .9rem; list-style: none; display: inline-block; }
 .rename-box > summary::-webkit-details-marker { display: none; }
 .rename-box[open] > summary { margin-bottom: .4rem; }
+.small-head { font-size: 1rem; margin: 1rem 0 .4rem; }
+.timeline { list-style: none; margin: 0; padding: 0; display: grid; gap: .45rem; }
+.timeline li { border-left: 3px solid var(--border); padding: .15rem 0 .15rem .65rem; }
+.note-meta { margin: 0; color: var(--muted); display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.note-text { margin: .1rem 0 0; white-space: pre-wrap; }
+button.linklike { background: none; border: 0; padding: 0; color: var(--danger); text-decoration: underline; font-size: inherit; cursor: pointer; min-height: 0; }
+.change-list { list-style: none; margin: 0; padding: 0; display: grid; gap: .5rem; }
+.change { padding: .6rem .8rem; }
+.change p { margin: 0; }
+.change-head { display: flex; gap: .4rem; align-items: center; flex-wrap: wrap; }
+.change-voter { margin-top: .2rem !important; }
+.change-what { margin-top: .25rem !important; white-space: pre-wrap; }
+.note-meta form { display: inline; margin: 0; }

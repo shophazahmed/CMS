@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
 from . import audit, campaign
+from . import personal as own_view  # (canvass.personal() is a function here)
 from .auth import role_required
 from .db import get_db, now_iso
 
@@ -32,7 +33,7 @@ SELECT v.house_name AS house,
        a.user_id AS agent_id,
        u.username AS agent,
        u.is_active AS agent_active
-FROM voters v
+FROM {src}
 LEFT JOIN house_assignments a ON a.house_name = v.house_name
 LEFT JOIN users u ON u.id = a.user_id
 """
@@ -44,12 +45,13 @@ def local_day_start_utc():
     return (start_local - LOCAL_OFFSET).isoformat(timespec="seconds")
 
 
-def house_rows(where="", params=(), sort="progress", count_if=("1", []), having=""):
+def house_rows(where="", params=(), sort="progress", count_if=("1", []), having="", src="voters v"):
+    """src: 'voters v' (everyone's latest status) or own_view.own_source(id, 'v') (one person's own)."""
     clause, extra = campaign.party_scope("v.party")
     if clause:
         where, params = f"{where} AND {clause}", list(params) + extra
     cond, cond_params = count_if
-    sql = (f"{HOUSE_STATS.format(c=f'({cond})')} WHERE v.house_name != '' {where} GROUP BY v.house_name"
+    sql = (f"{HOUSE_STATS.format(c=f'({cond})', src=src)} WHERE v.house_name != '' {where} GROUP BY v.house_name"
            f" {having} ORDER BY {SORTS[sort]}")
     return get_db().execute(sql, list(cond_params) * 5 + list(params)).fetchall()
 
@@ -188,13 +190,13 @@ def personal(user_id, rng=None):
 
     db = get_db()
     parts, extra = range_condition(rng, "status_at") if rng else ([], [])
-    w, p = scoped(" WHERE status_by = ? AND status != 'new'" + "".join(f" AND {x}" for x in parts),
-                  [user_id] + extra)
+    w, p = scoped(" WHERE status != 'new'" + "".join(f" AND {x}" for x in parts), extra)
+    src = own_view.own_source(user_id)  # their own status for every voter they reached
     mine = db.execute(
         "SELECT COUNT(*) AS total, SUM(status = 'contacted') AS contacted, SUM(status = 'followup') AS followup,"
-        f" SUM(status = 'noanswer') AS noanswer FROM voters{w}", p).fetchone()
+        f" SUM(status = 'noanswer') AS noanswer FROM {src}{w}", p).fetchone()
     recent = db.execute(
-        f"SELECT national_id, full_name, house_name, status, status_at FROM voters{w}"
+        f"SELECT national_id, full_name, house_name, status, status_at FROM {src}{w}"
         " ORDER BY status_at DESC LIMIT 8", p).fetchall()
     return mine, recent
 
@@ -215,13 +217,13 @@ def my_houses():
     # Voters in their houses that were handed to another agent one by one aren't theirs
     rows = house_rows(" AND a.user_id = ? AND v.national_id NOT IN"
                       " (SELECT national_id FROM voter_assignments WHERE user_id != ?)",
-                      [user["id"], user["id"]], sort)
+                      [user["id"], user["id"]], sort, src=own_view.own_source(user["id"], "v"))
     t = totals(rows)
     clause, extra = campaign.party_scope("v.party")
     singles = get_db().execute(
         "SELECT COUNT(*) AS total, SUM(v.status != 'new') AS reached, SUM(v.status = 'contacted') AS contacted,"
         " SUM(v.status = 'followup') AS followup, SUM(v.status = 'noanswer') AS noanswer"
-        " FROM voter_assignments va JOIN voters v ON v.national_id = va.national_id"
+        f" FROM voter_assignments va JOIN {own_view.own_source(user['id'], 'v')} ON v.national_id = va.national_id"
         f" WHERE va.user_id = ?{' AND ' + clause if clause else ''}", [user["id"]] + extra).fetchone()
     # Suggested next stop: follow-ups first (someone asked us to come back), then the house
     # with the most voters nobody has reached yet.

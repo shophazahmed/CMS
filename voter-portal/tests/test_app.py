@@ -208,10 +208,10 @@ def test_canvassing_status_and_notes(app):
     assert reply == {"ok": True, "changed": True, "status": "contacted", "label": "Contacted", "by": "viewer"}
     # status + notes from the voter page (normal form post)
     r = u.post("/voters/A200002/canvass", data={"csrf_token": token, "status": "followup",
-                                                "notes": " Wants a call after 5pm \r\n", "back": "/voters/A200002"})
+                                                "note": " Wants a call after 5pm \r\n", "back": "/voters/A200002"})
     assert r.status_code == 302 and r.headers["Location"].endswith("/voters/A200002")
     detail = u.get("/voters/A200002").get_data(as_text=True)
-    assert "Wants a call after 5pm" in detail and "by viewer" in detail
+    assert "Wants a call after 5pm" in detail and "Your notes" in detail
 
     assert u.get("/?q=A2000&status=contacted").get_data(as_text=True).count('id="v-A2000') == 1
     page = u.get("/?q=A2000&status=followup").get_data(as_text=True)
@@ -496,3 +496,76 @@ def test_pdf_export_english_and_dhivehi(app):
     login(viewer, "viewer", USER_PW)
     assert viewer.get("/voters.pdf").status_code in (302, 403)  # admins only
     conn.close()
+
+
+def test_status_and_notes_are_personal(app):
+    conn = connect(app.config["DATABASE"])
+    stamp = now_iso(precise=True)
+    conn.execute("INSERT INTO users (username, password_hash, role, must_change_password, password_changed_at,"
+                 " created_at) VALUES ('second', ?, 'user', 0, ?, ?)", (hash_password(USER_PW), stamp, stamp))
+    conn.commit()
+    one, two, boss = app.test_client(), app.test_client(), app.test_client()
+    login(one, "viewer", USER_PW)
+    login(two, "second", USER_PW)
+    login(boss, "boss", ADMIN_PW)
+    one.post("/voters/A200001/canvass", data={"csrf_token": csrf(one, "/"), "status": "followup",
+                                              "note": "Call after 5pm"})
+    two.post("/voters/A200001/canvass", data={"csrf_token": csrf(two, "/"), "status": "noanswer",
+                                              "note": "Nobody home"})
+    # each sees only their own status and notes
+    p1, p2 = one.get("/voters/A200001").get_data(as_text=True), two.get("/voters/A200001").get_data(as_text=True)
+    assert "Call after 5pm" in p1 and "Nobody home" not in p1
+    assert "Nobody home" in p2 and "Call after 5pm" not in p2
+    assert one.get("/?status=followup").get_data(as_text=True).count('id="v-A2000') == 1
+    assert one.get("/?status=noanswer").get_data(as_text=True).count('id="v-A2000') == 0
+    assert two.get("/?status=new").get_data(as_text=True).count('id="v-A2000') == 2
+    # a third person starts from 'Not contacted'
+    login(app.test_client(), "viewer", USER_PW)
+    # admins see everyone's status and every note, with names
+    pb = boss.get("/voters/A200001").get_data(as_text=True)
+    assert "Everyone's status" in pb and "Call after 5pm" in pb and "Nobody home" in pb
+    assert "viewer" in pb and "second" in pb
+    # only the writer (or an admin) deletes a note
+    note_id = conn.execute("SELECT id FROM voter_notes WHERE text = 'Call after 5pm'").fetchone()[0]
+    assert two.post(f"/voters/A200001/notes/{note_id}/delete", data={"csrf_token": csrf(two, "/")}).status_code == 403
+    one.post(f"/voters/A200001/notes/{note_id}/delete", data={"csrf_token": csrf(one, "/")})
+    assert conn.execute("SELECT COUNT(*) FROM voter_notes").fetchone()[0] == 1
+    conn.close()
+
+
+def test_upgrade_moves_shared_status_and_notes(tmp_path):
+    import sqlite3
+
+    from app import personal
+    from app.db import init_schema
+
+    db = str(tmp_path / "old.db")
+    conn = connect(db)
+    init_schema(conn)
+    conn.execute("INSERT INTO users (id, username, password_hash, role, password_changed_at, created_at)"
+                 " VALUES (7, 'ali', 'x', 'user', 't', 't'), (8, 'sara', 'x', 'user', 't', 't')")
+    conn.execute("INSERT INTO voters (national_id, full_name, status, status_at, status_by, notes, created_at,"
+                 " updated_at) VALUES ('A1', 'One', 'contacted', '2026-10-01T10:00:00+00:00', 8, 'Wants a lift', 't', 't')")
+    conn.execute("INSERT INTO audit_log (at, user_id, username, action, target, detail) VALUES"
+                 " ('2026-09-30T10:00:00+00:00', 7, 'ali', 'voter_canvass', 'A1', '{\"notes\": {\"from\": \"\", \"to\": \"x\"}}')")
+    conn.commit()
+    personal.init_schema(conn)
+    personal.init_schema(conn)  # second start: nothing moves twice
+    assert [tuple(r) for r in conn.execute("SELECT national_id, user_id, status FROM canvass")] == [("A1", 8, "contacted")]
+    notes = conn.execute("SELECT user_id, text FROM voter_notes").fetchall()
+    assert [tuple(n) for n in notes] == [(7, "Wants a lift")]  # credited to the last writer of the notes
+
+
+def test_changes_page_for_admins(app):
+    u, boss = app.test_client(), app.test_client()
+    login(u, "viewer", USER_PW)
+    login(boss, "boss", ADMIN_PW)
+    u.post("/voters/A200001/canvass", data={"csrf_token": csrf(u, "/"), "status": "contacted", "note": "Will vote"})
+    page = boss.get("/admin/changes").get_data(as_text=True)
+    assert "viewer" in page and "Aminath Alpha" in page and "Not contacted → Contacted" in page and "Will vote" in page
+    viewer_id = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    assert "Will vote" in boss.get(f"/admin/changes?person={viewer_id}&q=Aminath").get_data(as_text=True)
+    assert "Will vote" not in boss.get("/admin/changes?type=voter_update").get_data(as_text=True)
+    csv_text = boss.get("/admin/changes?format=csv").get_data(as_text=True)
+    assert "What changed" in csv_text and "Will vote" in csv_text
+    assert u.get("/admin/changes").status_code in (302, 403)

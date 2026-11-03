@@ -2,7 +2,9 @@
 import re
 import secrets
 
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+from datetime import datetime, timedelta, timezone
+
+from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
 from . import audit
 from .auth import (CONFIRMED_ACTIONS, ROLE_LABELS, ROLES, admin_required, generate_password, hash_password, is_owner,
@@ -316,3 +318,131 @@ def audit_log():
         "admin/audit.html", rows=rows, actions=actions, action=action, username=username,
         target=target, page=min(page, pages), pages=pages, total=total, query_args=query_args,
     )
+
+
+# --- changes: who changed what, in plain words ----------------------------------------
+
+CHANGE_TYPES = {
+    "voter_canvass": "Status / note",
+    "voter_note_delete": "Note deleted",
+    "voter_update": "Voter edited",
+    "voter_create": "Voter added",
+    "voter_delete": "Voter deleted",
+    "voters_assigned": "Voters assigned",
+    "houses_assigned": "Houses assigned",
+    "houses_auto_assigned": "Houses auto-assigned",
+    "work_moved": "Work moved",
+    "unassign_all": "Everyone unassigned",
+    "import_run": "Import",
+    "voter_confirm": "Confirmed (100%)",
+    "voter_unconfirm": "Unconfirmed",
+}
+CHANGES_PAGE = 100
+
+
+def _describe(row, statuses, names):
+    """One line saying what changed, from the stored detail."""
+    import json
+
+    try:
+        d = json.loads(row["detail"]) if row["detail"] and row["detail"][:1] in "{[" else row["detail"]
+    except ValueError:
+        d = row["detail"]
+    a = row["action"]
+    if a == "voter_canvass" and isinstance(d, dict):
+        parts = []
+        if "status" in d:
+            parts.append(f"Status: {statuses.get(d['status']['from'], d['status']['from'])} → "
+                         f"{statuses.get(d['status']['to'], d['status']['to'])}")
+        if d.get("note"):
+            parts.append(f"Note: {d['note']}")
+        if "notes" in d:  # notes before they became dated entries
+            parts.append(f"Notes: {d['notes'].get('to') or '(cleared)'}")
+        return " · ".join(parts)
+    if a == "voter_update" and isinstance(d, dict):
+        return " · ".join(f"{k.replace('_', ' ')}: {v.get('from') or '—'} → {v.get('to') or '—'}"
+                          for k, v in d.items() if isinstance(v, dict))
+    if a == "voter_note_delete" and isinstance(d, dict):
+        return f"Note: {d.get('note', '')}"
+    if a == "voters_assigned" and isinstance(d, dict):
+        who = names.get(d.get("agent"), "their house's person") if d.get("agent") else "their house's person"
+        return f"{row['target']} → {who}"
+    if isinstance(d, dict):
+        return ", ".join(f"{k}: {v}" for k, v in d.items() if not isinstance(v, (list, dict)))
+    return d or ""
+
+
+def _changes_query(args):
+    clauses = [f"a.action IN ({','.join('?' * len(CHANGE_TYPES))})"]
+    params = list(CHANGE_TYPES)
+    if not is_owner():
+        clauses.append(f"a.action NOT IN ({','.join('?' * len(CONFIRMED_ACTIONS))})")
+        params += list(CONFIRMED_ACTIONS)
+    person = args.get("person", "")
+    if person.isdigit():
+        clauses.append("a.user_id = ?")
+        params.append(int(person))
+    kind = args.get("type", "")
+    if kind in CHANGE_TYPES:
+        clauses.append("a.action = ?")
+        params.append(kind)
+    for key, op in (("from", ">="), ("to", "<")):
+        day = args.get(key, "")
+        try:
+            start = datetime.strptime(day, "%Y-%m-%d") - timedelta(hours=5)  # Maldives day -> UTC
+        except ValueError:
+            continue
+        if key == "to":
+            start += timedelta(days=1)
+        clauses.append(f"a.at {op} ?")
+        params.append(start.replace(tzinfo=timezone.utc).isoformat(timespec="seconds"))
+    q = args.get("q", "").strip()
+    if q:
+        clauses.append("(a.target LIKE ? OR v.full_name LIKE ? OR v.house_name LIKE ?)")
+        params += [f"%{q}%"] * 3
+    sql = (" FROM audit_log a LEFT JOIN voters v ON v.national_id = a.target"
+           " WHERE " + " AND ".join(clauses))
+    return sql, params
+
+
+@bp.route("/changes")
+@admin_required
+def changes():
+    """Every change people made (status, notes, edits, assignments), with who and when."""
+    from .voters import STATUSES
+
+    db = get_db()
+    sql, params = _changes_query(request.args)
+    names = dict(db.execute("SELECT id, username FROM users").fetchall())
+    if request.args.get("format") == "csv":
+        import csv
+        import io
+
+        rows = db.execute(f"SELECT a.*, v.full_name, v.house_name{sql} ORDER BY a.id DESC LIMIT 20000", params).fetchall()
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(["When (Maldives)", "Person", "Type", "ID", "Voter", "House", "What changed"])
+        for r in rows:
+            when = (datetime.fromisoformat(r["at"]) + timedelta(hours=5)).strftime("%Y-%m-%d %H:%M")
+            w.writerow([when, r["username"] or "", CHANGE_TYPES.get(r["action"], r["action"]), r["target"] or "",
+                        r["full_name"] or "", r["house_name"] or "", _describe(r, STATUSES, names)])
+        audit.log("export", target="changes.csv", detail={"rows": len(rows)})
+        return Response("﻿" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="changes-{datetime.now():%Y%m%d}.csv"'})
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+    total = db.execute(f"SELECT COUNT(*){sql}", params).fetchone()[0]
+    pages = max(1, -(-total // CHANGES_PAGE))
+    page = min(page, pages)
+    rows = db.execute(f"SELECT a.*, v.full_name, v.house_name{sql} ORDER BY a.id DESC LIMIT ? OFFSET ?",
+                      params + [CHANGES_PAGE, (page - 1) * CHANGES_PAGE]).fetchall()
+    people = db.execute("SELECT DISTINCT a.user_id AS id, a.username FROM audit_log a WHERE a.user_id IS NOT NULL"
+                        f" AND a.action IN ({','.join('?' * len(CHANGE_TYPES))}) ORDER BY a.username COLLATE NOCASE",
+                        list(CHANGE_TYPES)).fetchall()
+    types = {k: v for k, v in CHANGE_TYPES.items() if is_owner() or k not in CONFIRMED_ACTIONS}
+    query_args = {k: v for k, v in request.args.items() if k != "page"}
+    return render_template("admin/changes.html", rows=rows, total=total, page=page, pages=pages, people=people,
+                           types=types, args=request.args, query_args=query_args,
+                           describe=lambda r: _describe(r, STATUSES, names))

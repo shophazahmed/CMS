@@ -34,19 +34,50 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
     <fieldset class="segmented">
-      <legend>Canvassing status</legend>
+      <legend>{{ 'Canvassing status' if everyone else 'Your status' }}</legend>
       {% for key, label in statuses.items() %}
       <label class="seg st-{{ key }}"><input type="radio" name="status" value="{{ key }}" {{ 'checked' if v.status == key }}><span>{{ label }}</span></label>
       {% endfor %}
     </fieldset>
-    <label>Notes
-      <textarea name="notes" rows="4" maxlength="2000" placeholder="What did they say? Needs a lift on voting day? Best time to visit?">{{ v.notes }}</textarea>
+    <label>Add a note
+      <textarea name="note" rows="3" maxlength="2000" placeholder="What did they say? Needs a lift on voting day? Best time to visit?"></textarea>
     </label>
     <div class="canvass-foot">
-      <button class="primary">Save status &amp; notes</button>
-      {% if v.status_at %}<span class="muted small-text">Last updated {{ v.status_at|local }}{% if status_user %} by {{ status_user.username }}{% endif %}</span>{% endif %}
+      <button class="primary">Save</button>
+      {% if v.status_at %}<span class="muted small-text">{{ 'Latest' if everyone else 'Your status set' }} {{ v.status_at|local }}{% if everyone and status_user %} by {{ status_user.username }}{% endif %}</span>{% endif %}
     </div>
+    {% if not everyone %}<p class="muted small-text">Only you (and the admins) see your status and notes.</p>{% endif %}
   </form>
+
+  {% if people %}
+  <section class="everyone">
+    <h2 class="small-head">Everyone's status</h2>
+    <ul class="timeline">
+      {% for c in people %}<li><strong>{{ c.username }}</strong> · <span class="tag st-tag-{{ c.status }}">{{ statuses[c.status] }}</span> <span class="muted small-text">{{ c.status_at|local }}</span></li>{% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  {% if notes %}
+  <section class="notes-list">
+    <h2 class="small-head">{{ 'Notes' if everyone else 'Your notes' }}</h2>
+    <ul class="timeline">
+      {% for n in notes %}
+      <li>
+        <p class="note-meta small-text"><strong>{{ n.username or 'Earlier note' }}</strong> · {{ n.at|local }}
+          {% if n.user_id == current_user.id or is_admin %}
+          <form class="inline" method="post" action="{{ url_for('voters.delete_note', national_id=v.national_id, note_id=n.id) }}" data-confirm="Delete this note?">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+            <button class="linklike">Delete</button>
+          </form>
+          {% endif %}</p>
+        <p class="note-text">{{ n.text }}</p>
+      </li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
 
   {% if is_owner %}
   <form class="confirm-box {{ 'on' if confirmation }}" method="post" action="{{ url_for('confirmed.set_confirmed', national_id=v.national_id) }}">
