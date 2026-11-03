@@ -147,3 +147,25 @@ document.addEventListener("submit", async (event) => {
     button.disabled = false;
   }
 });
+
+// Bulk assign on Search: tick all on the page / clear, with a live count.
+(() => {
+  const tools = document.querySelector("[data-pick-tools]");
+  if (!tools) return;
+  const boxes = () => [...document.querySelectorAll("input.pick")];
+  const count = tools.querySelector("[data-pick-count]");
+  const scope = document.querySelector("#bulk-assign select[name=scope]");
+  const update = () => { count.textContent = boxes().filter((b) => b.checked).length; };
+  tools.hidden = false;
+  tools.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-pick]");
+    if (!button) return;
+    boxes().forEach((b) => { b.checked = button.dataset.pick === "page"; });
+    if (scope && button.dataset.pick === "page") scope.value = "selected";
+    update();
+  });
+  document.addEventListener("change", (event) => {
+    if (event.target.matches("input.pick")) { if (scope) scope.value = "selected"; update(); }
+  });
+  update();
+})();

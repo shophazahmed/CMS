@@ -387,3 +387,24 @@ def test_upgrade_turns_existing_agents_into_no_sign_in(tmp_path):
     init_schema(conn)
     init_schema(conn)  # running again changes nothing
     assert dict(conn.execute("SELECT username, can_login FROM users")) == {"sara": 0, "viewer": 1}
+
+
+def test_search_cards_show_who_is_responsible(app):
+    conn = connect(app.config["DATABASE"])
+    stamp = now_iso()
+    conn.execute("INSERT INTO users (username, password_hash, role, must_change_password, password_changed_at,"
+                 " created_at, can_login) VALUES ('Sara', 'x', 'agent', 0, ?, ?, 0)", (stamp, stamp))
+    sara = conn.execute("SELECT id FROM users WHERE username = 'Sara'").fetchone()[0]
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    conn.execute("INSERT INTO house_assignments VALUES ('Rose Villa', ?, ?, NULL)", (sara, stamp))
+    conn.execute("INSERT INTO voter_assignments VALUES ('A200003', ?, ?, NULL)", (viewer, stamp))
+    conn.commit()
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    html = client.get("/?sort=id").get_data(as_text=True)
+    cards = html.split('id="v-')[1:]
+    assert "Sara · house" in cards[0]                       # A200001: through Rose Villa
+    assert "Unassigned" in cards[1]                         # A200002: Blue Ge has nobody
+    assert "viewer" in cards[2] and "· house" not in cards[2]  # A200003: handed to a user one by one
+    assert '<optgroup label="Users">' in html and "Tick all on this page" in html
+    conn.close()

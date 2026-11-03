@@ -197,7 +197,7 @@ def search():
     pages = max(1, -(-total // size))
     page = min(page, pages)
     rows = db.execute(
-        f"SELECT *, ({ASSIGNED_TO}) AS assigned_to, {WHO}{owner_columns()} FROM voters{where}"
+        f"SELECT *, ({ASSIGNED_TO}) AS assigned_to, {ASSIGNED_ONE_BY_ONE} AS one_by_one, {WHO}{owner_columns()} FROM voters{where}"
         f" ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
         params + [size, (page - 1) * size],
     ).fetchall()
@@ -258,8 +258,12 @@ def owner_columns():
 WHO = ("(SELECT username FROM users WHERE id = voters.status_by) AS status_by_name,"
        " (SELECT username FROM users WHERE id = voters.updated_by) AS updated_by_name")
 
-ASSIGNED_TO = ("SELECT u.username FROM voter_assignments va JOIN users u ON u.id = va.user_id"
-               " WHERE va.national_id = voters.national_id")
+# Who is responsible for the voter: the person they were handed to one by one, else their house's person
+ASSIGNED_TO = ("COALESCE((SELECT u.username FROM voter_assignments va JOIN users u ON u.id = va.user_id"
+               " WHERE va.national_id = voters.national_id),"
+               " (SELECT u.username FROM house_assignments a JOIN users u ON u.id = a.user_id"
+               " WHERE a.house_name = voters.house_name AND voters.house_name != ''))")
+ASSIGNED_ONE_BY_ONE = "EXISTS (SELECT 1 FROM voter_assignments va WHERE va.national_id = voters.national_id)"
 
 
 def agent_list():

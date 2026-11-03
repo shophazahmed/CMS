@@ -597,7 +597,8 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 
 
 /* Individual voter assignment */
-.vcard-top .pick { width: 1.35rem; height: 1.35rem; flex: none; accent-color: var(--accent); margin: 0; }
+.vcard-top .pick { width: 1.35rem; height: 1.35rem; flex: none; accent-color: var(--accent); margin: 0;
+  position: relative; z-index: 2; } /* above the card-wide link, so a tap ticks instead of opening the voter */
 .tag.agent-tag { display: inline-flex; align-items: center; gap: .2rem; }
 .assign-one { display: grid; gap: .35rem; margin: 1rem 0; }
 .assign-one select { width: 100%; }
@@ -711,3 +712,5 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .person-actions details[open] > summary { margin-bottom: .5rem; }
 .danger-box summary { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, var(--border)); }
 .add-agent { border-top: 1px solid var(--border); padding-top: 1rem; }
+.tag.unassigned-tag { border-style: dashed; }
+.pick-tools { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin: 0; }
