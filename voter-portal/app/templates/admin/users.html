@@ -8,7 +8,7 @@
 <label>{{ label }}
   <select name="to">
     <option value="">Nobody (unassigned)</option>
-    {% for p in people if p.id != u.id and p.is_active %}<option value="{{ p.id }}">{{ p.username }}{{ ' (user)' if p.role == 'user' }}</option>{% endfor %}
+    {% for p in people if p.id != u.id and p.is_active %}<option value="{{ p.id }}">{{ p.username }}{{ ' (' ~ p.role ~ ')' if p.role != 'agent' }}</option>{% endfor %}
   </select>
 </label>
 {%- endmacro %}

@@ -715,3 +715,5 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .tag.unassigned-tag { border-style: dashed; }
 .pick-tools { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; margin: 0; }
 .thaana { font-family: "Faruma", "MV Faseyha", "Noto Sans Thaana", "MV Boli", sans-serif; }
+.unassign-all { margin-top: 1rem; }
+.unassign-all > summary { display: inline-block; }

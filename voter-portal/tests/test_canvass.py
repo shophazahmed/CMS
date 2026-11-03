@@ -156,7 +156,7 @@ def test_assign_individual_voters(app):
     r = a.post("/voters/assign", data={"csrf_token": token, "agent": str(sara), "scope": "selected",
                                        "ids": ["A200002", "A999999"], "back": "/"})
     assert r.status_code == 302
-    assert a.post("/voters/assign", data={"csrf_token": token, "agent": "1", "ids": ["A200002"]}).status_code == 400
+    assert a.post("/voters/assign", data={"csrf_token": token, "agent": "9999", "ids": ["A200002"]}).status_code == 400
 
     s = app.test_client()
     login(s, "sara", AGENT_PW)

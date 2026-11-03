@@ -141,7 +141,7 @@
 
 {% if is_admin and rows and agents %}
 <details class="filter-panel card bulk-assign">
-  <summary>{{ icon('users') }} Assign to an agent or user</summary>
+  <summary>{{ icon('users') }} Assign voters</summary>
   <form id="bulk-assign" class="filters" method="post" action="{{ url_for('voters.assign_bulk') }}"
         data-confirm="Assign these voters?">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -163,7 +163,7 @@
     <label>Give them to
       <select name="agent">
         <optgroup label="Agents">{% for a in agents if a.is_active and a.role == 'agent' %}<option value="{{ a.id }}">{{ a.username }}</option>{% endfor %}</optgroup>
-        {% if agents|selectattr('role', 'equalto', 'user')|list %}<optgroup label="Users">{% for a in agents if a.is_active and a.role == 'user' %}<option value="{{ a.id }}">{{ a.username }}</option>{% endfor %}</optgroup>{% endif %}
+        {% for role, label in [('user', 'Users'), ('admin', 'Admins')] if agents|selectattr('role', 'equalto', role)|list %}<optgroup label="{{ label }}">{% for a in agents if a.is_active and a.role == role %}<option value="{{ a.id }}">{{ a.username }}{{ ' (you)' if a.id == current_user.id }}</option>{% endfor %}</optgroup>{% endfor %}
         <option value="">— back to their house's person —</option>
       </select>
     </label>

@@ -42,7 +42,7 @@
   <fieldset class="checks">
     <legend>Agents to include</legend>
     {% for a in agents if a.is_active %}
-    <label class="check"><input type="checkbox" name="agents" value="{{ a.id }}" checked> {{ a.username }}</label>
+    <label class="check"><input type="checkbox" name="agents" value="{{ a.id }}" {{ 'checked' if a.role == 'agent' }}> {{ a.username }}{{ ' (' ~ a.role ~ ')' if a.role != 'agent' }}</label>
     {% endfor %}
   </fieldset>
   <label>Which houses
@@ -53,6 +53,17 @@
   </label>
   <button class="primary">Auto-assign</button>
 </form>
+
+<details class="card danger-box unassign-all">
+  <summary>Unassign everyone…</summary>
+  <form method="post" action="{{ url_for('canvass.unassign_all') }}" class="form">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <p class="muted">Takes every house and every one-by-one voter away from everyone, so all voters are
+      <strong>Unassigned</strong>. Canvassing status, notes and history stay. This can't be undone.</p>
+    <label>Type <strong>UNASSIGN</strong> to confirm <input name="confirm" autocomplete="off" required></label>
+    <button class="danger">Unassign all voters</button>
+  </form>
+</details>
 {% else %}
 <div class="empty card">
   <p><strong>No agents yet.</strong></p>

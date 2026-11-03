@@ -170,7 +170,7 @@ def dashboard():
     scope = f" AND {clause}" if clause else ""
     parties = [r[0] for r in db.execute(
         f"SELECT DISTINCT party FROM voters WHERE party != ''{scope} ORDER BY party", extra)]
-    agents = db.execute("SELECT id, username FROM users WHERE role IN ('agent', 'user') AND deleted_at IS NULL ORDER BY username").fetchall()
+    agents = db.execute("SELECT id, username FROM users WHERE role IN ('agent', 'user', 'admin') AND deleted_at IS NULL ORDER BY username").fetchall()
     people = db.execute("SELECT id, username, role FROM users ORDER BY username COLLATE NOCASE").fetchall()
     who_name = next((u["username"] for u in people if str(u["id"]) == who), "")
     no_house = db.execute(f"SELECT COUNT(*) FROM voters WHERE house_name = ''{scope}", extra).fetchone()[0]
@@ -256,8 +256,8 @@ def _agents(active_only=False):
             FROM users u
             LEFT JOIN house_assignments a ON a.user_id = u.id
             LEFT JOIN voters v ON v.house_name = a.house_name{join_scope}
-            WHERE u.role IN ('agent', 'user') AND u.deleted_at IS NULL{cond}
-            GROUP BY u.id ORDER BY u.role, u.username COLLATE NOCASE""", extra
+            WHERE u.role IN ('agent', 'user', 'admin') AND u.deleted_at IS NULL{cond}
+            GROUP BY u.id ORDER BY u.role = 'admin', u.role, u.username COLLATE NOCASE""", extra
     ).fetchall()
 
 
@@ -322,6 +322,23 @@ def plan_assignment(houses, agent_ids, current_load):
         plan[h["house"]] = agent
         load[agent] += h["work"]
     return plan, load
+
+
+@bp.post("/admin/agents/unassign-all")
+@role_required("admin")
+def unassign_all():
+    """Start over: no house and no voter is assigned to anyone."""
+    if request.form.get("confirm", "").strip().upper() != "UNASSIGN":
+        flash("Type UNASSIGN to confirm.", "error")
+        return redirect(url_for("canvass.agents"))
+    db = get_db()
+    houses = db.execute("DELETE FROM house_assignments").rowcount
+    singles = db.execute("DELETE FROM voter_assignments").rowcount
+    audit.log("unassign_all", detail={"houses": houses, "voters": singles}, commit=False)
+    db.commit()
+    flash(f"Everyone is unassigned: {houses} house{'s' if houses != 1 else ''} and {singles} one-by-one voter"
+          f"{'s' if singles != 1 else ''} taken back.", "success")
+    return redirect(url_for("canvass.agents"))
 
 
 @bp.post("/admin/agents/auto")

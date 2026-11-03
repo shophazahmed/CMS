@@ -39,7 +39,7 @@ def users():
         " ORDER BY is_active DESC, role, username COLLATE NOCASE").fetchall()
     agents = [u for u in rows if not u["can_login"]]
     logins = [u for u in rows if u["can_login"]]
-    people = [u for u in rows if u["role"] in ("agent", "user")]
+    people = [u for u in rows if u["role"] in ("agent", "user", "admin")]
     return render_template("admin/users.html", agents=agents, users=logins, people=people,
                            roles=("user", "admin"), role_labels=ROLE_LABELS)
 
@@ -93,7 +93,7 @@ def _target_person(value, not_id):
     if not value:
         return None, "unassigned"
     row = get_db().execute(
-        "SELECT id, username FROM users WHERE id = ? AND id != ? AND role IN ('agent', 'user')"
+        "SELECT id, username FROM users WHERE id = ? AND id != ? AND role IN ('agent', 'user', 'admin')"
         " AND deleted_at IS NULL AND is_active = 1", (int(value) if value.isdigit() else -1, not_id)).fetchone()
     if row is None:
         abort(400)

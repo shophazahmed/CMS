@@ -438,3 +438,24 @@ def test_dhivehi_names_import_edit_search_export(app, tmp_path):
     out = list(_csv.DictReader(client.get("/export.csv?q=Aminath").get_data(as_text=True).lstrip("\ufeff").splitlines()))
     assert out[0]["Name (Dhivehi)"] == "އަމީނަތު"
     conn.close()
+
+
+def test_admins_can_be_given_voters_and_unassign_everyone(app):
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    conn = connect(app.config["DATABASE"])
+    boss = conn.execute("SELECT id FROM users WHERE username = 'boss'").fetchone()[0]
+    page = client.get("/").get_data(as_text=True)
+    assert '<optgroup label="Admins">' in page and "boss (you)" in page
+    assert client.post("/voters/assign", data={"csrf_token": csrf(client, "/"), "agent": str(boss),
+                                               "ids": ["A200001"]}).status_code == 302
+    conn.execute("INSERT INTO house_assignments VALUES ('Blue Ge', ?, 't', NULL)", (boss,))
+    conn.commit()
+    assert "boss" in client.get("/admin/agents").get_data(as_text=True)
+    token = csrf(client, "/admin/agents")
+    client.post("/admin/agents/unassign-all", data={"csrf_token": token, "confirm": "no"})
+    assert conn.execute("SELECT COUNT(*) FROM voter_assignments").fetchone()[0] == 1
+    client.post("/admin/agents/unassign-all", data={"csrf_token": token, "confirm": "unassign"})
+    assert conn.execute("SELECT (SELECT COUNT(*) FROM voter_assignments) + (SELECT COUNT(*) FROM house_assignments)").fetchone()[0] == 0
+    assert "Unassigned" in client.get("/").get_data(as_text=True)
+    conn.close()
