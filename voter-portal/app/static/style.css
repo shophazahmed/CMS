@@ -740,3 +740,4 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--danger);
 .share-cards { display: grid; gap: .6rem; margin: .8rem 0; }
 .share-card { width: 100%; max-width: 520px; border: 1px solid var(--border); border-radius: 10px; }
 .share-text { white-space: pre-wrap; background: var(--surface-2); padding: .7rem; border-radius: 8px; }
+.dv-sample { font-size: 1.5rem; margin: .4rem 0 .8rem; direction: rtl; }

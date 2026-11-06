@@ -116,7 +116,13 @@ def build_pdf(rows, *, lang, title, subtitle, recipient, photos_dir):
         ]))
     parts.append("</table>")
 
-    story = pymupdf.Story(html="".join(parts), user_css=CSS, archive=archive)
+    from .fonts import css_for_pdf, mark_thaana
+
+    font_css, font_blob = css_for_pdf()
+    if font_blob:
+        archive.add(font_blob, "dhivehi-font")
+    story = pymupdf.Story(html=mark_thaana("".join(parts)) if font_blob else "".join(parts),
+                          user_css=CSS + font_css, archive=archive)
     buf = io.BytesIO()
     writer = pymupdf.DocumentWriter(buf)
     page_rect = pymupdf.paper_rect("a4")

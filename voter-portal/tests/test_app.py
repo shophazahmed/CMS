@@ -569,3 +569,33 @@ def test_changes_page_for_admins(app):
     csv_text = boss.get("/admin/changes?format=csv").get_data(as_text=True)
     assert "What changed" in csv_text and "Will vote" in csv_text
     assert u.get("/admin/changes").status_code in (302, 403)
+
+
+def test_dhivehi_font_upload_used_in_pdf(app):
+    import io as _io
+
+    import pymupdf
+
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    token = csrf(client, "/admin/settings")
+    post = lambda blob, name: client.post("/admin/settings/font", follow_redirects=True,  # noqa: E731
+                                          data={"csrf_token": token, "font": (_io.BytesIO(blob), name)}).get_data(as_text=True)
+    assert "a font (use .ttf or .otf)" in post(b"not a font at all", "x.ttf")
+    assert "no Unicode Thaana letters" in post(pymupdf.Font("helv").buffer, "helv.ttf")
+    assert client.get("/font/dhivehi.css").status_code == 404           # nothing uploaded yet
+    thaana = pymupdf.Font(script=8)                                     # Noto Sans Thaana, a real Thaana font
+    assert "Dhivehi font set to" in post(thaana.buffer, "dhivehi.ttf")
+    assert client.get("/font/dhivehi").status_code == 200
+    assert "Portal Dhivehi" in client.get("/font/dhivehi.css").get_data(as_text=True)
+    assert "/font/dhivehi.css" in client.get("/").get_data(as_text=True)  # the portal's pages use it
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET full_name_dv = 'އަމީނަތު' WHERE national_id = 'A200001'")
+    conn.commit()
+    doc = pymupdf.open("pdf", client.get("/voters.pdf?lang=dv").data)
+    fonts = {f[3] for f in doc[0].get_fonts()}
+    assert any("Thaana" in f for f in fonts) and "އަމީނަތު" in doc[0].get_text()
+    assert "Use the built-in font again" in post(thaana.buffer, "again.ttf")
+    client.post("/admin/settings/font", data={"csrf_token": token, "remove": "1"})
+    assert client.get("/font/dhivehi").status_code == 404
+    conn.close()

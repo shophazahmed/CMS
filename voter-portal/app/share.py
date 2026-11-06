@@ -87,7 +87,14 @@ def card_png(voter, lang, recipient):
                f'<span class="phone" dir="ltr">{_esc(voter["phone"]) or "—"}</span></p></td>')
     photo_cell = f'<td class="photo"{align}>{photo}</td>'
     cells = details + photo_cell if dv else photo_cell + details
-    story = pymupdf.Story(html=f"<table><tr>{cells}</tr></table>", user_css=CARD_CSS, archive=archive)
+    from .fonts import css_for_pdf, mark_thaana
+
+    font_css, font_blob = css_for_pdf()
+    html_text = f"<table><tr>{cells}</tr></table>"
+    if font_blob:
+        archive.add(font_blob, "dhivehi-font")
+        html_text = mark_thaana(html_text)
+    story = pymupdf.Story(html=html_text, user_css=CARD_CSS + font_css, archive=archive)
     buf = io.BytesIO()
     writer = pymupdf.DocumentWriter(buf)
     rect = pymupdf.Rect(0, 0, CARD_W, CARD_H)
