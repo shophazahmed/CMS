@@ -688,6 +688,12 @@ def find_sources(data_dir, log):
         if path is None:
             close = difflib.get_close_matches(k, [x for x in by_key if by_key[x] not in used], n=1, cutoff=0.85)
             path = by_key[close[0]] if close else None
+        if path is None:
+            # A phone or browser often adds to the name: "gadhoo-new voters (1).csv", "... - sex.csv"
+            longer = sorted((x for x in by_key if x.startswith(k) and by_key[x] not in used), key=len)
+            path = by_key[longer[0]] if longer else None
+            if path is not None:
+                say(f"[i] {path.name} is read as '{key}' ({label})")
         if path is None or path in used:
             log.add("WARN", "SOURCE_MISSING", None, f"no file found for '{key}' ({label})")
             say(f"[!] missing: {key}")
