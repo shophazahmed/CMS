@@ -673,7 +673,7 @@ def delete(national_id):
 
 # --- admin: export ----------------------------------------------------------
 
-EXPORT_HEADERS = ["ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
+EXPORT_HEADERS = ["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
                   "Agent", "Agent via", "Status", "Status changed", "Status by", "Notes",
                   "Last edited", "Last edited by", "Location", "Deceased",
                   "Name (Dhivehi)", "House (Dhivehi)"]
@@ -757,7 +757,7 @@ def export(fmt):
         f"SELECT *, {EXPORT_AGENT}, {WHO}, {ALL_NOTES}{extra} FROM voters{where} ORDER BY {SORTS[f['sort']]}",
         params).fetchall()
     table = [
-        [_safe_cell(r["national_id"]), _safe_cell(r["full_name"]), r["sex"], r["age"],
+        [n, _safe_cell(r["national_id"]), _safe_cell(r["full_name"]), r["sex"], r["age"],
          _safe_cell(r["house_name"]), _safe_cell(r["party"]), r["phone"], "yes" if r["photo_path"] else "",
          _safe_cell(r["agent"] or ""), ("One by one" if r["one_by_one"] else "House") if r["agent"] else "",
          STATUSES.get(r["status"], r["status"]), _local(r["status_at"]),
@@ -766,7 +766,7 @@ def export(fmt):
          _safe_cell(r["updated_by_name"] or ""), _safe_cell(r["location"]),
          "yes" if r["deceased"] else "", _safe_cell(r["full_name_dv"]), _safe_cell(r["house_name_dv"])]
         + (["yes" if r["confirmed_at"] else "", _local(r["confirmed_at"])] if owner else [])
-        for r in rows
+        for n, r in enumerate(rows, 1)
     ]
     headers = EXPORT_HEADERS + (["100% confirmed", "Confirmed on"] if owner else [])
     # An export of the confirmed list is private to the 'admin' account, like the list itself
@@ -800,7 +800,7 @@ def export(fmt):
         ws.append(row)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
-    for col, width in zip("ABCDEFGHIJKLMNOPQR", (11, 32, 6, 6, 28, 14, 12, 10, 16, 12, 14, 17, 14, 40, 17, 14, 14, 17)):
+    for col, width in zip("ABCDEFGHIJKLMNOPQRS", (5, 11, 32, 6, 6, 28, 14, 12, 10, 16, 12, 14, 17, 14, 40, 17, 14, 14, 17)):
         ws.column_dimensions[col].width = width
     out = io.BytesIO()
     wb.save(out)

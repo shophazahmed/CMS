@@ -184,7 +184,7 @@ def test_assign_individual_voters(app):
     from openpyxl import load_workbook
     import io as _io
     ws = load_workbook(_io.BytesIO(a.get("/export.xlsx").data)).active
-    assert [c.value for c in ws[1]][8:10] == ["Agent", "Agent via"]
+    assert [c.value for c in ws[1]][9:11] == ["Agent", "Agent via"]
     # agent filter (responsible agent, house or one by one), and the export follows it
     assert a.get(f"/?ag={sara}").get_data(as_text=True).count('id="v-A2000') == 2
     page = a.get(f"/?ag={ali}").get_data(as_text=True)

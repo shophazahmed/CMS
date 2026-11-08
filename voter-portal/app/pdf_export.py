@@ -29,6 +29,7 @@ th { font-size: 8pt; color: #555; text-align: left; border-bottom: 1pt solid #99
 td { border-bottom: 0.5pt solid #ccc; padding: 3pt 4pt; vertical-align: middle; }
 tr.house td { background: #eef3f2; font-weight: bold; font-size: 9.5pt; border-bottom: 1pt solid #999; }
 td.photo { width: 46pt; }
+td.num, th.num { width: 22pt; color: #555; font-size: 8.5pt; text-align: right; padding-right: 2pt; }
 td.name b { font-size: 10pt; }
 .alt { color: #666; font-size: 7.5pt; }
 td.phone { font-family: monospace; white-space: nowrap; }
@@ -73,7 +74,7 @@ def build_pdf(rows, *, lang, title, subtitle, recipient, photos_dir):
         return "<tr>" + "".join(reversed(cells) if dv else cells) + "</tr>"
 
     right = ' style="text-align:right"' if dv else ""
-    head = [f'<th class="photo"></th>', f'<th class="name"{right}>{t["name"]}</th>', f'<th>{t["location"]}</th>',
+    head = ['<th class="num">#</th>', f'<th class="photo"></th>', f'<th class="name"{right}>{t["name"]}</th>', f'<th>{t["location"]}</th>',
             f'<th>{t["phone"]}</th>', f'<th class="notes">{t["notes"]}</th>']
     parts = [f'<h1>{_esc(title)}</h1><p class="sub">{_esc(subtitle)}</p>',
              f'<table class="{"dv" if dv else "en"}">', row(head)]
@@ -88,7 +89,7 @@ def build_pdf(rows, *, lang, title, subtitle, recipient, photos_dir):
             label = (r["house_name_dv"] or house) if dv else house
             text = f'{_esc(label) or t["no_house"]} · {counts[house]} {t["voters"]}'
             rtl = ' style="text-align:right"' if dv else ""  # (dir=rtl would flip it back to the left)
-            parts.append(f'<tr class="house"><td colspan="5"{rtl}>{text}</td></tr>')
+            parts.append(f'<tr class="house"><td colspan="6"{rtl}>{text}</td></tr>')
         img = ""
         if r["photo_path"]:
             blob = _thumb(os.path.join(photos_dir, r["photo_path"]))
@@ -109,6 +110,7 @@ def build_pdf(rows, *, lang, title, subtitle, recipient, photos_dir):
                          + (f'<br/><span class="alt" dir="rtl">{_esc(r["full_name_dv"])}</span>'
                             if r["full_name_dv"] else "") + "</td>")
         parts.append(row([
+            f'<td class="num">{n}</td>',
             f'<td class="photo"{right}>{img}</td>', name_cell,
             f'<td class="loc" dir="ltr">{_esc(r["location"])}</td>',
             f'<td class="phone" dir="ltr">{_esc(r["phone"])}</td>',

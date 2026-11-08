@@ -115,7 +115,7 @@ def test_admin_crud_export_and_audit(app):
                                              "age": "23", "house_name": "X", "party": "CCC"})
     assert r.status_code == 302
     csv_text = c.get("/export.csv?house=rose").get_data(as_text=True)
-    assert csv_text.startswith("﻿ID,") and "'=HYPERLINK(1)" in csv_text and "Moosa" not in csv_text
+    assert csv_text.startswith("﻿#,ID,") and "'=HYPERLINK(1)" in csv_text and "Moosa" not in csv_text
     xlsx = c.get("/export.xlsx")
     assert xlsx.status_code == 200 and xlsx.data[:2] == b"PK"
     assert c.post("/voters/A200009/delete", data={"csrf_token": token}).status_code == 302
@@ -599,3 +599,16 @@ def test_dhivehi_font_upload_used_in_pdf(app):
     client.post("/admin/settings/font", data={"csrf_token": token, "remove": "1"})
     assert client.get("/font/dhivehi").status_code == 404
     conn.close()
+
+
+def test_lists_are_numbered(app):
+    import csv as _csv
+
+    import pymupdf
+
+    client = app.test_client()
+    login(client, "boss", ADMIN_PW)
+    rows = list(_csv.reader(client.get("/export.csv?sort=name").get_data(as_text=True).lstrip("﻿").splitlines()))
+    assert rows[0][:2] == ["#", "ID"] and [r[0] for r in rows[1:]] == ["1", "2", "3"]
+    text = pymupdf.open("pdf", client.get("/voters.pdf").data)[0].get_text()
+    assert "#" in text and all(f"\n{n}\n" in f"\n{text}" for n in ("1", "2", "3"))
