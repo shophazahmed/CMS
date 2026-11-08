@@ -29,7 +29,7 @@ th { font-size: 8pt; color: #555; text-align: left; border-bottom: 1pt solid #99
 td { border-bottom: 0.5pt solid #ccc; padding: 3pt 4pt; vertical-align: middle; }
 tr.house td { background: #eef3f2; font-weight: bold; font-size: 9.5pt; border-bottom: 1pt solid #999; }
 td.photo { width: 46pt; }
-td.num, th.num { width: 22pt; color: #555; font-size: 8.5pt; text-align: right; padding-right: 2pt; }
+td.num, th.num { width: 24pt; color: #555; font-size: 8.5pt; text-align: left; padding-right: 6pt; }
 td.name b { font-size: 10pt; }
 .alt { color: #666; font-size: 7.5pt; }
 td.phone { font-family: monospace; white-space: nowrap; }
@@ -70,8 +70,10 @@ def build_pdf(rows, *, lang, title, subtitle, recipient, photos_dir):
     archive = pymupdf.Archive()
 
     def row(cells):
-        # Dhivehi lists read right to left: photo on the right, notes on the left
-        return "<tr>" + "".join(reversed(cells) if dv else cells) + "</tr>"
+        # Dhivehi lists read right to left (photo on the right, notes on the left);
+        # the # column stays first, on the left, in both languages
+        num, rest = cells[0], cells[1:]
+        return "<tr>" + num + "".join(reversed(rest) if dv else rest) + "</tr>"
 
     right = ' style="text-align:right"' if dv else ""
     head = ['<th class="num">#</th>', f'<th class="photo"></th>', f'<th class="name"{right}>{t["name"]}</th>', f'<th>{t["location"]}</th>',
