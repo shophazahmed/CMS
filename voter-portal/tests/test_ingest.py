@@ -291,3 +291,20 @@ def test_location_column_imported_and_kept(tmp_path):
     ingest.main(["--data-dir", str(second), "--log", str(tmp_path / "l2")] + args)
     row = sqlite3.connect(db).execute("SELECT location, party FROM voters").fetchone()
     assert row == ("Gdh. Gadhdhoo", "MDP")  # a file without a location keeps the stored one
+
+
+def test_source_files_with_extra_words_in_the_name(tmp_path):
+    import csv
+
+    db = tmp_path / "vp.db"
+    for name in ("gadhoo-new voters (1).csv", "gadhoo-new voters - sex.csv"):
+        data = tmp_path / name.replace(" ", "_")
+        data.mkdir()
+        with open(data / name, "w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["ID Card No.", "Name", "Sex"])
+            w.writerow(["A910001", "Renamed File", "F"])
+        ingest.main(["--data-dir", str(data), "--db", str(db), "--photos-dir", str(tmp_path / "p"),
+                     "--log", str(tmp_path / "log"), "--no-seed-users"])
+    row = sqlite3.connect(db).execute("SELECT full_name, sex FROM voters").fetchone()
+    assert row == ("Renamed File", "F")
