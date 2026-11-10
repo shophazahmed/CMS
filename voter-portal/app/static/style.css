@@ -745,3 +745,28 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--danger);
 .cf-access label { display: flex; gap: .4rem; align-items: center; }
 .vcard { scroll-margin-top: 140px; }
 .vcard.just-viewed { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent); transition: box-shadow .4s; }
+
+/* --- announcements ------------------------------------------------------ */
+.urgent-banner {
+  display: flex; align-items: flex-start; gap: .6rem; margin: 0 0 .9rem; padding: .7rem .7rem .7rem .8rem;
+  border-radius: var(--radius-sm); background: var(--err-bg); color: var(--err-text); border-left: 4px solid currentColor;
+}
+.urgent-banner .urgent-icon { flex: none; margin-top: .1rem; }
+.urgent-banner .urgent-body { flex: 1; min-width: 0; }
+.urgent-banner p { margin: .2rem 0 0; white-space: pre-line; overflow-wrap: anywhere; }
+.urgent-banner button { flex: none; }
+.announce-form textarea { width: 100%; }
+.announce-form .check { display: flex; gap: .5rem; align-items: flex-start; font-weight: 400; }
+.announce-list { list-style: none; padding: 0; display: grid; gap: .75rem; }
+.announce { scroll-margin-top: 140px; }
+.announce.urgent { border-left: 4px solid var(--err-text); }
+.announce.ended { opacity: .6; }
+.announce.just { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent); }
+.announce-head { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; margin: 0 0 .4rem; }
+.announce-text { white-space: pre-line; overflow-wrap: anywhere; margin: 0 0 .6rem; }
+.badge-urgent { background: var(--err-bg); color: var(--err-text); }
+.announce .actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.announce .actions form { margin: 0; }
+.wa-btn { display: inline-flex; gap: .4rem; align-items: center; }
+.seen-by { margin-top: .6rem; font-size: .9rem; }
+.seen-by ul { list-style: none; padding: 0; margin: .4rem 0; display: grid; gap: .2rem; }

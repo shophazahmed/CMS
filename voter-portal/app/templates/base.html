@@ -58,6 +58,7 @@
         <a href="{{ url_for('admin.audit_log') }}">Activity log</a>
         <a href="{{ url_for('campaign.settings') }}">Campaign settings</a>
         {% endif %}
+        <a href="{{ url_for('announce.index') }}">Announcements</a>
         {% if can_view_cf %}<a href="{{ url_for('confirmed.overview') }}">100% confirmed voters</a>{% endif %}
         <form class="appearance" method="post" action="{{ url_for('theme.set_appearance') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -92,6 +93,19 @@
       <span>Campaign view: <strong>{{ cb.label }}</strong> voters only</span>
       <button class="small">Show all parties</button>
       {% endif %}
+    </form>
+    {% endif %}
+    {% set un = urgent_notice() if current_user else none %}
+    {% if un %}
+    <form class="urgent-banner" method="post" action="{{ url_for('announce.mark_seen', aid=un.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+      <span class="urgent-icon">{{ icon('megaphone', 20) }}</span>
+      <div class="urgent-body">
+        <strong>Urgent · {{ un.created_by_name or 'Admin' }}</strong> <span class="small-text">{{ un.created_at|local }}</span>
+        <p dir="auto">{{ un.text }}</p>
+      </div>
+      <button class="small">Seen</button>
     </form>
     {% endif %}
     {% with messages = get_flashed_messages(with_categories=true) %}

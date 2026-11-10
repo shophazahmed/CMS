@@ -7,7 +7,7 @@ import click
 from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from . import admin, auth, campaign, canvass, confirmed, fonts, imports, personal, share, voters
+from . import admin, announce, auth, campaign, canvass, confirmed, fonts, imports, personal, share, voters
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -66,6 +66,7 @@ def create_app(test_config=None):
     app.register_blueprint(confirmed.bp)
     app.register_blueprint(share.bp)
     app.register_blueprint(fonts.bp)
+    app.register_blueprint(announce.bp)
     app.jinja_env.globals["dhivehi_font"] = fonts.font_file
     app.jinja_env.globals["dhivehi_font_name"] = fonts.font_name
     app.jinja_env.globals["share_people"] = share.people
@@ -91,7 +92,7 @@ def create_app(test_config=None):
                 "campaign_banner": campaign.banner, "whatsapp_url": campaign.whatsapp_url,
                 "sms_url": campaign.sms_url, "viber_url": campaign.viber_url, "campaign_message": campaign.message,
                 "picture_token": campaign.picture_token, "theme_name": campaign.theme_name, "themes": campaign.THEMES,
-                "appearance": campaign.appearance}
+                "appearance": campaign.appearance, "urgent_notice": announce.banner}
 
     @app.after_request
     def security_headers(resp):
@@ -127,6 +128,7 @@ def create_app(test_config=None):
         imports.init_schema(conn)
         personal.init_schema(conn)
         campaign.init_schema(conn)
+        announce.init_schema(conn)
         bootstrap_admin(conn)
         conn.close()
     return app
