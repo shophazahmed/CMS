@@ -177,21 +177,38 @@ document.addEventListener("click", async (event) => {
   if (!link || !navigator.canShare || !window.File) return;
   if (!navigator.canShare({ files: [new File([""], "x.pdf", { type: "application/pdf" })] })) return;
   event.preventDefault();
+  if (link._file) {  // second tap: the PDF is ready, a fresh tap always opens the share sheet
+    try { await navigator.share({ files: [link._file], title: link._file.name }); } catch (err) { /* cancelled */ }
+    return;
+  }
   const label = link.innerHTML;
   link.textContent = "Preparing…";
   try {
     const response = await fetch(link.href, { credentials: "same-origin" });
     if (!response.ok || !(response.headers.get("Content-Type") || "").includes("pdf")) {
+      link.innerHTML = label;
       window.location = link.href;  // shows the error (e.g. too many voters) on the normal page
       return;
     }
     const name = (/filename="([^"]+)"/.exec(response.headers.get("Content-Disposition") || "") || [])[1] || "voters.pdf";
     const file = new File([await response.blob()], name, { type: "application/pdf" });
-    await navigator.share({ files: [file], title: name });
-  } catch (err) {
-    if (err && err.name !== "AbortError") window.location = link.href;
-  } finally {
     link.innerHTML = label;
+    try {
+      await navigator.share({ files: [file], title: name });
+    } catch (err) {
+      if (err && err.name === "NotAllowedError") {
+        // iPhone: preparing took too long for this tap. Keep the file; the next tap sends it.
+        link._file = file;
+        link.textContent = "Tap to send PDF ›";
+        link.classList.add("primary");
+        setTimeout(() => { link._file = null; link.innerHTML = label; link.classList.remove("primary"); }, 120000);
+      } else if (err && err.name !== "AbortError") {
+        window.location = link.href;
+      }
+    }
+  } catch (err) {
+    link.innerHTML = label;
+    window.location = link.href;
   }
 });
 

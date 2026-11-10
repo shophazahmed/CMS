@@ -34,6 +34,13 @@
       <a class="button small" href="{{ url_for('voters.export_pdf', ag=a.id, lang='dv') }}" data-share-pdf>{{ icon('download', 16) }} PDF ދިވެހި</a>
       <a href="{{ url_for('voters.search', ag=a.id, sort='house') }}">See their voters ›</a>
     </p>
+    {% if is_owner and a.voters %}
+    <p class="small-text agent-pdf">
+      <a class="button small wa-list" href="{{ url_for('share.whatsapp_list', ag=a.id) }}" target="_blank" rel="noopener">{{ icon('chat', 16) }} WhatsApp list</a>
+      <a class="button small wa-list" href="{{ url_for('share.whatsapp_list', ag=a.id, lang='dv') }}" target="_blank" rel="noopener">{{ icon('chat', 16) }} WhatsApp ދިވެހި</a>
+      {% if not a.phone %}<span class="muted">No number saved: you pick the chat</span>{% endif %}
+    </p>
+    {% endif %}
   </li>
   {% endfor %}
 </ul>

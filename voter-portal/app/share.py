@@ -224,3 +224,72 @@ def share():
                 "names": [f"voter-{v['full_name'].replace(' ', '-')}.png" for v in voters]}
     return render_template("share/result.html", voters=voters, cards=cards, wa_url=wa_url, text=text,
                            to_name=to_name, mode=mode, assigned=assigned)
+
+
+# --- an agent's list as a WhatsApp message --------------------------------------------------
+
+LIST_URL_MAX = 12000  # longer links are refused by some phones; the PDF has no limit
+LIST_LABELS = {
+    "en": {"head": "MDP Gadhdhoo · Your voters", "list": "MDP Gadhdhoo · Voter list", "house": "house", "houses": "houses",
+           "voters": "voters", "voter": "voter", "foot": "Please update the portal after each visit.", "none": "No address"},
+    "dv": {"head": "އެމްޑީޕީ ގައްދޫ · ތިބާގެ ވޯޓަރުން", "list": "އެމްޑީޕީ ގައްދޫ · ވޯޓަރުންގެ ލިސްޓު", "house": "ގެ",
+           "houses": "ގެ", "voters": "ވޯޓަރުން", "voter": "ވޯޓަރު",
+           "foot": "ކޮންމެ ޒިޔާރަތަކަށްފަހު ޕޯޓަލް އަޕްޑޭޓް ކުރައްވާ.", "none": "އެޑްރެސް ނެތް"},
+}
+
+
+def list_text(rows, lang, name, sender):
+    """Voters grouped by house, numbered, with phones: one WhatsApp message."""
+    t = LIST_LABELS[lang]
+    dv = lang == "dv"
+    houses = {}
+    for r in rows:
+        houses.setdefault(r["house_name"] or "", []).append(r)
+    count = (f"{len(houses)} {t['house'] if len(houses) == 1 else t['houses']} · "
+             f"{len(rows)} {t['voter'] if len(rows) == 1 else t['voters']}")
+    lines = [f"*{t['head'] if name else t['list']}*", f"{name}: {count}" if name else count]
+    n = 0
+    for house, people in houses.items():
+        label = ((people[0]["house_name_dv"] or house) if dv else house) or t["none"]
+        lines += ["", f"*{label}* ({len(people)})"]
+        for r in people:
+            n += 1
+            who = (r["full_name_dv"] or r["full_name"]) if dv else r["full_name"]
+            lines.append(f"{n}. {who} · {r['phone'] or '—'}")
+    lines += ["", t["foot"], f"— {sender}, {_local_now().strftime('%-d %b')}"]
+    return "\n".join(lines)
+
+
+@bp.route("/voters/whatsapp-list")
+@can_manage_confirmed_voters
+def whatsapp_list():
+    """Open WhatsApp with the list typed in: to the agent's own number when filtering by an agent
+    who has a mobile number, otherwise WhatsApp asks who to send it to."""
+    from flask import redirect
+    from .pdf_export import MAX_ROWS
+    from .voters import build_where, read_filters
+
+    f = read_filters(request.args)
+    if f.get("cf"):
+        abort(403)  # the confirmed list never leaves the portal
+    lang = "dv" if request.args.get("lang") == "dv" else "en"
+    where, params = build_where(f)
+    rows = get_db().execute(
+        f"SELECT * FROM voters{where} ORDER BY house_name = '', house_name COLLATE NOCASE,"
+        " full_name COLLATE NOCASE LIMIT ?", params + [MAX_ROWS + 1]).fetchall()
+    back = request.referrer if (request.referrer or "").startswith(request.host_url) else url_for("canvass.agents")
+    if not rows:
+        flash("No voters to send.", "info")
+        return redirect(back)
+    person = _recipient(f["ag"]) if f.get("ag", "").isdigit() else None
+    number = _wa_number(person["phone"]) if person else None
+    text = list_text(rows, lang, person["username"] if person else "", g.user["username"])
+    url = f"https://wa.me/{number or ''}?text={quote(text)}"
+    if len(url) > LIST_URL_MAX:
+        flash(f"{len(rows)} voters is too long for one WhatsApp message. Use the PDF button instead "
+              "(on a phone it opens WhatsApp with the PDF).", "error")
+        return redirect(back)
+    audit.log("voter_list_whatsapp", target=person["username"] if person else f"{len(rows)} voters",
+              detail={"to": person["username"] if person else "picked in WhatsApp", "voters": len(rows),
+                      "lang": lang, "direct": bool(number)})
+    return redirect(url)

@@ -138,6 +138,10 @@
     <a class="button small" href="{{ url_for('voters.export', fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
     <a class="button small" href="{{ url_for('voters.export_pdf', **query_args) }}" data-share-pdf>{{ icon('download', 16) }} PDF</a>
     <a class="button small" href="{{ url_for('voters.export_pdf', lang='dv', **query_args) }}" data-share-pdf>{{ icon('download', 16) }} PDF ދިވެހި</a>
+    {% if is_owner and not f.cf %}
+    <a class="button small wa-list" href="{{ url_for('share.whatsapp_list', **query_args) }}" target="_blank" rel="noopener">{{ icon('chat', 16) }} WhatsApp list</a>
+    <a class="button small wa-list" href="{{ url_for('share.whatsapp_list', lang='dv', **query_args) }}" target="_blank" rel="noopener">{{ icon('chat', 16) }} WhatsApp ދިވެހި</a>
+    {% endif %}
   </div>
   {% endif %}
 </div>

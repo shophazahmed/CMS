@@ -41,3 +41,36 @@ def test_only_admins_post_and_take_down(app):
     a.post("/announcements/1/end", data={"csrf_token": t})
     assert "Old news" not in u.get("/").get_data(as_text=True)
     assert "Old news" not in u.get("/announcements").get_data(as_text=True)
+
+
+def _owner(app):
+    from app.db import connect
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE users SET is_owner = 1 WHERE username = 'boss'")
+    conn.commit()
+
+
+def test_whatsapp_list_to_agent(app):
+    from tests.test_canvass import add_agent
+    _owner(app)
+    agent = add_agent(app, "sharu")
+    from app.db import connect
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE users SET phone = '7948664' WHERE id = ?", (agent,))
+    conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES ('Rose Villa', ?, 'x')", (agent,))
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    assert "WhatsApp list" in a.get("/admin/agents").get_data(as_text=True)
+    r = a.get(f"/voters/whatsapp-list?ag={agent}")
+    assert r.status_code == 302 and r.headers["Location"].startswith("https://wa.me/9607948664?text=")
+    text = unquote(r.headers["Location"].split("text=")[1])
+    assert "sharu: 1 house · 2 voters" in text and "*Rose Villa* (2)" in text and "2. Aminath Alpha · —" in text
+    assert "Moosa Beta" not in text  # Blue Ge isn't theirs
+    assert a.get("/voters/whatsapp-list?cf=1").status_code == 403
+
+
+def test_whatsapp_list_owner_only(app):
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    assert u.get("/voters/whatsapp-list").status_code == 403
