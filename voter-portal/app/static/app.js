@@ -260,3 +260,31 @@ document.addEventListener("submit", async (event) => {
   status.textContent = `Saved ${files.length} card${files.length > 1 ? "s" : ""}${who}. Attach ${files.length > 1 ? "them" : "it"} in WhatsApp.${assigned}`;
   if (reply.direct) window.open(reply.wa_url, "_blank", "noopener");
 });
+
+// Coming back from a voter: return to that voter's card in the list, not the top of the page.
+// Search pages aren't kept in the phone's memory (privacy), so the browser reloads them on Back;
+// we remember only which card was opened, in this tab, and scroll to it.
+(() => {
+  const KEY = "lastVoterCard";
+  const here = () => location.pathname + location.search;
+  const store = (value) => { try { sessionStorage.setItem(KEY, JSON.stringify(value)); } catch (e) { /* private mode */ } };
+  const recall = () => { try { return JSON.parse(sessionStorage.getItem(KEY) || "null"); } catch (e) { return null; } };
+  document.addEventListener("click", (event) => {
+    const card = event.target.closest(".vcard[id^='v-']");
+    if (card && event.target.closest("a")) store({ page: here(), id: card.id });
+  });
+  const show = (id) => {
+    const card = document.getElementById(id);
+    if (!card) return false;
+    card.scrollIntoView({ block: "center" });
+    card.classList.add("just-viewed");
+    setTimeout(() => card.classList.remove("just-viewed"), 2500);
+    return true;
+  };
+  const restore = () => {
+    if (location.hash.startsWith("#v-")) { show(location.hash.slice(1)); return; }
+    const last = recall();
+    if (last && last.page === here()) show(last.id);
+  };
+  window.addEventListener("pageshow", restore);
+})();

@@ -743,3 +743,5 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--danger);
 .dv-sample { font-size: 1.5rem; margin: .4rem 0 .8rem; direction: rtl; }
 .cf-access { display: inline; margin: 0; }
 .cf-access label { display: flex; gap: .4rem; align-items: center; }
+.vcard { scroll-margin-top: 140px; }
+.vcard.just-viewed { box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent); transition: box-shadow .4s; }

@@ -3,7 +3,7 @@
 {% from "share/_panel.html" import share_panel with context %}
 {% block title %}{{ v.full_name }}{% endblock %}
 {% block content %}
-<a class="backlink" href="{{ back }}">{{ icon('back', 18) }} Back to results</a>
+<a class="backlink" href="{{ back.split('#')[0] }}#v-{{ v.national_id }}">{{ icon('back', 18) }} Back to results</a>
 
 <article class="card profile">
   <div class="profile-head">
