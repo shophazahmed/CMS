@@ -74,3 +74,44 @@ def test_whatsapp_list_owner_only(app):
     u = app.test_client()
     login(u, "viewer", USER_PW)
     assert u.get("/voters/whatsapp-list").status_code == 403
+
+
+def test_agent_dashboard_link(app):
+    import re as _re
+    from tests.test_canvass import add_agent
+    from app.db import connect
+    _owner(app)
+    agent = add_agent(app, "sharu")
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE users SET phone = '7948664' WHERE id = ?", (agent,))
+    conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES ('Rose Villa', ?, 'x')", (agent,))
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    token = csrf(a, "/admin/agents")
+    a.post(f"/admin/agents/{agent}/link", data={"csrf_token": token, "days": "7"})
+    page = a.get("/admin/agents").get_data(as_text=True)
+    url = _re.search(r'data-copy="([^"]+/a/[^"]+)"', page).group(1)
+    assert "wa.me/9607948664?text=" in page and "opened 0 times" in page
+    path = url.split("localhost", 1)[1]
+
+    anon = app.test_client()  # no sign-in
+    r = anon.get(path)
+    body = r.get_data(as_text=True)
+    assert r.status_code == 200 and "Aminath Alpha" in body and "Moosa Beta" not in body
+    assert "For sharu · Do not forward" in body and r.headers["Cache-Control"] == "private, no-store"
+    assert "csrf_token" not in body or "/admin" not in body
+    assert "opened 1 time," in a.get("/admin/agents").get_data(as_text=True)
+    assert anon.get(path + "x").status_code == 404
+    assert anon.get(path.replace("/a/", "/a/") + "/p/A200002").status_code == 404  # not their voter
+
+    a.post(f"/admin/agents/{agent}/link/stop", data={"csrf_token": token})
+    assert anon.get(path).status_code == 410
+
+
+def test_dashboard_link_owner_only(app):
+    from tests.test_canvass import add_agent
+    agent = add_agent(app, "sharu")
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    assert u.post(f"/admin/agents/{agent}/link", data={"csrf_token": csrf(u, "/"), "days": "7"}).status_code == 403

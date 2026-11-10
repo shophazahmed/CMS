@@ -273,7 +273,12 @@ def agents():
         "SELECT user_id, COUNT(*) FROM audit_log WHERE action = 'voter_canvass' AND at >= ? GROUP BY user_id",
         (week,),
     ).fetchall())
-    return render_template("canvass/agents.html", agents=_agents(), houses=houses, weekly=weekly,
+    from . import agentlink
+    from .auth import is_owner
+
+    links = agentlink.active_links() if is_owner() else {}
+    return render_template("canvass/agents.html", agents=_agents(), houses=houses, weekly=weekly, links=links,
+                           link_url=agentlink.link_url, link_wa=agentlink.whatsapp_url, link_days=agentlink.DAYS,
                            unassigned=sum(1 for h in houses if h["agent_id"] is None))
 
 

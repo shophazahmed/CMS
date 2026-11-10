@@ -305,3 +305,13 @@ document.addEventListener("submit", async (event) => {
   };
   window.addEventListener("pageshow", restore);
 })();
+
+// Copy a link to the clipboard (Agents page: dashboard links).
+document.addEventListener("click", async (event) => {
+  const button = event.target.closest("[data-copy]");
+  if (!button) return;
+  const label = button.textContent;
+  try { await navigator.clipboard.writeText(button.dataset.copy); button.textContent = "Copied ✓"; }
+  catch (err) { window.prompt("Copy this link:", button.dataset.copy); }
+  setTimeout(() => { button.textContent = label; }, 2000);
+});
