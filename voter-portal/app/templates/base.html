@@ -41,7 +41,7 @@
       <a href="{{ url_for('admin.users') }}" {{ 'aria-current=page' if ep.startswith('admin.user') }}>Users</a>
       <a href="{{ url_for('campaign.settings') }}" {{ 'aria-current=page' if ep == 'campaign.settings' }}>Settings</a>
       {% endif %}
-      {% if is_owner %}
+      {% if can_view_cf %}
       <a href="{{ url_for('confirmed.overview') }}" {{ 'aria-current=page' if ep == 'confirmed.overview' }}>Confirmed</a>
       {% endif %}
     </nav>
@@ -58,7 +58,7 @@
         <a href="{{ url_for('admin.audit_log') }}">Activity log</a>
         <a href="{{ url_for('campaign.settings') }}">Campaign settings</a>
         {% endif %}
-        {% if is_owner %}<a href="{{ url_for('confirmed.overview') }}">100% confirmed voters</a>{% endif %}
+        {% if can_view_cf %}<a href="{{ url_for('confirmed.overview') }}">100% confirmed voters</a>{% endif %}
         <form class="appearance" method="post" action="{{ url_for('theme.set_appearance') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">

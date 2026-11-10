@@ -8,7 +8,7 @@
     {%- if who_name %} · reached by <strong>{{ who_name }}</strong>{% endif %}{% if rng.label %} · <strong>{{ rng.label }}</strong>{% endif %}</p>
 </div>
 
-{% if is_owner %}{% set cm = confirmed_metrics() %}
+{% if can_view_cf %}{% set cm = confirmed_metrics() %}
 <a class="card cf-widget" href="{{ url_for('confirmed.overview') }}">
   <span class="kpi-label">{{ icon('check', 14) }} 100% confirmed · {{ cm.label }} voters · only you see this</span>
   <strong>{{ cm.pct }}%</strong>

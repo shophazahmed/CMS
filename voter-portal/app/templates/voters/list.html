@@ -80,7 +80,7 @@
         <option value="1" {{ 'selected' if f.dc == '1' }}>Deceased only</option>
       </select>
     </label>
-    {% if is_owner %}
+    {% if can_view_cf %}
     <label>100% confirmed
       <select name="cf">
         <option value="">Any</option>
@@ -132,7 +132,7 @@
   <p><strong>{{ total }}</strong> {{ 'voter' if total == 1 else 'voters' }}{{ ' match' if filtered else ' in total' }}
     {% if not filtered and stats %}<span class="muted"> · {{ stats.male or 0 }} male · {{ stats.female or 0 }} female</span>{% endif %}
     {% if pages > 1 %}<span class="muted"> · showing {{ first }}–{{ last }}</span>{% endif %}</p>
-  {% if is_admin and total %}
+  {% if is_admin and total and (is_owner or not f.cf) %}
   <div class="export">
     <a class="button small" href="{{ url_for('voters.export', fmt='csv', **query_args) }}">{{ icon('download', 16) }} CSV</a>
     <a class="button small" href="{{ url_for('voters.export', fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
@@ -196,13 +196,14 @@
         {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}
         {% if current_user.role != 'agent' %}{% if v.assigned_to %}<span class="tag agent-tag" title="{{ 'Handed over one by one' if v.one_by_one else 'Through their house' }}">{{ icon('user', 12) }} {{ v.assigned_to }}{{ '' if v.one_by_one else ' · house' }}</span>{% elif is_admin %}<span class="tag unassigned-tag">Unassigned</span>{% endif %}{% endif %}
       </p>
-      {% if is_owner %}
+      {% if can_mark_cf %}
       <form class="cf-form" method="post" action="{{ url_for('confirmed.set_confirmed', national_id=v.national_id) }}" data-confirm-toggle>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="back" value="{{ back_url }}#v-{{ v.national_id }}">
         <input type="hidden" name="confirmed" value="{{ '0' if v.confirmed else '1' }}">
         <button class="cf-btn {{ 'on' if v.confirmed }}" aria-pressed="{{ 'true' if v.confirmed else 'false' }}">{{ icon('check', 14) }} <span>{{ '100% confirmed' if v.confirmed else 'Mark confirmed' }}</span></button>
       </form>
+      {% elif can_view_cf and v.confirmed %}<span class="tag cf-tag">{{ icon('check', 12) }} 100% confirmed</span>
       {% endif %}
     </div>
     </div>

@@ -240,3 +240,42 @@ def test_owner_shares_voter_cards(app):
     assert boss.post("/voters/share", data={"csrf_token": csrf(boss, "/"), "ids": ["A200001"]}).status_code == 403
     assert boss.get("/voters/A200001/card.png").status_code == 403
     conn.close()
+
+
+def test_owner_gives_view_or_mark_access_without_downloads(app):
+    add_owner(app)
+    conn = connect(app.config["DATABASE"])
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    boss = conn.execute("SELECT id FROM users WHERE username = 'boss'").fetchone()[0]
+    o, v, b = app.test_client(), app.test_client(), app.test_client()
+    login(o, "admin", OWNER_PW)
+    login(v, "viewer", USER_PW)
+    login(b, "boss", ADMIN_PW)
+    o.post("/voters/A200001/confirm", data={"csrf_token": csrf(o, "/"), "confirmed": "1"})
+    assert v.get("/confirmed").status_code == 403
+    # another admin can't hand out access
+    assert b.post(f"/admin/users/{viewer}", data={"csrf_token": csrf(b, "/admin/users"),
+                                                  "action": "set_confirmed_access", "level": "view"}).status_code == 403
+    assert "100% confirmed list" not in b.get("/admin/users").get_data(as_text=True)
+    # view: sees the page, the filter and the tag, can't mark, can't download
+    o.post(f"/admin/users/{viewer}", data={"csrf_token": csrf(o, "/admin/users"), "action": "set_confirmed_access",
+                                           "level": "view"})
+    page = v.get("/confirmed").get_data(as_text=True)
+    assert v.get("/confirmed").status_code == 200 and "Add from a list" not in page and "export" not in page
+    assert v.get("/?cf=1").get_data(as_text=True).count('id="v-A2000') == 1
+    assert "Mark confirmed" not in v.get("/").get_data(as_text=True)
+    assert v.post("/voters/A200002/confirm", data={"csrf_token": csrf(v, "/"), "confirmed": "1"}).status_code == 403
+    # mark, for an admin account: may mark and add from a list, still no downloads
+    o.post(f"/admin/users/{boss}", data={"csrf_token": csrf(o, "/admin/users"), "action": "set_confirmed_access",
+                                         "level": "mark"})
+    assert b.post("/voters/A200002/confirm", data={"csrf_token": csrf(b, "/"), "confirmed": "1"}).status_code == 302
+    assert "Add from a list" in b.get("/confirmed").get_data(as_text=True)
+    assert b.get("/export.csv?cf=1").status_code == 403 and b.get("/voters.pdf?cf=1").status_code == 403
+    assert b.get("/export.csv").status_code == 200 and "100% confirmed" not in b.get("/export.csv").get_data(as_text=True)
+    assert o.get("/export.csv?cf=1").status_code == 200                  # the owner still can
+    # the owner sees who marked; access off again ends it
+    assert "boss" in o.get("/admin/changes?type=voter_confirm").get_data(as_text=True)
+    o.post(f"/admin/users/{boss}", data={"csrf_token": csrf(o, "/admin/users"), "action": "set_confirmed_access",
+                                         "level": ""})
+    assert b.get("/confirmed").status_code == 403
+    conn.close()

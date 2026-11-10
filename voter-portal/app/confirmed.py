@@ -9,7 +9,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, abort, flash, redirect, render_template, request, url_for
 
 from . import audit, campaign
-from .auth import can_manage_confirmed_voters
+from .auth import confirmed_marker_required, confirmed_viewer_required, is_owner
 from .db import get_db, now_iso
 
 bp = Blueprint("confirmed", __name__)
@@ -55,7 +55,7 @@ def by_house():
 
 
 @bp.post("/voters/<national_id>/confirm")
-@can_manage_confirmed_voters
+@confirmed_marker_required
 def set_confirmed(national_id):
     """Mark (confirmed=1) or unmark (confirmed=0). Takes the wanted state, not a toggle, so a
     double tap on a slow phone can't undo itself."""
@@ -95,13 +95,13 @@ def set_confirmed(national_id):
 
 
 @bp.route("/confirmed")
-@can_manage_confirmed_voters
+@confirmed_viewer_required
 def overview():
-    return render_template("confirmed/overview.html", m=metrics(), houses=by_house())
+    return render_template("confirmed/overview.html", m=metrics(), houses=by_house(), owner=is_owner())
 
 
 @bp.route("/confirmed/metrics.json")
-@can_manage_confirmed_voters
+@confirmed_viewer_required
 def metrics_json():
     resp = metrics()
     return resp
@@ -147,7 +147,7 @@ def _sort_list(ids):
 
 
 @bp.post("/confirmed/list")
-@can_manage_confirmed_voters
+@confirmed_marker_required
 def list_preview():
     ids = _ids_from_text(request.form.get("ids", ""))
     if not ids:
@@ -157,7 +157,7 @@ def list_preview():
 
 
 @bp.post("/confirmed/list/apply")
-@can_manage_confirmed_voters
+@confirmed_marker_required
 def list_apply():
     groups = _sort_list(_ids_from_text(request.form.get("ids", "")))
     take = groups["new"] + (groups["other"] if request.form.get("include_other") else [])

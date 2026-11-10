@@ -168,6 +168,47 @@ def is_owner(user=None):
     return user["username"].casefold() == OWNER_USERNAME and not _owner_flagged()
 
 
+CONFIRMED_ACCESS = {"": "No access", "view": "View", "mark": "View and mark"}
+
+
+def confirmed_access(user=None):
+    """'owner', 'mark', 'view' or '' for the 100% confirmed list. Only the owner gives access; downloads stay
+    with the owner."""
+    user = user if user is not None else g.get("user")
+    if user is None:
+        return ""
+    if is_owner(user):
+        return "owner"
+    if not user["can_login"] or user["deleted_at"] or not user["is_active"]:
+        return ""
+    return user["confirmed_access"] if user["confirmed_access"] in ("view", "mark") else ""
+
+
+def can_view_confirmed(user=None):
+    return confirmed_access(user) in ("owner", "view", "mark")
+
+
+def can_mark_confirmed(user=None):
+    return confirmed_access(user) in ("owner", "mark")
+
+
+def _confirmed_gate(test):
+    def decorator(view):
+        @functools.wraps(view)
+        @login_required
+        def wrapped(*args, **kwargs):
+            if not test():
+                audit.log("access_denied", target=request.path)
+                abort(403)
+            return view(*args, **kwargs)
+        return wrapped
+    return decorator
+
+
+confirmed_viewer_required = _confirmed_gate(can_view_confirmed)
+confirmed_marker_required = _confirmed_gate(can_mark_confirmed)
+
+
 def can_manage_confirmed_voters(view):
     """Strict rule for every confirmed-voter route: only the owner account, nobody else."""
     @functools.wraps(view)

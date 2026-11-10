@@ -86,6 +86,7 @@ def create_app(test_config=None):
     @app.context_processor
     def inject():
         return {"csrf_token": auth.csrf_token, "current_user": g.get("user"), "is_admin": auth.is_admin(), "is_owner": auth.is_owner(),
+                "can_view_cf": auth.can_view_confirmed(), "can_mark_cf": auth.can_mark_confirmed(),
                 "confirmed_metrics": confirmed.metrics,
                 "campaign_banner": campaign.banner, "whatsapp_url": campaign.whatsapp_url,
                 "sms_url": campaign.sms_url, "viber_url": campaign.viber_url, "campaign_message": campaign.message,

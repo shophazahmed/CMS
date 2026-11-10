@@ -100,14 +100,15 @@
   <h2>Sign-in accounts</h2>
   <div class="table-wrap">
   <table class="stack">
-    <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Username</th><th>Role</th>{% if is_owner %}<th>Confirmed list</th>{% endif %}<th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>
     <tbody>
     {% for u in users %}
     {% set locked_owner = u.id == owner_id and u.id != current_user.id %}
     <tr class="{{ '' if u.is_active else 'inactive' }}">
       <td data-label="User">{{ u.username }}{% if u.id == current_user.id %} <span class="muted">(you)</span>{% endif %}{% if u.id == owner_id %} <span class="badge">owner</span>{% endif %}
         {% if u.role != 'admin' %}<a class="small-text" href="{{ url_for('canvass.my_houses', agent=u.id) }}">Dashboard ›</a>
-        <span class="muted small-text">{{ u.houses }} houses · {{ u.singles }} one by one</span>{% endif %}</td>
+        <span class="muted small-text">{{ u.houses }} houses · {{ u.singles }} one by one</span>{% endif %}
+        </td>
       <td data-label="Role">
         <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -118,6 +119,18 @@
           <noscript><button>Set role</button></noscript>
         </form>
       </td>
+      {% if is_owner %}<td data-label="Confirmed list">
+        {% if u.id != owner_id %}
+        <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline cf-access">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="set_confirmed_access">
+          <select name="level" data-autosubmit>
+              {% for k, label in cf_access.items() %}<option value="{{ k }}" {{ 'selected' if (u.confirmed_access or '') == k }}>{{ label }}</option>{% endfor %}
+            </select>
+          <noscript><button>Save</button></noscript>
+        </form>
+        {% else %}<span class="muted small-text">Owner</span>{% endif %}
+      </td>{% endif %}
       <td data-label="Status">
         {{ 'Active' if u.is_active else 'Deactivated' }}
         {% if u.locked_until %}<span class="badge warn">locked until {{ u.locked_until[:16] }}</span>{% endif %}

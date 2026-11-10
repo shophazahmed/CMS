@@ -21,7 +21,7 @@ from flask import (
 )
 
 from . import audit, campaign, personal
-from .auth import admin_required, is_admin, is_owner, login_required
+from .auth import admin_required, can_view_confirmed, is_admin, is_owner, login_required
 from .db import get_db, now_iso
 from .normalize import clean_text, normalize_age, normalize_id, normalize_party, normalize_phone, normalize_sex
 
@@ -73,7 +73,7 @@ def read_filters(args):
         # Responsible agent (house or one by one): an agent's id, or "none"
         "ag": args.get("ag", "") if args.get("ag", "") == "none" or args.get("ag", "").isdigit() else "",
         # 100% confirmed (1) / not (0): only the 'admin' account may filter on it
-        "cf": args.get("cf", "") if args.get("cf", "") in ("0", "1") and is_owner() else "",
+        "cf": args.get("cf", "") if args.get("cf", "") in ("0", "1") and can_view_confirmed() else "",
         "dc": args.get("dc", "") if args.get("dc", "") in ("0", "1") else "",
         "va": args.get("va", "") if args.get("va", "") == "any" or args.get("va", "").isdigit() else "",
         "sort": args.get("sort", "name") if args.get("sort") in SORTS else "name",
@@ -256,7 +256,7 @@ def owner_columns():
     """Extra SELECT columns only the 'admin' account gets (whether a voter is 100% confirmed)."""
     from .confirmed import CONFIRMED_COLUMN
 
-    return f", {CONFIRMED_COLUMN}" if is_owner() else ""
+    return f", {CONFIRMED_COLUMN}" if can_view_confirmed() else ""
 
 
 WHO = ("(SELECT username FROM users WHERE id = voters.status_by) AS status_by_name,"
@@ -338,7 +338,7 @@ def detail(national_id):
         "SELECT u.id, u.username FROM house_assignments a JOIN users u ON u.id = a.user_id WHERE a.house_name = ?",
         (voter["house_name"],)).fetchone() if voter["house_name"] else None
     confirmation = db.execute("SELECT * FROM confirmed_voters WHERE national_id = ?",
-                              (national_id,)).fetchone() if is_owner() else None
+                              (national_id,)).fetchone() if can_view_confirmed() else None
     housemates = []
     if voter["house_name"]:
         w, p = scoped(" WHERE house_name = ? AND national_id != ?", [voter["house_name"], national_id])
@@ -718,6 +718,8 @@ def export_pdf():
     from .pdf_export import MAX_ROWS, build_pdf
 
     f = read_filters(request.args)
+    if f.get("cf") and not is_owner():  # no confirmed-list downloads except for the owner
+        abort(403)
     where, params = build_where(f)
     lang = "dv" if request.args.get("lang") == "dv" else "en"
     rows = get_db().execute(
@@ -751,6 +753,8 @@ def export(fmt):
     f = read_filters(request.args)
     where, params = build_where(f)
     owner = is_owner()
+    if f.get("cf") and not owner:  # people given access may look, but the list never leaves the portal
+        abort(403)
     extra = (", (SELECT confirmed_at FROM confirmed_voters cv WHERE cv.national_id = voters.national_id)"
              " AS confirmed_at") if owner else ""
     rows = get_db().execute(

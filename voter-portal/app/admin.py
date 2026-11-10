@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
 from . import audit
-from .auth import (CONFIRMED_ACTIONS, ROLE_LABELS, ROLES, admin_required, generate_password, hash_password, is_owner,
+from .auth import (CONFIRMED_ACCESS, CONFIRMED_ACTIONS, ROLE_LABELS, ROLES, admin_required, generate_password, hash_password, is_owner,
                    password_problem)
 from .db import get_db, now_iso
 from .normalize import clean_text, normalize_phone
@@ -44,6 +44,7 @@ def users():
     people = [u for u in rows if u["role"] in ("agent", "user", "admin")]
     owner_id = next((u["id"] for u in logins if is_owner(u)), None)
     return render_template("admin/users.html", agents=agents, users=logins, people=people, owner_id=owner_id,
+                           cf_access=CONFIRMED_ACCESS,
                            roles=("user", "admin"), role_labels=ROLE_LABELS)
 
 
@@ -157,7 +158,20 @@ def update_user(user_id):
     if user["deleted_at"]:
         abort(404)
 
-    if action == "rename":
+    if action == "set_confirmed_access":
+        # Only the owner hands out the 100% confirmed list, and only to people who sign in
+        if not is_owner() or is_owner(user) or not user["can_login"]:
+            audit.log("access_denied", target=f"user {user['username']}", detail={"action": action})
+            abort(403)
+        level = request.form.get("level", "")
+        if level not in CONFIRMED_ACCESS:
+            abort(400)
+        if level != user["confirmed_access"]:
+            db.execute("UPDATE users SET confirmed_access = ? WHERE id = ?", (level, user_id))
+            audit.log("confirmed_access", target=user["username"], detail={"from": user["confirmed_access"], "to": level})
+            flash(f"{user['username']}: confirmed list {CONFIRMED_ACCESS[level].lower()}.", "success")
+
+    elif action == "rename":
         new = request.form.get("username", "").strip()
         if not user["can_login"]:
             abort(400)  # agents are renamed with Edit
