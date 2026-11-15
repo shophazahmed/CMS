@@ -308,3 +308,33 @@ def test_source_files_with_extra_words_in_the_name(tmp_path):
                      "--log", str(tmp_path / "log"), "--no-seed-users"])
     row = sqlite3.connect(db).execute("SELECT full_name, sex FROM voters").fetchone()
     assert row == ("Renamed File", "F")
+
+
+def test_ar_yw_marks_apply_even_to_hand_edited_voters(tmp_path):
+    from openpyxl import Workbook
+
+    data = tmp_path / "data"
+    data.mkdir()
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["ID", "Name", "Sex", "Address", "Party"])
+    ws.append(["A400001", "Edited Person", "F", "Rose", "MDP"])
+    ws.append(["A400002", "Plain Person", "M", "Rose", "MDP"])
+    wb.save(data / "gadhoo-new voters.xlsx")
+    db = tmp_path / "vp.db"
+    args = ["--data-dir", str(data), "--db", str(db), "--photos-dir", str(tmp_path / "p"),
+            "--log", str(tmp_path / "log"), "--no-seed-users"]
+    ingest.main(args)
+    conn = sqlite3.connect(db)
+    assert conn.execute("SELECT SUM(ar), SUM(yw) FROM voters").fetchone() == (0, 0)  # no columns: left alone
+    conn.execute("UPDATE voters SET updated_by = 1 WHERE national_id = 'A400001'")  # edited in the portal
+    conn.commit()
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["ID", "Name", "Sex", "Address", "Party", "AR", "YW"])
+    ws.append(["A400001", "Edited Person", "F", "Rose", "MDP", "AR", "YW"])
+    ws.append(["A400002", "Plain Person", "M", "Rose", "MDP", None, "YW"])
+    wb.save(data / "gadhoo-new voters.xlsx")
+    ingest.main(args)
+    rows = dict((r[0], r[1:]) for r in conn.execute("SELECT national_id, ar, yw FROM voters"))
+    assert rows == {"A400001": (1, 1), "A400002": (0, 1)}

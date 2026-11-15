@@ -176,11 +176,14 @@ def dashboard():
     people = db.execute("SELECT id, username, role FROM users ORDER BY username COLLATE NOCASE").fetchall()
     who_name = next((u["username"] for u in people if str(u["id"]) == who), "")
     no_house = db.execute(f"SELECT COUNT(*) FROM voters WHERE house_name = ''{scope}", extra).fetchone()[0]
+    wings = db.execute(
+        "SELECT SUM(ar) AS ar, SUM(ar AND status != 'new') AS ar_reached, SUM(yw) AS yw,"
+        f" SUM(yw AND status != 'new') AS yw_reached FROM voters WHERE 1{scope}", extra).fetchone()
     return render_template(
         "canvass/dashboard.html", rows=rows, t=totals(rows), act=activity(int(who) if who else None, rng),
         parties=parties, agents=agents, people=people, who=who, who_name=who_name, rng=rng,
         party=party, agent=agent, sort=sort, sorts=SORTS, no_house=no_house,
-        leaders=activity(None, rng)["leaders"],
+        leaders=activity(None, rng)["leaders"], wings=wings,
     )
 
 

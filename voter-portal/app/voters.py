@@ -40,6 +40,8 @@ SORTS = {
     "location": "location = '', location COLLATE NOCASE, house_name COLLATE NOCASE, full_name COLLATE NOCASE",
 }
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
+WINGS = {"ar": ("ar = 1", "AR"), "yw": ("yw = 1", "YW"), "both": ("ar = 1 AND yw = 1", "AR and YW"),
+         "any": ("(ar = 1 OR yw = 1)", "AR or YW"), "none": ("ar = 0 AND yw = 0", "Neither AR nor YW")}
 STATUSES = {"new": "Not contacted", "contacted": "Contacted", "followup": "Follow up", "noanswer": "No answer"}
 MAX_NOTES = 2000
 
@@ -75,6 +77,8 @@ def read_filters(args):
         # 100% confirmed (1) / not (0): only the 'admin' account may filter on it
         "cf": args.get("cf", "") if args.get("cf", "") in ("0", "1") and can_view_confirmed() else "",
         "dc": args.get("dc", "") if args.get("dc", "") in ("0", "1") else "",
+        # AR / YW marks from the party list: ar, yw, both, any (either) or none
+        "wg": args.get("wg", "") if args.get("wg", "") in WINGS else "",
         "va": args.get("va", "") if args.get("va", "") == "any" or args.get("va", "").isdigit() else "",
         "sort": args.get("sort", "name") if args.get("sort") in SORTS else "name",
     }
@@ -160,6 +164,8 @@ def build_where(f):
         # Anyone this person reached (their own status), not only voters they were last to update
         clauses.append("national_id IN (SELECT national_id FROM canvass WHERE user_id = ? AND status != 'new')")
         params.append(int(f["by"]))
+    if f.get("wg"):
+        clauses.append(WINGS[f["wg"]][0])
     if f.get("dc") == "1":
         clauses.append("deceased = 1")
     elif f.get("dc") == "0":
@@ -299,6 +305,7 @@ def filter_chips(f, query_args):
         "va": _agent_name,
         "cf": lambda v: "100% confirmed" if v == "1" else "Not confirmed",
         "dc": lambda v: "Deceased only" if v == "1" else "Hide deceased",
+        "wg": lambda v: WINGS[v][1],
         "by": lambda v: _agent_name(v).replace("Assigned to", "Contacted by"),
         "ag": lambda v: "No agent" if v == "none" else _agent_name(v).replace("Assigned to", "Agent:"),
     }
@@ -676,7 +683,7 @@ def delete(national_id):
 EXPORT_HEADERS = ["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
                   "Agent", "Agent via", "Status", "Status changed", "Status by", "Notes",
                   "Last edited", "Last edited by", "Location", "Deceased",
-                  "Name (Dhivehi)", "House (Dhivehi)"]
+                  "Name (Dhivehi)", "House (Dhivehi)", "AR", "YW"]
 
 # The agent responsible for a voter: the one they were handed to individually, else their house's agent
 EXPORT_AGENT = (
@@ -768,7 +775,8 @@ def export(fmt):
          _safe_cell(r["status_by_name"] or ""), _safe_cell(r["all_notes"] or ""),
          _local(r["updated_at"]) if r["updated_by"] else "",
          _safe_cell(r["updated_by_name"] or ""), _safe_cell(r["location"]),
-         "yes" if r["deceased"] else "", _safe_cell(r["full_name_dv"]), _safe_cell(r["house_name_dv"])]
+         "yes" if r["deceased"] else "", _safe_cell(r["full_name_dv"]), _safe_cell(r["house_name_dv"]),
+         "AR" if r["ar"] else "", "YW" if r["yw"] else ""]
         + (["yes" if r["confirmed_at"] else "", _local(r["confirmed_at"])] if owner else [])
         for n, r in enumerate(rows, 1)
     ]

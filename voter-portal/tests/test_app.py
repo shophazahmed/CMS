@@ -612,3 +612,22 @@ def test_lists_are_numbered(app):
     assert rows[0][:2] == ["#", "ID"] and [r[0] for r in rows[1:]] == ["1", "2", "3"]
     text = pymupdf.open("pdf", client.get("/voters.pdf").data)[0].get_text()
     assert "#" in text and all(f"\n{n}\n" in f"\n{text}" for n in ("1", "2", "3"))
+
+
+def test_ar_yw_filter_badges_and_export(app):
+    from app.db import connect
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET ar = 1 WHERE national_id = 'A200001'")
+    conn.execute("UPDATE voters SET yw = 1 WHERE national_id IN ('A200001', 'A200002')")
+    conn.commit()
+    c = app.test_client()
+    login(c, "boss", ADMIN_PW)
+    page = c.get("/?wg=ar").get_data(as_text=True)
+    assert "Aminath Alpha" in page and "Moosa Beta" not in page and "wing-ar" in page
+    both = c.get("/?wg=both").get_data(as_text=True)
+    assert "Aminath Alpha" in both and "Moosa Beta" not in both
+    assert "Moosa Beta" in c.get("/?wg=yw").get_data(as_text=True)
+    csv_text = c.get("/export.csv?wg=yw").get_data(as_text=True)
+    assert csv_text.splitlines()[0].rstrip().endswith("AR,YW")
+    dash = c.get("/dashboard").get_data(as_text=True)
+    assert "wing-ar" in dash and "wing-yw" in dash and "0 of 1" in dash and "0 of 2" in dash

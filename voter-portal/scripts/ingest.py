@@ -95,9 +95,20 @@ ALIASES = {
     "party": {"party", "partyname", "politicalparty", "affiliation", "partyaffiliation"},
     "phone": {"phone", "phoneno", "phonenumber", "mobile", "mobileno", "mobilenumber", "contact", "contactno",
               "contactnumber", "tel", "telephone", "mob"},
+    "ar": {"ar", "arwing", "womenswing", "womanswing", "markedar"},
+    "yw": {"yw", "ywwing", "youthwing", "markedyw"},
     "photo": {"photo", "photopath", "photofile", "photoname", "image", "imagefile", "picture", "pic",
               "photoref", "img", "filename", "file"},
 }
+TAGS = ("ar", "yw")
+
+
+def tag_value(raw):
+    """AR / YW cell -> 1 (marked) or 0 (blank / no)."""
+    text = header_key(raw if raw is not None else "")
+    return 0 if text in ("", "0", "no", "n", "false", "none", "x") else 1
+
+
 NEWER_WORDS = ("updat", "new", "latest", "current", "2026")
 # Fallback substring rules, checked in this order.
 SUBSTRINGS = [
@@ -404,6 +415,8 @@ def extract(path, priority, label, log, finder):
                       "full_name_dv": clean_text(cell(row, "full_name_dv")),
                       "house_name_dv": clean_text(cell(row, "house_name_dv")),
                       "party": normalize_party(cell(row, "party"))}
+            for tag in TAGS:  # AR / YW marks: a column that is there sets yes or no; no column leaves them alone
+                values[tag] = tag_value(cell(row, tag)) if tag in roles else None
             values["phone"], note = normalize_phone(cell(row, "phone"))
             if note:
                 log.add("INFO", "ODD_PHONE", nid, f"{where}: {note}")
@@ -487,6 +500,8 @@ def merge(records, log):
                 if other is chosen or val in ("", None):
                     continue
                 check_conflict(f, nid, chosen, other, log)
+        for tag in TAGS:
+            out[tag] = next((r.values[tag] for r in recs if r.values.get(tag) is not None), None)
         out["sources"] = sorted({r.source for r in recs}, key=lambda s: [x[1] for x in SOURCES].index(s))
         out["_photo_rec"] = next((r for r in recs if r.photo_blob or r.photo_ref), None)
         merged[nid] = out
@@ -627,6 +642,14 @@ def load(conn, merged, mode, log):
     for nid, v in merged.items():
         existing = conn.execute("SELECT * FROM voters WHERE national_id = ?", (nid,)).fetchone()
         src = "import: " + ", ".join(v["sources"])
+        tags = {t: v.get(t) for t in TAGS if v.get(t) is not None}
+        if existing is not None and tags:
+            # AR / YW are list memberships, not portal edits: applied even to hand-edited voters
+            changed = conn.execute(
+                f"UPDATE voters SET {', '.join(f'{t} = ?' for t in tags)} WHERE national_id = ?"
+                f" AND ({' OR '.join(f'{t} != ?' for t in tags)})",
+                list(tags.values()) + [nid] + list(tags.values())).rowcount
+            counts["tags_changed"] += changed
         if existing is None:
             conn.execute(
                 "INSERT INTO voters (national_id, full_name, sex, age, house_name, party, phone, location, full_name_dv,"
@@ -635,6 +658,9 @@ def load(conn, merged, mode, log):
                  v["full_name_dv"], v["house_name_dv"],
                  v["photo_path"], src, stamp, stamp),
             )
+            if tags:
+                conn.execute(f"UPDATE voters SET {', '.join(f'{t} = ?' for t in tags)} WHERE national_id = ?",
+                             list(tags.values()) + [nid])
             counts["inserted"] += 1
         elif mode != "replace" and (existing["updated_by"] is not None or existing["source"] == "manual"):
             log.add("INFO", "KEPT_PORTAL_EDIT", nid, "edited in the portal since the last import; file data not applied")

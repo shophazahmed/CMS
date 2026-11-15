@@ -31,6 +31,10 @@
   <div class="kpi"><span class="kpi-label"><i class="dot seg-noanswer"></i>No answer</span><strong>{{ t.noanswer }}</strong></div>
   <div class="kpi"><span class="kpi-label"><i class="dot seg-track"></i>{{ 'Not reached' if (who or rng.label) else 'Not contacted' }}</span><strong>{{ t.new }}</strong></div>
   <div class="kpi"><span class="kpi-label">Houses finished</span><strong>{{ t.done_houses }}<small class="muted"> / {{ t.houses }}</small></strong></div>
+  {% for key, label in [('ar', 'AR'), ('yw', 'YW')] if wings[key] %}
+  <a class="kpi" href="{{ url_for('voters.search', wg=key) }}"><span class="kpi-label"><span class="tag wing-{{ key }}">{{ label }}</span> reached</span>
+    <strong>{{ (100 * (wings[key ~ '_reached'] or 0) / wings[key])|round|int }}%</strong><span class="muted">{{ wings[key ~ '_reached'] or 0 }} of {{ wings[key] }}</span></a>
+  {% endfor %}
   {% if rng.label %}
   <div class="kpi"><span class="kpi-label">Updates · {{ rng.label }}</span><strong>{{ act.in_range }}</strong>{% if who_name %}<span class="muted">by {{ who_name }}</span>{% endif %}</div>
   {% else %}

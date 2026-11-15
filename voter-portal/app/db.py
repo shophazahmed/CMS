@@ -146,6 +146,8 @@ def init_schema(conn):
         ("deceased", "deceased INTEGER NOT NULL DEFAULT 0"),
         ("full_name_dv", "full_name_dv TEXT NOT NULL DEFAULT ''"),
         ("house_name_dv", "house_name_dv TEXT NOT NULL DEFAULT ''"),
+        ("ar", "ar INTEGER NOT NULL DEFAULT 0"),
+        ("yw", "yw INTEGER NOT NULL DEFAULT 0"),
     ):
         if name not in columns:
             try:
