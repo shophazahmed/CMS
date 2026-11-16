@@ -371,17 +371,18 @@ ol, ul { padding-left: 1.25rem; }
 /* --- canvassing ---------------------------------------------------------- */
 :root {
   /* Status colours validated as a categorical set (CVD-safe in stacking order, light and dark). */
-  --st-new: #8a96a3; --st-contacted: #1baf7a; --st-followup: #2a78d6; --st-noanswer: #eb6834;
+  --st-new: #8a96a3; --st-contacted: #1baf7a; --st-followup: #2a78d6; --st-noanswer: #eb6834; --st-wontvote: #9b1c2e;
   --track: #e6eaee;
 }
 @media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --st-new: #7d8995; --st-contacted: #199e70; --st-followup: #3987e5; --st-noanswer: #d95926; --track: #2a3238; }
+  :root:not([data-theme="light"]) { --st-new: #7d8995; --st-contacted: #199e70; --st-followup: #3987e5; --st-noanswer: #d95926; --st-wontvote: #c23a4e; --track: #2a3238; }
 }
-:root[data-theme="dark"] { --st-new: #7d8995; --st-contacted: #199e70; --st-followup: #3987e5; --st-noanswer: #d95926; --track: #2a3238; }
+:root[data-theme="dark"] { --st-new: #7d8995; --st-contacted: #199e70; --st-followup: #3987e5; --st-noanswer: #d95926; --st-wontvote: #c23a4e; --track: #2a3238; }
 .st-new { --st: var(--st-new); }
 .st-contacted { --st: var(--st-contacted); }
 .st-followup { --st: var(--st-followup); }
 .st-noanswer { --st: var(--st-noanswer); }
+.st-wontvote { --st: var(--st-wontvote); }
 .chip b { font-weight: 800; margin-left: .15rem; }
 .status-chips .chip:not(.on)[class*="st-"]::before {
   content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--st);
@@ -452,6 +453,7 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .seg-contacted { fill: var(--st-contacted); background: var(--st-contacted); }
 .seg-followup { fill: var(--st-followup); background: var(--st-followup); }
 .seg-noanswer { fill: var(--st-noanswer); background: var(--st-noanswer); }
+.seg-wontvote { fill: var(--st-wontvote); background: var(--st-wontvote); }
 .seg-track { background: var(--track); border: 1px solid var(--border); }
 .legend { display: flex; flex-wrap: wrap; gap: .35rem 1rem; margin: 0 0 .6rem; font-size: .85rem; color: var(--muted); }
 .legend span { display: inline-flex; align-items: center; gap: .35rem; }
@@ -612,6 +614,7 @@ textarea:focus { outline: 2px solid var(--accent); border-color: transparent; }
 
 /* My dashboard: latest voters this person reached */
 .st-tag-contacted { background: color-mix(in srgb, var(--st-contacted) 15%, var(--surface)); color: var(--text); border-color: transparent; }
+.st-tag-wontvote { background: color-mix(in srgb, var(--st-wontvote) 18%, var(--surface)); color: var(--text); border-color: transparent; }
 .st-tag-noanswer { background: color-mix(in srgb, var(--st-noanswer) 15%, var(--surface)); color: var(--text); border-color: transparent; }
 .recent-list { list-style: none; margin: 0; padding: 0; }
 .recent-list li { display: flex; flex-wrap: wrap; align-items: center; gap: .25rem .6rem; padding: .6rem 0; border-top: 1px solid var(--border); min-width: 0; }

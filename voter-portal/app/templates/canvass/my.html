@@ -19,8 +19,8 @@
   <a class="kpi link-kpi hero" href="{{ url_for('voters.search', by=agent.id, sort='house') }}">
     <span class="kpi-label">Voters reached by {{ agent.username if viewing_other else 'you' }}</span>
     <strong>{{ mine.total }}</strong>
-    <span class="muted">{{ mine.contacted or 0 }} contacted · {{ mine.followup or 0 }} follow up · {{ mine.noanswer or 0 }} no answer</span>
-    {{ progress({'total': mine.total, 'reached': mine.total, 'contacted': mine.contacted, 'followup': mine.followup, 'noanswer': mine.noanswer}, 'lg') }}
+    <span class="muted">{{ mine.contacted or 0 }} contacted · {{ mine.followup or 0 }} follow up · {{ mine.noanswer or 0 }} no answer · {{ mine.wontvote or 0 }} will not vote</span>
+    {{ progress({'total': mine.total, 'reached': mine.total, 'contacted': mine.contacted, 'followup': mine.followup, 'noanswer': mine.noanswer, 'wontvote': mine.wontvote}, 'lg') }}
   </a>
   <a class="kpi link-kpi" href="{{ url_for('voters.search', by=agent.id, status='followup', sort='house') }}">
     <span class="kpi-label"><i class="dot seg-followup"></i>{{ 'Their' if viewing_other else 'Your' }} follow-ups</span><strong>{{ mine.followup or 0 }}</strong>

@@ -42,7 +42,8 @@ SORTS = {
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
 WINGS = {"ar": ("ar = 1", "AR"), "yw": ("yw = 1", "YW"), "both": ("ar = 1 AND yw = 1", "AR and YW"),
          "any": ("(ar = 1 OR yw = 1)", "AR or YW"), "none": ("ar = 0 AND yw = 0", "Neither AR nor YW")}
-STATUSES = {"new": "Not contacted", "contacted": "Contacted", "followup": "Follow up", "noanswer": "No answer"}
+STATUSES = {"new": "Not contacted", "contacted": "Contacted", "followup": "Follow up", "noanswer": "No answer",
+            "wontvote": "Will not vote"}
 MAX_NOTES = 2000
 
 

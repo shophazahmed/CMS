@@ -29,6 +29,7 @@
   <div class="kpi"><span class="kpi-label"><i class="dot seg-contacted"></i>Contacted</span><strong>{{ t.contacted }}</strong></div>
   <div class="kpi"><span class="kpi-label"><i class="dot seg-followup"></i>Follow up</span><strong>{{ t.followup }}</strong></div>
   <div class="kpi"><span class="kpi-label"><i class="dot seg-noanswer"></i>No answer</span><strong>{{ t.noanswer }}</strong></div>
+  <a class="kpi" href="{{ url_for('voters.search', status='wontvote') }}"><span class="kpi-label"><i class="dot seg-wontvote"></i>Will not vote</span><strong>{{ t.wontvote }}</strong></a>
   <div class="kpi"><span class="kpi-label"><i class="dot seg-track"></i>{{ 'Not reached' if (who or rng.label) else 'Not contacted' }}</span><strong>{{ t.new }}</strong></div>
   <div class="kpi"><span class="kpi-label">Houses finished</span><strong>{{ t.done_houses }}<small class="muted"> / {{ t.houses }}</small></strong></div>
   {% for key, label in [('ar', 'AR'), ('yw', 'YW')] if wings[key] %}

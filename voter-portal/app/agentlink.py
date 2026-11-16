@@ -154,7 +154,8 @@ def view(token):
     t = {"total": len(rows), "reached": reached,
          "contacted": sum(1 for r in rows if r["status"] == "contacted"),
          "followup": sum(1 for r in rows if r["status"] == "followup"),
-         "noanswer": sum(1 for r in rows if r["status"] == "noanswer")}
+         "noanswer": sum(1 for r in rows if r["status"] == "noanswer"),
+         "wontvote": sum(1 for r in rows if r["status"] == "wontvote")}
     resp = current_app.make_response(render_template(
         "agentlink/view.html", agent=agent, houses=houses, t=t, token=token, statuses=STATUSES, until=_local_day(link["expires_at"])))
     resp.headers["Cache-Control"] = "private, no-store"

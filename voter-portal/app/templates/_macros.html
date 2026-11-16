@@ -61,9 +61,9 @@
 {% macro progress(r, size='') -%}
 {% set total = r.total or 0 %}
 <svg class="pbar {{ size }}" viewBox="0 0 100 10" preserveAspectRatio="none" role="img"
-     aria-label="{{ r.reached or 0 }} of {{ total }} reached: {{ r.contacted or 0 }} contacted, {{ r.followup or 0 }} follow up, {{ r.noanswer or 0 }} no answer">
+     aria-label="{{ r.reached or 0 }} of {{ total }} reached: {{ r.contacted or 0 }} contacted, {{ r.followup or 0 }} follow up, {{ r.noanswer or 0 }} no answer, {{ r.wontvote or 0 }} will not vote">
   {%- if total %}{% set ns = namespace(x=0) %}
-  {%- for key, label in [('contacted', 'Contacted'), ('followup', 'Follow up'), ('noanswer', 'No answer')] %}
+  {%- for key, label in [('contacted', 'Contacted'), ('followup', 'Follow up'), ('noanswer', 'No answer'), ('wontvote', 'Will not vote')] %}
   {%- set n = r[key] or 0 %}
   {%- if n %}{% set w = 100 * n / total %}<rect class="seg-{{ key }}" x="{{ ns.x|round(3) }}" y="0" width="{{ w|round(3) }}" height="10"><title>{{ label }}: {{ n }} of {{ total }}</title></rect>{% set ns.x = ns.x + w %}{% endif %}
   {%- endfor %}
@@ -76,6 +76,7 @@
   <span><i class="seg-contacted"></i>Contacted</span>
   <span><i class="seg-followup"></i>Follow up</span>
   <span><i class="seg-noanswer"></i>No answer</span>
+  <span><i class="seg-wontvote"></i>Will not vote</span>
   <span><i class="seg-track"></i>Not contacted</span>
 </p>
 {%- endmacro %}

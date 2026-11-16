@@ -631,3 +631,16 @@ def test_ar_yw_filter_badges_and_export(app):
     assert csv_text.splitlines()[0].rstrip().endswith("AR,YW")
     dash = c.get("/dashboard").get_data(as_text=True)
     assert "wing-ar" in dash and "wing-yw" in dash and "0 of 1" in dash and "0 of 2" in dash
+
+
+def test_will_not_vote_status(app):
+    c = app.test_client()
+    login(c, "boss", ADMIN_PW)
+    assert "Will not vote" in c.get("/").get_data(as_text=True)  # in the status list and chips
+    r = c.post("/voters/A200001/canvass", data={"csrf_token": csrf(c, "/"), "status": "wontvote"})
+    assert r.status_code in (200, 302)
+    page = c.get("/?status=wontvote").get_data(as_text=True)
+    assert 'id="v-A200001"' in page and 'id="v-A200002"' not in page
+    dash = c.get("/dashboard").get_data(as_text=True)
+    assert "seg-wontvote" in dash and "Will not vote" in dash
+    assert "Will not vote" in c.get("/export.csv?status=wontvote").get_data(as_text=True)
