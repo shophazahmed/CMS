@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from . import audit, campaign
+from . import audit, campaign, visits
 from . import personal as own_view  # (canvass.personal() is a function here)
 from .auth import role_required
 from .db import get_db, now_iso
@@ -51,7 +51,9 @@ def house_rows(where="", params=(), sort="progress", count_if=("1", []), having=
     if clause:
         where, params = f"{where} AND {clause}", list(params) + extra
     cond, cond_params = count_if
-    sql = (f"{HOUSE_STATS.format(c=f'({cond})', src=src)} WHERE v.house_name != '' {where} GROUP BY v.house_name"
+    # Only the people who live in the house: voters living away or at another house aren't counted here
+    sql = (f"{HOUSE_STATS.format(c=f'({cond})', src=src)} WHERE v.house_name != ''"
+           f" AND v.lives_at IN ('home', 'unknown') {where} GROUP BY v.house_name"
            f" {having} ORDER BY {SORTS[sort]}")
     return get_db().execute(sql, list(cond_params) * 5 + list(params)).fetchall()
 
@@ -180,7 +182,7 @@ def dashboard():
         "canvass/dashboard.html", rows=rows, t=totals(rows), act=activity(int(who) if who else None, rng),
         parties=parties, agents=agents, people=people, who=who, who_name=who_name, rng=rng,
         party=party, agent=agent, sort=sort, sorts=SORTS, no_house=no_house,
-        leaders=activity(None, rng)["leaders"],
+        leaders=activity(None, rng)["leaders"], vn=visits.dashboard_numbers(),
     )
 
 
@@ -236,7 +238,9 @@ def my_houses():
     return render_template("canvass/my.html", rows=rows, t=t, act=activity(user["id"], rng), agent=user, singles=singles,
                            rng=rng,
                            mine=mine, recent=recent, statuses=STATUS_LABELS,
-                           suggestion=suggestion, sort=sort, viewing_other=user["id"] != g.user["id"])
+                           suggestion=suggestion, sort=sort, viewing_other=user["id"] != g.user["id"],
+                           next_houses=visits.next_houses()[0] if user["id"] == g.user["id"] else [],
+                           today=visits.today(), outcomes=visits.OUTCOMES)
 
 
 # --- admin: agents and house assignments ---------------------------------------------

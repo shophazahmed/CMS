@@ -21,6 +21,7 @@ from flask import (
 )
 
 from . import audit, campaign, personal
+from .visits import LIVES, lives_label
 from .auth import admin_required, can_view_confirmed, is_admin, is_owner, login_required
 from .db import get_db, now_iso
 from .normalize import clean_text, normalize_age, normalize_id, normalize_party, normalize_phone, normalize_sex
@@ -75,6 +76,9 @@ def read_filters(args):
         # 100% confirmed (1) / not (0): only the 'admin' account may filter on it
         "cf": args.get("cf", "") if args.get("cf", "") in ("0", "1") and can_view_confirmed() else "",
         "dc": args.get("dc", "") if args.get("dc", "") in ("0", "1") else "",
+        # Where they live: away (Malé, islands, abroad), one of those, another house, not known, at home
+        "lv": args.get("lv", "") if args.get("lv", "") in ("away", "male", "island", "abroad", "house",
+                                                            "unknown", "home") else "",
         "va": args.get("va", "") if args.get("va", "") == "any" or args.get("va", "").isdigit() else "",
         "sort": args.get("sort", "name") if args.get("sort") in SORTS else "name",
     }
@@ -160,6 +164,11 @@ def build_where(f):
         # Anyone this person reached (their own status), not only voters they were last to update
         clauses.append("national_id IN (SELECT national_id FROM canvass WHERE user_id = ? AND status != 'new')")
         params.append(int(f["by"]))
+    if f.get("lv") == "away":
+        clauses.append("lives_at IN ('male', 'island', 'abroad')")
+    elif f.get("lv"):
+        clauses.append("lives_at = ?")
+        params.append(f["lv"])
     if f.get("dc") == "1":
         clauses.append("deceased = 1")
     elif f.get("dc") == "0":
@@ -299,6 +308,9 @@ def filter_chips(f, query_args):
         "va": _agent_name,
         "cf": lambda v: "100% confirmed" if v == "1" else "Not confirmed",
         "dc": lambda v: "Deceased only" if v == "1" else "Hide deceased",
+        "lv": lambda v: {"away": "Lives away", "male": "Lives in Malé", "island": "Lives on another island",
+                         "abroad": "Lives abroad", "house": "Lives at another house", "unknown": "Lives: not known",
+                         "home": "Lives at the registered house"}[v],
         "by": lambda v: _agent_name(v).replace("Assigned to", "Contacted by"),
         "ag": lambda v: "No agent" if v == "none" else _agent_name(v).replace("Assigned to", "Agent:"),
     }
@@ -353,7 +365,7 @@ def detail(national_id):
     people = db.execute(
         "SELECT c.*, u.username FROM canvass c JOIN users u ON u.id = c.user_id WHERE c.national_id = ?"
         " ORDER BY c.status_at DESC", (national_id,)).fetchall() if everyone else []
-    return render_template("voters/detail.html", v=voter, editor=editor, statuses=STATUSES, housemates=housemates,
+    return render_template("voters/detail.html", lives=LIVES, lives_label=lives_label, v=voter, editor=editor, statuses=STATUSES, housemates=housemates,
                            confirmation=confirmation, notes=notes, people=people, everyone=everyone,
                            status_user=status_user, back=_safe_back(request.args.get("back")),
                            assigned=assigned, house_agent=house_agent,
@@ -676,7 +688,7 @@ def delete(national_id):
 EXPORT_HEADERS = ["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
                   "Agent", "Agent via", "Status", "Status changed", "Status by", "Notes",
                   "Last edited", "Last edited by", "Location", "Deceased",
-                  "Name (Dhivehi)", "House (Dhivehi)"]
+                  "Name (Dhivehi)", "House (Dhivehi)", "Lives at"]
 
 # The agent responsible for a voter: the one they were handed to individually, else their house's agent
 EXPORT_AGENT = (
@@ -768,7 +780,8 @@ def export(fmt):
          _safe_cell(r["status_by_name"] or ""), _safe_cell(r["all_notes"] or ""),
          _local(r["updated_at"]) if r["updated_by"] else "",
          _safe_cell(r["updated_by_name"] or ""), _safe_cell(r["location"]),
-         "yes" if r["deceased"] else "", _safe_cell(r["full_name_dv"]), _safe_cell(r["house_name_dv"])]
+         "yes" if r["deceased"] else "", _safe_cell(r["full_name_dv"]), _safe_cell(r["house_name_dv"]),
+         _safe_cell(lives_label(r) or "At the registered house")]
         + (["yes" if r["confirmed_at"] else "", _local(r["confirmed_at"])] if owner else [])
         for n, r in enumerate(rows, 1)
     ]

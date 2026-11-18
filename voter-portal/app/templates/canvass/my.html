@@ -13,6 +13,26 @@
   {% endif %}
 </div>
 
+{% if next_houses %}
+<section class="card next-houses">
+  <div class="list-head">
+    <h2>{{ icon('home', 18) }} Next houses to visit</h2>
+    <a href="{{ url_for('visits.index', f='todo') }}">All ›</a>
+  </div>
+  <ul class="recent-list">
+    {% for r in next_houses %}
+    <li>
+      <a href="{{ url_for('visits.house', h=r.house) }}">{{ r.house }}</a>
+      {% if r.next_on and r.next_on < today %}<span class="tag vo-due">Overdue · {{ r.next_on|day }}</span>
+      {% elif r.next_on == today %}<span class="tag vo-due">Due today</span>
+      {% elif not r.visits %}<span class="tag vo-never">Never visited</span>{% endif %}
+      <span class="muted small-text">{{ r.total }} voter{{ 's' if r.total != 1 }}{% if r.visits %} · last: {{ outcomes[r.last_outcome] }} {{ r.last_at|local }}{% endif %}</span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
 <h2>{{ 'Their' if viewing_other else 'Your' }} canvassing{% if rng.label %} · {{ rng.label }}{% endif %}</h2>
 {{ range_picker(rng, 'canvass.my_houses', request.args.to_dict()) }}
 <section class="kpis" aria-label="Canvassing by {{ agent.username }}">

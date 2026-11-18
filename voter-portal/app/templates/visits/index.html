@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% from "_macros.html" import progress, icon, pager %}
+{% block title %}House visits{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>House visits</h1>
+  <p class="muted">{{ 'Everyone’s visits.' if is_admin else 'Your visits.' }} Tap a house to see who lives there and record a visit.</p>
+</div>
+
+<form class="searchbar" method="get" action="{{ url_for('visits.index') }}" role="search">
+  <div class="search-input">
+    {{ icon('search') }}
+    <input type="search" name="q" value="{{ q }}" placeholder="House name" aria-label="Search houses" autocomplete="off" enterkeyhint="search">
+    {% for k in ('f', 'agent', 'sort') %}{% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}{% endfor %}
+    <button class="primary" type="submit">Search</button>
+  </div>
+</form>
+
+<div class="chips status-chips" aria-label="Show">
+  {% for k, label in filters.items() %}
+  {% if not k or counts[k] or key == k %}
+  <a class="chip {{ 'on' if key == k }}" href="{{ url_for('visits.index', **dict(query_args, f=k)) }}">{{ label }} <b>{{ counts[k] }}</b></a>
+  {% endif %}
+  {% endfor %}
+</div>
+
+<form class="card filters visit-filters" method="get">
+  {% if q %}<input type="hidden" name="q" value="{{ q }}">{% endif %}
+  {% if key %}<input type="hidden" name="f" value="{{ key }}">{% endif %}
+  {% if agents %}
+  <label>Agent
+    <select name="agent" data-autosubmit>
+      <option value="">All houses</option>
+      <option value="none" {{ 'selected' if agent == 'none' }}>No agent</option>
+      {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if agent == a.id|string }}>{{ a.username }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  <label>Sort
+    <select name="sort" data-autosubmit>
+      {% for k, label in sorts.items() %}<option value="{{ k }}" {{ 'selected' if sort == k }}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <noscript><button class="primary">Apply</button></noscript>
+</form>
+
+{% if away.away or away.unknown %}
+<p class="away-line small-text">
+  <a href="{{ url_for('voters.search', lv='away', sort='location') }}">{{ icon('home', 14) }} {{ away.away }} voter{{ 's' if away.away != 1 }} live away</a>
+  <span class="muted">· Malé {{ away.male }} · other islands {{ away.island }} · abroad {{ away.abroad }}</span>
+  {% if away.unknown %}· <a href="{{ url_for('voters.search', lv='unknown') }}">{{ away.unknown }} not known</a>{% endif %}
+</p>
+{% endif %}
+
+<p class="muted small-text">{{ total }} house{{ 's' if total != 1 }}</p>
+{% if rows %}
+<ul class="house-list visit-list">
+  {% for r in rows %}
+  {% set due = r.next_on and r.next_on <= today %}
+  <li class="house-row {{ 'due' if due }}">
+    <a class="house-link" href="{{ url_for('visits.house', h=r.house) }}">
+      <span class="house-name">{{ r.house }}</span>
+      <span class="house-meta">
+        <span class="mono">{{ r.reached or 0 }}/{{ r.total }}</span>
+        {% if r.agent and current_user.role != 'agent' %}<span class="tag">{{ icon('user', 12) }} {{ r.agent }}</span>{% endif %}
+      </span>
+    </a>
+    <p class="visit-meta small-text">
+      {% if r.visits %}
+      <span class="tag vo-{{ r.last_outcome }}">{{ outcomes[r.last_outcome] }}</span>
+      <span class="muted">{{ r.last_at|local }}{% if is_admin and r.last_by %} · {{ r.last_by }}{% endif %} · {{ r.visits }} visit{{ 's' if r.visits != 1 }}</span>
+      {% else %}
+      <span class="tag vo-never">Never visited</span>
+      {% endif %}
+      {% if r.next_on %}<span class="tag {{ 'vo-due' if due }}">{% if r.next_on < today %}Overdue · {{ r.next_on|day }}{% elif r.next_on == today %}Due today{% else %}Next {{ r.next_on|day }}{% endif %}</span>{% endif %}
+      {% if r.transport %}<span class="tag vo-flag">Needs transport</span>{% endif %}
+      {% if r.senior %}<span class="tag vo-flag">Senior visit</span>{% endif %}
+    </p>
+  </li>
+  {% endfor %}
+</ul>
+{{ pager('visits.index', page, pages, query_args) }}
+{% else %}
+<div class="empty card"><p>No houses here.</p></div>
+{% endif %}
+{% if is_admin %}<p class="small-text"><a href="{{ url_for('visits.export') }}">{{ icon('download', 14) }} Download all visits (CSV)</a></p>{% endif %}
+{% endblock %}

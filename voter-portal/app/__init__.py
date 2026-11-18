@@ -7,7 +7,7 @@ import click
 from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from . import admin, agentlink, announce, auth, campaign, canvass, confirmed, fonts, imports, personal, share, voters
+from . import admin, agentlink, announce, auth, campaign, canvass, confirmed, fonts, imports, personal, share, visits, voters
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -68,6 +68,7 @@ def create_app(test_config=None):
     app.register_blueprint(fonts.bp)
     app.register_blueprint(announce.bp)
     app.register_blueprint(agentlink.bp)
+    app.register_blueprint(visits.bp)
     app.jinja_env.globals["dhivehi_font"] = fonts.font_file
     app.jinja_env.globals["dhivehi_font_name"] = fonts.font_name
     app.jinja_env.globals["share_people"] = share.people
@@ -131,6 +132,7 @@ def create_app(test_config=None):
         campaign.init_schema(conn)
         announce.init_schema(conn)
         agentlink.init_schema(conn)
+        visits.init_schema(conn)
         bootstrap_admin(conn)
         conn.close()
     return app

@@ -106,6 +106,31 @@ or export reads).
 - **Privacy:** confirm/unconfirm and confirmed-list exports are hidden from other admins' activity log,
   and other admins can't reset the `admin` password, change its role or deactivate it.
 
+## House visits
+
+**Visits** (top bar / tab bar) lists every house with people living in it: last visit (outcome,
+when, by whom for admins), number of visits, next visit date, and flags. Filters: To visit (never
+visited, due, overdue, or nobody met last time), Due today, Overdue, Never visited, Nobody home last
+time, Visited this week, Needs transport, Needs a senior visit; plus agent and sort.
+
+Tap a house to record a visit: **Met family / Nobody home / Come back later / Refused**, tick who you
+met, optional "needs transport" and "senior visit" flags, notes and a next-visit date. Recording a visit
+updates the visitor's own canvassing status, never undoing a better one:
+- Met family / Refused: everyone ticked becomes Contacted.
+- Come back later: those ticked (or, with nobody ticked, everyone not yet reached) become Follow up.
+- Nobody home: everyone not contacted yet becomes No answer.
+
+Agents, read-only users and admins can record visits (agents only for their own houses). Like
+status and notes, visits are personal: users and agents see their own, admins see everyone's, can
+delete a wrong visit and download all visits as CSV. My dashboard shows your next houses to visit;
+the admin Dashboard shows houses visited, visits today / this week, transport and away counts.
+
+**Lives at:** a voter registered at a house may live elsewhere: another house in Gadhdhoo, Malé,
+another island, abroad, or not known. Set it on the voter page or from the house page ("Lives
+elsewhere?"). Visits and house progress count only the people who live in the house; someone staying
+at another house shows up there. **Search → Lives at → Away** is the list to reach by phone.
+"Votes at" is the existing Location field from the official lists.
+
 ## Colours
 
 - **Settings → Portal colour** sets the main colour for everyone: MDP yellow, teal, blue, green,

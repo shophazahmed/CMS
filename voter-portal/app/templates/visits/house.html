@@ -1,0 +1,128 @@
+{% extends "base.html" %}
+{% from "_macros.html" import avatar, icon %}
+{% block title %}{{ house }} · visits{% endblock %}
+{% block content %}
+<a class="backlink" href="{{ url_for('visits.index') }}">{{ icon('back', 18) }} House visits</a>
+<div class="page-head">
+  <h1>{{ house }}</h1>
+  <p class="muted">{{ residents|length }} voter{{ 's' if residents|length != 1 }} live here
+    {%- if elsewhere %} · {{ elsewhere|length }} registered here live elsewhere{% endif %}
+    {%- if agent and current_user.role != 'agent' %} · agent {{ agent.username }}{% endif %}</p>
+</div>
+
+<form class="card form visit-form" method="post" action="{{ url_for('visits.record') }}" id="record">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="h" value="{{ house }}">
+  <h2>Record a visit</h2>
+  <fieldset class="segmented outcome-seg">
+    <legend>What happened?</legend>
+    {% for key, label in outcomes.items() %}
+    <label class="seg vo-{{ key }}"><input type="radio" name="outcome" value="{{ key }}" required {{ 'checked' if loop.first }}><span>{{ label }}</span></label>
+    {% endfor %}
+  </fieldset>
+
+  {% if residents %}
+  <fieldset class="met-list">
+    <legend>Who did you meet? <span class="muted small-text">They become “Contacted” (or “Follow up” for come back later)</span></legend>
+    {% for v in residents %}
+    <label class="met">
+      <input type="checkbox" name="met" value="{{ v.national_id }}">
+      {{ avatar(v, 'sm') }}
+      <span class="met-main"><strong>{{ v.full_name or '(no name)' }}</strong>
+        <span class="muted small-text">{% if v.age is not none %}{{ v.age }} · {% endif %}{{ v.sex or '—' }} · {{ statuses[v.status] }}
+          {%- if v.house_name != house %} · registered at {{ v.house_name }}{% endif %}
+          {%- if v.lives_at == 'unknown' %} · where they live not known{% endif %}</span></span>
+    </label>
+    {% endfor %}
+  </fieldset>
+  {% else %}
+  <p class="muted">Nobody you can see lives here right now.</p>
+  {% endif %}
+
+  <div class="checks visit-flags">
+    <label class="check"><input type="checkbox" name="transport" value="1"> Sick / elderly: needs transport on voting day</label>
+    <label class="check"><input type="checkbox" name="senior" value="1"> Needs a visit from the candidate or a senior member</label>
+  </div>
+  <label>Notes <span class="muted">(optional)</span>
+    <textarea name="notes" rows="3" maxlength="1000" placeholder="e.g. father works nights, come after 8pm"></textarea>
+  </label>
+  <label>Next visit <span class="muted">(optional)</span>
+    <input type="date" name="next_visit_on" min="{{ today }}">
+  </label>
+  <button class="primary big wide">{{ icon('check', 18) }} Save visit</button>
+</form>
+
+{% if residents %}
+<section class="housemates">
+  <h2>Living here</h2>
+  <ul class="mate-list">
+    {% for v in residents %}
+    <li class="mate st-{{ v.status }}">
+      <a href="{{ url_for('voters.detail', national_id=v.national_id, back=back) }}">
+        {{ avatar(v, 'sm') }}
+        <span class="mate-main"><strong>{{ v.full_name or '(no name)' }}</strong>
+          <span class="muted small-text">{% if v.phone %}<span class="mono">{{ v.phone }}</span> · {% endif %}{{ v.location or '' }}</span></span>
+        <span class="tag st-tag-{{ v.status }}">{{ statuses[v.status] }}</span>
+      </a>
+      <details class="lives-edit">
+        <summary class="small-text">Lives elsewhere?</summary>
+        {% with v=v %}{% include "visits/_lives_form.html" %}{% endwith %}
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if elsewhere %}
+<section class="housemates">
+  <h2>Registered here, living elsewhere</h2>
+  <p class="muted small-text">Not counted in visits to this house. Reach them by phone, or from the
+    <a href="{{ url_for('voters.search', lv='away') }}">Away list</a>.</p>
+  <ul class="mate-list">
+    {% for v in elsewhere %}
+    <li class="mate away">
+      <a href="{{ url_for('voters.detail', national_id=v.national_id, back=back) }}">
+        {{ avatar(v, 'sm') }}
+        <span class="mate-main"><strong>{{ v.full_name or '(no name)' }}</strong>
+          <span class="muted small-text">{{ lives_label(v) }}{% if v.phone %} · <span class="mono">{{ v.phone }}</span>{% endif %}</span></span>
+        <span class="tag st-tag-{{ v.status }}">{{ statuses[v.status] }}</span>
+      </a>
+      <details class="lives-edit">
+        <summary class="small-text">Change</summary>
+        {% with v=v %}{% include "visits/_lives_form.html" %}{% endwith %}
+      </details>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="card visit-history">
+  <h2>{{ 'Visits' if is_admin else 'Your visits' }}</h2>
+  {% if history %}
+  <ol class="timeline">
+    {% for x in history %}
+    <li>
+      <p class="tl-head"><span class="tag vo-{{ x.outcome }}">{{ outcomes[x.outcome] }}</span>
+        <span class="muted small-text">{{ x.visited_at|local }}{% if is_admin %} · {{ x.username or '—' }}{% endif %}</span></p>
+      {% if met[x.id] %}<p class="small-text">Met: {{ met[x.id]|join(', ') }}</p>{% endif %}
+      {% if x.needs_transport or x.needs_senior %}<p class="small-text">
+        {% if x.needs_transport %}<span class="tag vo-flag">Needs transport</span>{% endif %}
+        {% if x.needs_senior %}<span class="tag vo-flag">Senior visit</span>{% endif %}</p>{% endif %}
+      {% if x.notes %}<p class="tl-notes">{{ x.notes }}</p>{% endif %}
+      {% if x.next_visit_on %}<p class="small-text muted">Next visit {{ x.next_visit_on|day }}</p>{% endif %}
+      {% if is_admin %}
+      <form method="post" action="{{ url_for('visits.delete', visit_id=x.id) }}" data-confirm="Delete this visit? Voter statuses it changed stay as they are.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button class="link small-text">Delete</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% else %}
+  <p class="muted">No visits yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

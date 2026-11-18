@@ -1,0 +1,467 @@
+"""House visits: who went to which house, what happened, who was met, and when to go back.
+
+Also where each voter actually lives ("Lives at"): a voter registered at a house may live at another
+house on the island, in Malé, on another island or abroad. House visits only count the people who
+live in the house; the rest are reached by phone from the Away list. ("Votes at" is the existing
+voters.location column, from the official lists.)
+
+Like canvassing status and notes, visits are personal: users and agents see their own visits,
+admins see everyone's.
+"""
+import csv
+import io
+from datetime import datetime, timedelta, timezone
+
+from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
+
+from . import audit, personal
+from .auth import admin_required, login_required
+from .db import get_db, now_iso
+from .normalize import clean_text
+
+bp = Blueprint("visits", __name__)
+
+SCHEMA = """
+CREATE TABLE IF NOT EXISTS house_visits (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    house_name      TEXT NOT NULL,
+    visited_at      TEXT NOT NULL,
+    user_id         INTEGER,
+    username        TEXT,
+    outcome         TEXT NOT NULL CHECK (outcome IN ('met', 'nobody', 'later', 'refused')),
+    needs_transport INTEGER NOT NULL DEFAULT 0,
+    needs_senior    INTEGER NOT NULL DEFAULT 0,
+    notes           TEXT NOT NULL DEFAULT '',
+    next_visit_on   TEXT              -- YYYY-MM-DD, Maldives date
+);
+CREATE INDEX IF NOT EXISTS ix_visits_house ON house_visits (house_name, visited_at);
+CREATE INDEX IF NOT EXISTS ix_visits_user ON house_visits (user_id, visited_at);
+CREATE TABLE IF NOT EXISTS visit_voters (
+    visit_id    INTEGER NOT NULL REFERENCES house_visits(id) ON DELETE CASCADE,
+    national_id TEXT NOT NULL,
+    PRIMARY KEY (visit_id, national_id)
+);
+"""
+
+OUTCOMES = {"met": "Met family", "nobody": "Nobody home", "later": "Come back later", "refused": "Refused"}
+LIVES = {"home": "At the registered house", "house": "Another house in Gadhdhoo", "male": "Malé",
+         "island": "Another island", "abroad": "Abroad", "unknown": "Not known"}
+AWAY = ("male", "island", "abroad")
+MAX_NOTES = 1000
+LOCAL_OFFSET = timedelta(hours=5)
+
+# The house a voter actually lives in on the island (NULL when they live away)
+RESIDENT_HOUSE = ("CASE WHEN lives_at = 'house' AND lives_detail != '' THEN lives_detail"
+                  " WHEN lives_at IN ('home', 'unknown') THEN house_name END")
+
+FILTERS = {
+    "": "All houses",
+    "todo": "To visit",
+    "due": "Due today",
+    "overdue": "Overdue",
+    "never": "Never visited",
+    "nobody": "Nobody home last time",
+    "week": "Visited this week",
+    "transport": "Needs transport",
+    "senior": "Needs a senior visit",
+}
+
+
+@bp.app_template_filter("day")
+def day_label(value):
+    """'2026-11-21' -> '21 Nov'."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").strftime("%-d %b")
+    except (TypeError, ValueError):
+        return value or ""
+
+
+def init_schema(conn):
+    conn.executescript(SCHEMA)
+    columns = {r[1] for r in conn.execute("PRAGMA table_info(voters)")}
+    for name, ddl in (("lives_at", "lives_at TEXT NOT NULL DEFAULT 'home'"),
+                      ("lives_detail", "lives_detail TEXT NOT NULL DEFAULT ''")):
+        if name not in columns:
+            conn.execute(f"ALTER TABLE voters ADD COLUMN {ddl}")
+    conn.execute("CREATE INDEX IF NOT EXISTS ix_voters_lives ON voters (lives_at)")
+    conn.commit()
+
+
+def today():
+    return (datetime.now(timezone.utc) + LOCAL_OFFSET).date().isoformat()
+
+
+def lives_label(voter):
+    kind = voter["lives_at"] or "home"
+    if kind == "home":
+        return ""
+    detail = voter["lives_detail"]
+    if kind == "house":
+        return f"Lives at {detail}" if detail else LIVES["house"]
+    if kind == "unknown":
+        return "Where they live: not known"
+    return f"{LIVES[kind]}{' · ' + detail if detail else ''}"
+
+
+def _visits_scope(alias="x"):
+    """Users and agents see only their own visits; admins everyone's."""
+    if personal.sees_everyone():
+        return "", []
+    return f" AND {alias}.user_id = ?", [g.user["id"]]
+
+
+def house_list():
+    """Every house someone in your scope lives in, with your (or, for admins, everyone's) visits."""
+    from .voters import scoped
+
+    src = personal.source()
+    w, p = scoped(" WHERE deceased = 0")
+    vs, vp = _visits_scope("x")
+    latest = (f"(SELECT {{col}} FROM house_visits x WHERE x.house_name = h.house{vs}"
+              " ORDER BY x.visited_at DESC, x.id DESC LIMIT 1)")
+    sql = f"""
+        WITH r AS (SELECT {RESIDENT_HOUSE} AS house, status FROM {src}{w}),
+             h AS (SELECT house, COUNT(*) AS total, SUM(status != 'new') AS reached FROM r
+                   WHERE house IS NOT NULL AND house != '' GROUP BY house)
+        SELECT h.house, h.total, h.reached,
+               (SELECT COUNT(*) FROM house_visits x WHERE x.house_name = h.house{vs}) AS visits,
+               {latest.format(col='visited_at')} AS last_at,
+               {latest.format(col='outcome')} AS last_outcome,
+               {latest.format(col='username')} AS last_by,
+               {latest.format(col='next_visit_on')} AS next_on,
+               {latest.format(col='needs_transport')} AS transport,
+               {latest.format(col='needs_senior')} AS senior,
+               a.user_id AS agent_id, u.username AS agent
+        FROM h LEFT JOIN house_assignments a ON a.house_name = h.house LEFT JOIN users u ON u.id = a.user_id
+    """
+    return get_db().execute(sql, p + vp * 7).fetchall()
+
+
+def _matches(row, key, now, week_ago):
+    due = row["next_on"]
+    if key == "todo":
+        # never visited, due, or nobody met last time and no later date set
+        return (not row["visits"] or (due is not None and due <= now)
+                or (due is None and row["last_outcome"] in ("nobody", "later")))
+    if key == "due":
+        return due == now
+    if key == "overdue":
+        return due is not None and due < now
+    if key == "never":
+        return not row["visits"]
+    if key == "nobody":
+        return row["last_outcome"] == "nobody"
+    if key == "week":
+        return bool(row["last_at"]) and row["last_at"] >= week_ago
+    if key == "transport":
+        return bool(row["transport"])
+    if key == "senior":
+        return bool(row["senior"])
+    return True
+
+
+def _plan_order(row, now):
+    """Overdue and due first (earliest first), then never visited, then the longest since a visit."""
+    due = row["next_on"]
+    if due is not None and due <= now:
+        return (0, due, row["house"].casefold())
+    if not row["visits"]:
+        return (1, "", row["house"].casefold())
+    if due is None and row["last_outcome"] in ("nobody", "later"):
+        return (2, row["last_at"] or "", row["house"].casefold())
+    return (3, row["last_at"] or "", row["house"].casefold())
+
+
+SORTS = {"plan": "To visit first", "last": "Recently visited", "name": "House name", "voters": "Most voters"}
+
+
+def filtered_houses(key="", q="", agent="", sort="plan"):
+    now = today()
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
+    rows = house_list()
+    counts = {k: sum(1 for r in rows if _matches(r, k, now, week_ago)) for k in FILTERS}
+    out = [r for r in rows if _matches(r, key, now, week_ago)]
+    if q:
+        out = [r for r in out if q.casefold() in r["house"].casefold()]
+    if agent == "none":
+        out = [r for r in out if r["agent_id"] is None]
+    elif agent.isdigit():
+        out = [r for r in out if r["agent_id"] == int(agent)]
+    if sort == "last":
+        out.sort(key=lambda r: r["last_at"] or "", reverse=True)
+    elif sort == "name":
+        out.sort(key=lambda r: r["house"].casefold())
+    elif sort == "voters":
+        out.sort(key=lambda r: (-r["total"], r["house"].casefold()))
+    else:
+        out.sort(key=lambda r: _plan_order(r, now))
+    return out, counts, now
+
+
+@bp.route("/visits")
+@login_required
+def index():
+    key = request.args.get("f", "")
+    key = key if key in FILTERS else ""
+    q = clean_text(request.args.get("q", ""))[:100]
+    agent = request.args.get("agent", "") if personal.sees_everyone() or g.user["role"] == "user" else ""
+    sort = request.args.get("sort", "plan")
+    sort = sort if sort in SORTS else "plan"
+    rows, counts, now = filtered_houses(key, q, agent, sort)
+    try:
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        page = 1
+    size = 50
+    pages = max(1, -(-len(rows) // size))
+    page = min(page, pages)
+    agents = get_db().execute(
+        "SELECT id, username FROM users WHERE role = 'agent' AND deleted_at IS NULL ORDER BY username COLLATE NOCASE"
+    ).fetchall() if g.user["role"] != "agent" else []
+    query_args = {k: v for k, v in request.args.items() if k != "page"}
+    return render_template("visits/index.html", rows=rows[(page - 1) * size:page * size], total=len(rows),
+                           counts=counts, filters=FILTERS, key=key, q=q, agent=agent, agents=agents, sort=sort,
+                           sorts=SORTS, outcomes=OUTCOMES, today=now, page=page, pages=pages,
+                           query_args=query_args, away=away_counts())
+
+
+def away_counts():
+    from .voters import scoped
+
+    w, p = scoped(" WHERE deceased = 0")
+    row = get_db().execute(
+        "SELECT SUM(lives_at = 'male') AS male, SUM(lives_at = 'island') AS island,"
+        " SUM(lives_at = 'abroad') AS abroad, SUM(lives_at = 'unknown') AS unknown,"
+        f" SUM(lives_at IN ('male', 'island', 'abroad')) AS away FROM voters{w}", p).fetchone()
+    return {k: row[k] or 0 for k in ("male", "island", "abroad", "unknown", "away")}
+
+
+def _house_people(house):
+    """(residents, registered here but living elsewhere) for a house, within your scope."""
+    from .voters import scoped
+
+    src = personal.source()
+    w, p = scoped(f" WHERE deceased = 0 AND ({RESIDENT_HOUSE}) = ?", [house])
+    order = " ORDER BY age IS NULL, age DESC, full_name COLLATE NOCASE"
+    residents = get_db().execute(f"SELECT * FROM {src}{w}{order}", p).fetchall()
+    w, p = scoped(f" WHERE deceased = 0 AND house_name = ? AND ({RESIDENT_HOUSE}) IS NOT ?", [house, house])
+    elsewhere = get_db().execute(f"SELECT * FROM {src}{w}{order}", p).fetchall()
+    return residents, elsewhere
+
+
+def _visible_house_or_404(house):
+    if not house:
+        abort(404)
+    residents, elsewhere = _house_people(house)
+    if not residents and not elsewhere:
+        abort(404)
+    return residents, elsewhere
+
+
+@bp.route("/visits/house")
+@login_required
+def house():
+    name = request.args.get("h", "")
+    residents, elsewhere = _visible_house_or_404(name)
+    db = get_db()
+    vs, vp = _visits_scope("x")
+    history = db.execute(
+        f"SELECT x.* FROM house_visits x WHERE x.house_name = ?{vs} ORDER BY x.visited_at DESC, x.id DESC LIMIT 100",
+        [name] + vp).fetchall()
+    met = {}
+    if history:
+        ids = [h["id"] for h in history]
+        for row in db.execute(
+                "SELECT vv.visit_id, COALESCE(v.full_name, vv.national_id) AS name FROM visit_voters vv"
+                f" LEFT JOIN voters v ON v.national_id = vv.national_id WHERE vv.visit_id IN ({','.join('?' * len(ids))})"
+                " ORDER BY name", ids):
+            met.setdefault(row["visit_id"], []).append(row["name"])
+    agent = db.execute("SELECT u.username FROM house_assignments a JOIN users u ON u.id = a.user_id"
+                       " WHERE a.house_name = ?", (name,)).fetchone()
+    from .voters import STATUSES
+
+    return render_template("visits/house.html", house=name, residents=residents, elsewhere=elsewhere,
+                           history=history, met=met, outcomes=OUTCOMES, statuses=STATUSES, lives=LIVES,
+                           lives_label=lives_label, agent=agent, today=today(),
+                           back=request.full_path.rstrip("?"))
+
+
+def _set_own_status(national_id, status, stamp, visit_id):
+    """Same as saving a status on a voter card: the person's own status, and the latest for admins."""
+    db = get_db()
+    uid = g.user["id"]
+    mine = db.execute("SELECT status FROM canvass WHERE national_id = ? AND user_id = ?", (national_id, uid)).fetchone()
+    current = mine["status"] if mine else "new"
+    if current == status:
+        return False
+    db.execute("INSERT INTO canvass (national_id, user_id, status, status_at) VALUES (?, ?, ?, ?)"
+               " ON CONFLICT(national_id, user_id) DO UPDATE SET status = excluded.status,"
+               " status_at = excluded.status_at", (national_id, uid, status, stamp))
+    db.execute("UPDATE voters SET status = ?, status_at = ?, status_by = ? WHERE national_id = ?",
+               (status, stamp, uid, national_id))
+    audit.log("voter_canvass", target=national_id,
+              detail={"status": {"from": current, "to": status}, "visit": visit_id}, commit=False)
+    return True
+
+
+def statuses_for(outcome, residents, met_ids):
+    """What a visit does to the visitor's own status, never undoing a better one:
+    met / refused: everyone ticked is Contacted;
+    come back later: ticked (or, with nobody ticked, everyone not yet reached) is Follow up;
+    nobody home: everyone not contacted yet is No answer."""
+    changes = {}
+    for v in residents:
+        nid, current = v["national_id"], v["status"]
+        if outcome in ("met", "refused") and nid in met_ids:
+            changes[nid] = "contacted"
+        elif outcome == "later" and (nid in met_ids or (not met_ids and current in ("new", "noanswer"))):
+            changes[nid] = "followup"
+        elif outcome == "nobody" and current == "new":
+            changes[nid] = "noanswer"
+    return changes
+
+
+def _parse_next(text):
+    if not text:
+        return None
+    try:
+        day = datetime.strptime(text, "%Y-%m-%d").date()
+    except ValueError:
+        return None
+    return day.isoformat()
+
+
+@bp.post("/visits/house")
+@login_required
+def record():
+    name = request.form.get("h", "")
+    residents, _ = _visible_house_or_404(name)
+    outcome = request.form.get("outcome", "")
+    if outcome not in OUTCOMES:
+        abort(400)
+    resident_ids = {v["national_id"] for v in residents}
+    met_ids = {nid for nid in request.form.getlist("met") if nid in resident_ids}
+    if outcome in ("met", "refused") and not met_ids and residents:
+        flash("Tick who you met, or choose “Nobody home”.", "error")
+        return redirect(url_for("visits.house", h=name))
+    next_on = _parse_next(request.form.get("next_visit_on", ""))
+    if next_on and next_on < today():
+        flash("The next visit can't be in the past.", "error")
+        return redirect(url_for("visits.house", h=name))
+    notes = request.form.get("notes", "").replace("\r\n", "\n").strip()[:MAX_NOTES]
+    db = get_db()
+    stamp = now_iso()
+    cur = db.execute(
+        "INSERT INTO house_visits (house_name, visited_at, user_id, username, outcome, needs_transport, needs_senior,"
+        " notes, next_visit_on) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (name, stamp, g.user["id"], g.user["username"], outcome, 1 if request.form.get("transport") else 0,
+         1 if request.form.get("senior") else 0, notes, next_on))
+    visit_id = cur.lastrowid
+    db.executemany("INSERT INTO visit_voters (visit_id, national_id) VALUES (?, ?)",
+                   [(visit_id, nid) for nid in sorted(met_ids)])
+    changed = sum(_set_own_status(nid, status, stamp, visit_id)
+                  for nid, status in statuses_for(outcome, residents, met_ids).items())
+    audit.log("house_visit", target=name, detail={"visit": visit_id, "outcome": outcome, "met": len(met_ids),
+                                                   "next": next_on, "statuses": changed}, commit=False)
+    db.commit()
+    msg = f"Visit saved: {OUTCOMES[outcome]}."
+    if changed:
+        msg += f" {changed} voter status{'es' if changed != 1 else ''} updated."
+    if next_on:
+        msg += f" Next visit {datetime.strptime(next_on, '%Y-%m-%d').strftime('%-d %b')}."
+    flash(msg, "success")
+    return redirect(url_for("visits.house", h=name))
+
+
+@bp.post("/visits/<int:visit_id>/delete")
+@admin_required
+def delete(visit_id):
+    db = get_db()
+    visit = db.execute("SELECT * FROM house_visits WHERE id = ?", (visit_id,)).fetchone() or abort(404)
+    db.execute("DELETE FROM visit_voters WHERE visit_id = ?", (visit_id,))
+    db.execute("DELETE FROM house_visits WHERE id = ?", (visit_id,))
+    audit.log("house_visit_delete", target=visit["house_name"],
+              detail={"visit": visit_id, "by": visit["username"], "at": visit["visited_at"],
+                      "outcome": visit["outcome"]}, commit=False)
+    db.commit()
+    flash("Visit deleted. Voter statuses it changed stay as they are.", "success")
+    return redirect(url_for("visits.house", h=visit["house_name"]))
+
+
+@bp.post("/voters/<national_id>/lives")
+@login_required
+def set_lives(national_id):
+    """Where the voter actually lives. Anyone who can see the voter can set it."""
+    from .voters import _safe_back, get_voter_or_404
+
+    voter = get_voter_or_404(national_id)
+    kind = request.form.get("lives_at", "")
+    if kind not in LIVES:
+        abort(400)
+    detail = clean_text(request.form.get("lives_detail", ""))[:120] if kind not in ("home", "unknown") else ""
+    if kind == "house" and not detail:
+        flash("Type the house they live at.", "error")
+        return redirect(_safe_back(request.form.get("back")))
+    if kind == "house" and detail.casefold() == (voter["house_name"] or "").casefold():
+        kind, detail = "home", ""
+    if (kind, detail) != (voter["lives_at"], voter["lives_detail"]):
+        db = get_db()
+        db.execute("UPDATE voters SET lives_at = ?, lives_detail = ? WHERE national_id = ?", (kind, detail, national_id))
+        audit.log("voter_lives", target=national_id,
+                  detail={"from": [voter["lives_at"], voter["lives_detail"]], "to": [kind, detail]}, commit=False)
+        db.commit()
+        flash(f"{voter['full_name']}: {lives_label({'lives_at': kind, 'lives_detail': detail}) or LIVES['home']}.",
+              "success")
+    return redirect(_safe_back(request.form.get("back")))
+
+
+def dashboard_numbers():
+    """For the admin dashboard: houses visited, visits today / this week, flags, away voters."""
+    rows = house_list()
+    now = today()
+    db = get_db()
+    day_start = (datetime.strptime(now, "%Y-%m-%d").replace(tzinfo=timezone.utc) - LOCAL_OFFSET).isoformat(
+        timespec="seconds")
+    week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
+    count = lambda since: db.execute("SELECT COUNT(*) FROM house_visits WHERE visited_at >= ?",  # noqa: E731
+                                     (since,)).fetchone()[0]
+    visited = sum(1 for r in rows if r["visits"])
+    return {
+        "houses": len(rows), "visited": visited,
+        "pct": round(100 * visited / len(rows)) if rows else 0,
+        "today": count(day_start), "week": count(week_ago),
+        "due": sum(1 for r in rows if r["next_on"] is not None and r["next_on"] <= now),
+        "transport": sum(1 for r in rows if r["transport"]),
+        "senior": sum(1 for r in rows if r["senior"]),
+        "away": away_counts(),
+    }
+
+
+def next_houses(limit=5):
+    """Your next houses to visit (My dashboard): overdue and due, then never visited."""
+    rows, _, now = filtered_houses("todo")
+    return rows[:limit], now
+
+
+@bp.route("/visits/export.csv")
+@admin_required
+def export():
+    from .voters import _safe_cell
+
+    rows = get_db().execute(
+        "SELECT x.*, (SELECT group_concat(COALESCE(v.full_name, vv.national_id), '; ') FROM visit_voters vv"
+        " LEFT JOIN voters v ON v.national_id = vv.national_id WHERE vv.visit_id = x.id) AS met"
+        " FROM house_visits x ORDER BY x.visited_at DESC, x.id DESC").fetchall()
+    buf = io.StringIO()
+    writer = csv.writer(buf)
+    writer.writerow(["Visited", "House", "By", "Outcome", "Met", "Needs transport", "Needs senior visit",
+                     "Next visit", "Notes"])
+    local = lambda s: (datetime.fromisoformat(s) + LOCAL_OFFSET).strftime("%Y-%m-%d %H:%M")  # noqa: E731
+    for r in rows:
+        writer.writerow([local(r["visited_at"]), _safe_cell(r["house_name"]), _safe_cell(r["username"] or ""),
+                         OUTCOMES[r["outcome"]], _safe_cell(r["met"] or ""), "yes" if r["needs_transport"] else "",
+                         "yes" if r["needs_senior"] else "", r["next_visit_on"] or "", _safe_cell(r["notes"])])
+    audit.log("visits_export", detail={"rows": len(rows)})
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    return Response("﻿" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                    headers={"Content-Disposition": f'attachment; filename="house-visits-{stamp}.csv"'})

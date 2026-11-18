@@ -1,0 +1,13 @@
+<form class="lives-form" method="post" action="{{ url_for('visits.set_lives', national_id=v.national_id) }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="back" value="{{ back }}">
+  <label>Lives at
+    <select name="lives_at">
+      {% for key, label in lives.items() %}<option value="{{ key }}" {{ 'selected' if (v.lives_at or 'home') == key }}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>House, island or country <span class="muted">(if not at the registered house)</span>
+    <input name="lives_detail" value="{{ v.lives_detail }}" maxlength="120" placeholder="e.g. Rose Villa, Malé, Addu, India">
+  </label>
+  <button class="small">Save</button>
+</form>
