@@ -12,7 +12,7 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
-from . import audit, personal
+from . import audit, islandmap, personal
 from .auth import admin_required, login_required
 from .db import get_db, now_iso
 from .normalize import clean_text
@@ -292,6 +292,7 @@ def house():
     return render_template("visits/house.html", house=name, residents=residents, everyone=len(everyone),
                            box=box, boxes=boxes, no_box=NO_BOX, has_no_box=any(not v["location"] for v in everyone),
                            history=history, met=met, outcomes=OUTCOMES, statuses=STATUSES, agent=agent, today=today(),
+                           map_ready=islandmap.has_map(), map_loc=islandmap.location(name),
                            back=request.full_path.rstrip("?"))
 
 

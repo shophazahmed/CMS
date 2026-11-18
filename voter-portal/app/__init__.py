@@ -7,7 +7,8 @@ import click
 from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
-from . import admin, agentlink, announce, auth, campaign, canvass, confirmed, fonts, imports, personal, share, visits, voters
+from . import (admin, agentlink, announce, auth, campaign, canvass, confirmed, fonts, imports, islandmap, personal, share,
+               visits, voters)
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -48,6 +49,8 @@ def create_app(test_config=None):
     os.makedirs(app.config["PHOTOS_DIR"], exist_ok=True)
     os.makedirs(app.config["IMPORTS_DIR"], mode=0o700, exist_ok=True)
     os.makedirs(app.config["CAMPAIGN_DIR"], exist_ok=True)
+    app.config.setdefault("MAP_DIR", os.path.join(os.path.dirname(os.path.abspath(app.config["CAMPAIGN_DIR"])), "map"))
+    os.makedirs(app.config["MAP_DIR"], exist_ok=True)
 
     # Nginx sits in front: trust one hop of X-Forwarded-For / -Proto.
     app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
@@ -69,6 +72,7 @@ def create_app(test_config=None):
     app.register_blueprint(announce.bp)
     app.register_blueprint(agentlink.bp)
     app.register_blueprint(visits.bp)
+    app.register_blueprint(islandmap.bp)
     app.jinja_env.globals["dhivehi_font"] = fonts.font_file
     app.jinja_env.globals["dhivehi_font_name"] = fonts.font_name
     app.jinja_env.globals["share_people"] = share.people
@@ -133,6 +137,7 @@ def create_app(test_config=None):
         announce.init_schema(conn)
         agentlink.init_schema(conn)
         visits.init_schema(conn)
+        islandmap.init_schema(conn)
         bootstrap_admin(conn)
         conn.close()
     return app

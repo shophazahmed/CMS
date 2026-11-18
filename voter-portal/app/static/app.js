@@ -315,3 +315,54 @@ document.addEventListener("click", async (event) => {
   catch (err) { window.prompt("Copy this link:", button.dataset.copy); }
   setTimeout(() => { button.textContent = label; }, 2000);
 });
+
+// Island map: zoom buttons, jump to the marked house, and (admins) tap to set a house's spot.
+(() => {
+  const frame = document.querySelector("[data-map-frame]");
+  if (!frame) return;
+  const svg = frame.querySelector("[data-map-svg]");
+  const levels = ["z1", "z2", "z4", "z8", "z16"];
+  let level = 1;
+  const ring = svg.querySelector("[data-map-ring]");
+  const centerOn = (el) => {
+    const f = frame.getBoundingClientRect(), r = el.getBoundingClientRect();
+    frame.scrollLeft += r.left + r.width / 2 - (f.left + f.width / 2);
+    frame.scrollTop += r.top + r.height / 2 - (f.top + f.height / 2);
+  };
+  const setLevel = (next, keep) => {
+    // keep the point in the middle of the frame in the middle after zooming
+    const fx = (frame.scrollLeft + frame.clientWidth / 2) / frame.scrollWidth;
+    const fy = (frame.scrollTop + frame.clientHeight / 2) / frame.scrollHeight;
+    level = Math.max(0, Math.min(levels.length - 1, next));
+    svg.classList.remove(...levels);
+    svg.classList.add(levels[level]);
+    if (keep !== false) {
+      frame.scrollLeft = fx * frame.scrollWidth - frame.clientWidth / 2;
+      frame.scrollTop = fy * frame.scrollHeight - frame.clientHeight / 2;
+    }
+  };
+  document.querySelectorAll("[data-zoom]").forEach((b) =>
+    b.addEventListener("click", () => setLevel(level + parseInt(b.dataset.zoom, 10))));
+  const center = document.querySelector("[data-map-center]");
+  if (ring) {
+    setLevel(2, false);
+    requestAnimationFrame(() => centerOn(ring));
+    if (center) center.addEventListener("click", () => centerOn(ring));
+  }
+  const pending = svg.querySelector("[data-map-pending]");
+  const form = document.querySelector("[data-map-set]");
+  if (pending && form) {
+    svg.classList.add("settable");
+    svg.addEventListener("click", (event) => {
+      const pt = svg.createSVGPoint();
+      pt.x = event.clientX;
+      pt.y = event.clientY;
+      const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+      pending.setAttribute("cx", p.x.toFixed(2));
+      pending.setAttribute("cy", p.y.toFixed(2));
+      form.elements.x.value = p.x.toFixed(2);
+      form.elements.y.value = p.y.toFixed(2);
+      form.hidden = false;
+    });
+  }
+})();

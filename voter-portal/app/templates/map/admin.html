@@ -1,0 +1,52 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Island map{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Island map</h1>
+  <p class="muted">Upload the island's plot map (PDF). The portal reads the house names on it and shows each house
+    on its Visits page, zoomed in with a red ring. Everyone who can open a house sees its map; only admins can fix spots.</p>
+</div>
+
+<form class="card form" method="post" action="{{ url_for('islandmap.upload') }}" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>{{ 'Replace the map' if has_map else 'Map PDF' }}
+    <input type="file" name="map" accept="application/pdf,.pdf" required>
+  </label>
+  <p class="muted small-text">Up to 50 MB. Spots you set by hand are kept when you upload a new map.</p>
+  <button class="primary">Upload map</button>
+</form>
+
+{% if has_map %}
+<section class="kpis" aria-label="Map">
+  <div class="kpi"><span class="kpi-label">Names read from the map</span><strong>{{ labels }}</strong></div>
+  <div class="kpi"><span class="kpi-label">Houses found</span><strong>{{ auto + manual }}<small class="muted"> / {{ total }}</small></strong>
+    <span class="muted">{{ auto }} automatically · {{ manual }} by hand</span></div>
+  <div class="kpi"><span class="kpi-label">Not found yet</span><strong>{{ missing|length }}</strong></div>
+</section>
+<div class="actions">
+  <a class="button" href="{{ url_for('islandmap.full') }}">{{ icon('home', 16) }} Open the full map</a>
+  <form method="post" action="{{ url_for('islandmap.rematch') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button>Match house names again</button>
+  </form>
+</div>
+
+{% if missing %}
+<section class="card">
+  <h2>Not found on the map</h2>
+  <p class="muted small-text">Tap a house to set its spot by hand. “No Dhivehi name” means the voter list has no Dhivehi
+    house name to look for; others weren't on the map or appear more than once.</p>
+  <input type="search" class="wide" placeholder="Filter houses…" aria-label="Filter houses" data-filter-rows="#map-missing">
+  <ul class="recent-list" id="map-missing">
+    {% for h, has_dv in missing %}
+    <li data-filter-text="{{ h|lower }}">
+      <a href="{{ url_for('islandmap.full', h=h, set='1') }}">{{ h }}</a>
+      {% if not has_dv %}<span class="tag">No Dhivehi name</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

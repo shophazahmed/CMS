@@ -24,6 +24,23 @@
 </form>
 {% endif %}
 
+{% if map_ready %}
+<section class="card map-card">
+  {% if map_loc %}
+  <a href="{{ url_for('islandmap.full', h=house) }}" aria-label="Open the full map at {{ house }}">
+    <img class="map-zoom" src="{{ url_for('islandmap.house_image', h=house) }}" alt="Map around {{ house }}, marked with a red ring" loading="lazy">
+  </a>
+  <p class="map-links small-text">
+    <a href="{{ url_for('islandmap.full', h=house) }}">{{ icon('home', 14) }} Open the full map</a>
+    {% if is_admin %}<a href="{{ url_for('islandmap.full', h=house, set='1') }}">Wrong spot? Set it</a>{% endif %}
+  </p>
+  {% else %}
+  <p class="muted small-text">{{ house }} isn't on the map yet.
+    {% if is_admin %}<a href="{{ url_for('islandmap.full', h=house, set='1') }}">Set its spot</a>{% else %}<a href="{{ url_for('islandmap.full') }}">Open the full map</a>{% endif %}</p>
+  {% endif %}
+</section>
+{% endif %}
+
 <form class="card form visit-form" method="post" action="{{ url_for('visits.record') }}" id="record">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="h" value="{{ house }}">

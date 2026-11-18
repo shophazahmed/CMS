@@ -856,3 +856,18 @@ a.kpi { color: inherit; text-decoration: none; }
 .met-main .muted { overflow-wrap: anywhere; }
 @media (min-width: 560px) { .met .avatar { width: 56px; height: 56px; } }
 .met-main strong { color: var(--text); font-size: 1rem; }
+
+/* --- Island map ------------------------------------------------------------ */
+.map-card { padding: .6rem; }
+.map-zoom { display: block; width: 100%; height: auto; border-radius: 10px; border: 1px solid var(--border); background: #fff; }
+.map-links { display: flex; flex-wrap: wrap; gap: .4rem 1rem; margin: .5rem .2rem 0; }
+.map-tools { display: flex; gap: .5rem; margin: 0 0 .5rem; flex-wrap: wrap; }
+.map-tools button { min-width: 44px; font-size: 1.1rem; }
+.map-frame { overflow: auto; max-height: 72vh; border: 1px solid var(--border); border-radius: 12px; background: #fff;
+             -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+.map-svg { display: block; width: 100%; height: auto; }
+.map-svg.z2 { width: 200%; } .map-svg.z4 { width: 400%; } .map-svg.z8 { width: 800%; } .map-svg.z16 { width: 1600%; }
+.map-svg.settable { cursor: crosshair; }
+.map-ring { fill: none; stroke: #d62020; stroke-width: 3px; vector-effect: non-scaling-stroke; }
+.map-ring.pending { stroke: #7c3aed; stroke-dasharray: 4 3; }
+.map-set { margin-top: .75rem; position: sticky; bottom: calc(4.5rem + env(safe-area-inset-bottom)); }

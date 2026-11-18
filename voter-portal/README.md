@@ -129,6 +129,19 @@ the admin Dashboard shows houses visited, visits today / this week and transport
 Visits, the house page, the Dashboard and My dashboard can all be filtered by box; on a house page
 "Who did you meet?" then lists only that box's voters, and the visit's status changes touch only them.
 
+## Island map
+
+Admin → account menu → **Island map**: upload the island's plot map (PDF). The portal reads the house
+names printed on it (old Dhivehi typewriter fonts are converted to Unicode Thaana) and matches them to
+each house's Dhivehi name from the voter lists. A house page (Visits → a house) then shows the map
+zoomed in on the house with a red ring; **Open the full map** zooms and scrolls, with the house marked.
+- Houses whose Dhivehi name isn't on the map, or is on it more than once, are listed on the Island map
+  page. Tap one (or "Wrong spot? Set it" on a house page), zoom in, tap the plot and save. Spots set by
+  hand are kept when a new map is uploaded; "Match house names again" re-runs the automatic matching,
+  e.g. after importing Dhivehi house names.
+- Everyone who can open a house sees its map (agents only their own houses); only admins upload or set
+  spots. The map is stored in the data folder and served only to signed-in users.
+
 ## Colours
 
 - **Settings → Portal colour** sets the main colour for everyone: MDP yellow, teal, blue, green,

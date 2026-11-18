@@ -1,0 +1,40 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Island map{% endblock %}
+{% block content %}
+{% if house %}<a class="backlink" href="{{ url_for('visits.house', h=house) }}">{{ icon('back', 18) }} {{ house }}</a>{% endif %}
+<div class="page-head">
+  <h1>{{ 'Set the spot for ' ~ house if setting else ('Island map' if not house else house) }}</h1>
+  {% if setting %}
+  <p class="muted">Zoom in, then tap the house's plot. You'll be asked to confirm.</p>
+  {% elif house and not loc %}
+  <p class="muted">{{ house }} hasn't been found on the map yet.</p>
+  {% endif %}
+</div>
+
+<div class="map-tools" data-map-tools>
+  <button type="button" class="small" data-zoom="-1" aria-label="Zoom out">−</button>
+  <button type="button" class="small" data-zoom="1" aria-label="Zoom in">+</button>
+  {% if loc %}<button type="button" class="small" data-map-center>{{ icon('home', 14) }} Show the house</button>{% endif %}
+</div>
+<div class="map-frame" data-map-frame>
+  <svg class="map-svg z2" data-map-svg viewBox="{{ box.x0 }} {{ box.y0 }} {{ width }} {{ height }}"
+       role="img" aria-label="Island map{{ ' with ' ~ house ~ ' marked' if loc }}">
+    <image href="{{ url_for('islandmap.full_image') }}" x="{{ box.x0 }}" y="{{ box.y0 }}" width="{{ width }}" height="{{ height }}"/>
+    {% if loc %}<circle class="map-ring" data-map-ring cx="{{ loc.x }}" cy="{{ loc.y }}" r="{{ ring }}"/>{% endif %}
+    {% if setting %}<circle class="map-ring pending" data-map-pending cx="-100" cy="-100" r="{{ ring }}"/>{% endif %}
+  </svg>
+</div>
+
+{% if setting %}
+<form class="card form map-set" method="post" action="{{ url_for('islandmap.locate') }}" data-map-set hidden>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="h" value="{{ house }}">
+  <input type="hidden" name="x" value="">
+  <input type="hidden" name="y" value="">
+  <p><strong>Is the purple ring on {{ house }}?</strong> Tap again to move it.</p>
+  <button class="primary">{{ icon('check', 18) }} Save this spot</button>
+</form>
+<noscript><p class="flash flash-error">Setting a spot needs JavaScript.</p></noscript>
+{% endif %}
+{% endblock %}
