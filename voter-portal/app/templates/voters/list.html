@@ -7,7 +7,7 @@
     {{ icon('search') }}
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone"
            aria-label="Search name, ID, house or phone" autocomplete="off" enterkeyhint="search">
-    {% for k in ('national_id', 'house', 'h', 'party', 'loc', 'dc', 'lv', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'by', 'cf', 'sort', 'n') %}
+    {% for k in ('national_id', 'house', 'h', 'party', 'loc', 'dc', 'lv', 'wg', 'sex', 'age_min', 'age_max', 'status', 'va', 'ag', 'by', 'cf', 'sort', 'n') %}
       {% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}
     {% endfor %}
     <button class="primary" type="submit">Search</button>
@@ -83,6 +83,14 @@
         <option value="island" {{ 'selected' if f.lv == 'island' }}>Another island</option>
         <option value="abroad" {{ 'selected' if f.lv == 'abroad' }}>Abroad</option>
         <option value="unknown" {{ 'selected' if f.lv == 'unknown' }}>Not known</option>
+      </select>
+    </label>
+    <label>AR / YW
+      <select name="wg">
+        <option value="">Anyone</option>
+        {% for k, label in [('ar', 'AR'), ('yw', 'YW'), ('both', 'AR and YW'), ('any', 'AR or YW'), ('none', 'Neither')] %}
+        <option value="{{ k }}" {{ 'selected' if f.wg == k }}>{{ label }}</option>
+        {% endfor %}
       </select>
     </label>
     <label>Deceased
@@ -210,6 +218,7 @@
       <p class="vcard-tags">
         {% if v.deceased %}<span class="tag deceased">Deceased</span>{% endif %}
         {% if v.lives_at and v.lives_at != 'home' %}<span class="tag lives-tag">{{ icon('home', 12) }} {{ {'house': v.lives_detail or 'Other house', 'male': 'Malé', 'island': v.lives_detail or 'Other island', 'abroad': v.lives_detail or 'Abroad', 'unknown': 'Lives ?'}[v.lives_at] }}</span>{% endif %}
+        {% if v.ar %}<span class="tag wing-ar" title="AR">AR</span>{% endif %}{% if v.yw %}<span class="tag wing-yw" title="YW">YW</span>{% endif %}
         {% if v.party %}<span class="tag party">{{ v.party }}</span>{% endif %}
         {% if current_user.role != 'agent' %}{% if v.assigned_to %}<span class="tag agent-tag" title="{{ 'Handed over one by one' if v.one_by_one else 'Through their house' }}">{{ icon('user', 12) }} {{ v.assigned_to }}{{ '' if v.one_by_one else ' · house' }}</span>{% elif is_admin %}<span class="tag unassigned-tag">Unassigned</span>{% endif %}{% endif %}
       </p>

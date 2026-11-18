@@ -11,8 +11,9 @@ from .db import get_db, now_iso
 bp = Blueprint("canvass", __name__)
 
 LOCAL_OFFSET = timedelta(hours=5)  # Maldives time, no daylight saving
-REACHED = ("contacted", "followup", "noanswer")
-STATUS_LABELS = {"new": "Not contacted", "contacted": "Contacted", "followup": "Follow up", "noanswer": "No answer"}
+REACHED = ("contacted", "followup", "noanswer", "wontvote")
+STATUS_LABELS = {"new": "Not contacted", "contacted": "Contacted", "followup": "Follow up", "noanswer": "No answer",
+                 "wontvote": "Will not vote"}
 SORTS = {
     "progress": "reached * 1.0 / total, total DESC, house",
     "remaining": "(total - reached) DESC, house",
@@ -28,6 +29,7 @@ SELECT v.house_name AS house,
        SUM(v.status = 'contacted' AND {c}) AS contacted,
        SUM(v.status = 'followup' AND {c}) AS followup,
        SUM(v.status = 'noanswer' AND {c}) AS noanswer,
+       SUM(v.status = 'wontvote' AND {c}) AS wontvote,
        SUM(v.status != 'new' AND {c}) AS reached,
        MAX(CASE WHEN {c} THEN v.status_at END) AS last_at,
        a.user_id AS agent_id,
@@ -55,7 +57,7 @@ def house_rows(where="", params=(), sort="progress", count_if=("1", []), having=
     sql = (f"{HOUSE_STATS.format(c=f'({cond})', src=src)} WHERE v.house_name != ''"
            f" AND v.lives_at IN ('home', 'unknown') {where} GROUP BY v.house_name"
            f" {having} ORDER BY {SORTS[sort]}")
-    return get_db().execute(sql, list(cond_params) * 5 + list(params)).fetchall()
+    return get_db().execute(sql, list(cond_params) * HOUSE_STATS.count("{c}") + list(params)).fetchall()
 
 
 def _parse_day(text):
@@ -102,10 +104,10 @@ def range_condition(rng, column="v.status_at"):
 
 
 def totals(rows):
-    t = {"houses": len(rows), "total": 0, "contacted": 0, "followup": 0, "noanswer": 0, "reached": 0,
+    t = {"houses": len(rows), "total": 0, "contacted": 0, "followup": 0, "noanswer": 0, "wontvote": 0, "reached": 0,
          "done_houses": 0}
     for r in rows:
-        for k in ("total", "contacted", "followup", "noanswer", "reached"):
+        for k in ("total", "contacted", "followup", "noanswer", "wontvote", "reached"):
             t[k] += r[k] or 0
         t["done_houses"] += 1 if r["total"] and r["reached"] == r["total"] else 0
     t["new"] = t["total"] - t["reached"]
@@ -178,11 +180,14 @@ def dashboard():
     people = db.execute("SELECT id, username, role FROM users ORDER BY username COLLATE NOCASE").fetchall()
     who_name = next((u["username"] for u in people if str(u["id"]) == who), "")
     no_house = db.execute(f"SELECT COUNT(*) FROM voters WHERE house_name = ''{scope}", extra).fetchone()[0]
+    wings = db.execute(
+        "SELECT SUM(ar) AS ar, SUM(ar AND status != 'new') AS ar_reached, SUM(yw) AS yw,"
+        f" SUM(yw AND status != 'new') AS yw_reached FROM voters WHERE 1{scope}", extra).fetchone()
     return render_template(
         "canvass/dashboard.html", rows=rows, t=totals(rows), act=activity(int(who) if who else None, rng),
         parties=parties, agents=agents, people=people, who=who, who_name=who_name, rng=rng,
         party=party, agent=agent, sort=sort, sorts=SORTS, no_house=no_house,
-        leaders=activity(None, rng)["leaders"], vn=visits.dashboard_numbers(),
+        leaders=activity(None, rng)["leaders"], vn=visits.dashboard_numbers(), wings=wings,
     )
 
 
@@ -196,7 +201,7 @@ def personal(user_id, rng=None):
     src = own_view.own_source(user_id)  # their own status for every voter they reached
     mine = db.execute(
         "SELECT COUNT(*) AS total, SUM(status = 'contacted') AS contacted, SUM(status = 'followup') AS followup,"
-        f" SUM(status = 'noanswer') AS noanswer FROM {src}{w}", p).fetchone()
+        f" SUM(status = 'noanswer') AS noanswer, SUM(status = 'wontvote') AS wontvote FROM {src}{w}", p).fetchone()
     recent = db.execute(
         f"SELECT national_id, full_name, house_name, status, status_at FROM {src}{w}"
         " ORDER BY status_at DESC LIMIT 8", p).fetchall()
@@ -224,7 +229,8 @@ def my_houses():
     clause, extra = campaign.party_scope("v.party")
     singles = get_db().execute(
         "SELECT COUNT(*) AS total, SUM(v.status != 'new') AS reached, SUM(v.status = 'contacted') AS contacted,"
-        " SUM(v.status = 'followup') AS followup, SUM(v.status = 'noanswer') AS noanswer"
+        " SUM(v.status = 'followup') AS followup, SUM(v.status = 'noanswer') AS noanswer,"
+        " SUM(v.status = 'wontvote') AS wontvote"
         f" FROM voter_assignments va JOIN {own_view.own_source(user['id'], 'v')} ON v.national_id = va.national_id"
         f" WHERE va.user_id = ?{' AND ' + clause if clause else ''}", [user["id"]] + extra).fetchone()
     # Suggested next stop: follow-ups first (someone asked us to come back), then the house
@@ -258,7 +264,8 @@ def _agents(active_only=False):
                    SUM(v.status != 'new') AS reached,
                    SUM(v.status = 'contacted') AS contacted,
                    SUM(v.status = 'followup') AS followup,
-                   SUM(v.status = 'noanswer') AS noanswer
+                   SUM(v.status = 'noanswer') AS noanswer,
+                   SUM(v.status = 'wontvote') AS wontvote
             FROM users u
             LEFT JOIN house_assignments a ON a.user_id = u.id
             LEFT JOIN voters v ON v.house_name = a.house_name{join_scope}

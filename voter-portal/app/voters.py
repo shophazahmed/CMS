@@ -41,7 +41,10 @@ SORTS = {
     "location": "location = '', location COLLATE NOCASE, house_name COLLATE NOCASE, full_name COLLATE NOCASE",
 }
 MAX_PHOTO_BYTES = 5 * 1024 * 1024
-STATUSES = {"new": "Not contacted", "contacted": "Contacted", "followup": "Follow up", "noanswer": "No answer"}
+WINGS = {"ar": ("ar = 1", "AR"), "yw": ("yw = 1", "YW"), "both": ("ar = 1 AND yw = 1", "AR and YW"),
+         "any": ("(ar = 1 OR yw = 1)", "AR or YW"), "none": ("ar = 0 AND yw = 0", "Neither AR nor YW")}
+STATUSES = {"new": "Not contacted", "contacted": "Contacted", "followup": "Follow up", "noanswer": "No answer",
+            "wontvote": "Will not vote"}
 MAX_NOTES = 2000
 
 
@@ -79,6 +82,8 @@ def read_filters(args):
         # Where they live: away (Malé, islands, abroad), one of those, another house, not known, at home
         "lv": args.get("lv", "") if args.get("lv", "") in ("away", "male", "island", "abroad", "house",
                                                             "unknown", "home") else "",
+        # AR / YW marks from the party list: ar, yw, both, any (either) or none
+        "wg": args.get("wg", "") if args.get("wg", "") in WINGS else "",
         "va": args.get("va", "") if args.get("va", "") == "any" or args.get("va", "").isdigit() else "",
         "sort": args.get("sort", "name") if args.get("sort") in SORTS else "name",
     }
@@ -169,6 +174,8 @@ def build_where(f):
     elif f.get("lv"):
         clauses.append("lives_at = ?")
         params.append(f["lv"])
+    if f.get("wg"):
+        clauses.append(WINGS[f["wg"]][0])
     if f.get("dc") == "1":
         clauses.append("deceased = 1")
     elif f.get("dc") == "0":
@@ -311,6 +318,7 @@ def filter_chips(f, query_args):
         "lv": lambda v: {"away": "Lives away", "male": "Lives in Malé", "island": "Lives on another island",
                          "abroad": "Lives abroad", "house": "Lives at another house", "unknown": "Lives: not known",
                          "home": "Lives at the registered house"}[v],
+        "wg": lambda v: WINGS[v][1],
         "by": lambda v: _agent_name(v).replace("Assigned to", "Contacted by"),
         "ag": lambda v: "No agent" if v == "none" else _agent_name(v).replace("Assigned to", "Agent:"),
     }
@@ -688,7 +696,7 @@ def delete(national_id):
 EXPORT_HEADERS = ["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Has photo",
                   "Agent", "Agent via", "Status", "Status changed", "Status by", "Notes",
                   "Last edited", "Last edited by", "Location", "Deceased",
-                  "Name (Dhivehi)", "House (Dhivehi)", "Lives at"]
+                  "Name (Dhivehi)", "House (Dhivehi)", "Lives at", "AR", "YW"]
 
 # The agent responsible for a voter: the one they were handed to individually, else their house's agent
 EXPORT_AGENT = (
@@ -781,7 +789,8 @@ def export(fmt):
          _local(r["updated_at"]) if r["updated_by"] else "",
          _safe_cell(r["updated_by_name"] or ""), _safe_cell(r["location"]),
          "yes" if r["deceased"] else "", _safe_cell(r["full_name_dv"]), _safe_cell(r["house_name_dv"]),
-         _safe_cell(lives_label(r) or "At the registered house")]
+         _safe_cell(lives_label(r) or "At the registered house"),
+         "AR" if r["ar"] else "", "YW" if r["yw"] else ""]
         + (["yes" if r["confirmed_at"] else "", _local(r["confirmed_at"])] if owner else [])
         for n, r in enumerate(rows, 1)
     ]
