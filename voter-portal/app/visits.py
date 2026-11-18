@@ -1,9 +1,7 @@
 """House visits: who went to which house, what happened, who was met, and when to go back.
 
-Also where each voter actually lives ("Lives at"): a voter registered at a house may live at another
-house on the island, in Malé, on another island or abroad. House visits only count the people who
-live in the house; the rest are reached by phone from the Away list. ("Votes at" is the existing
-voters.location column, from the official lists.)
+A voter's box (voters.location, from the official lists) is where they live and vote; the Visits
+list, the house page and the dashboards can be filtered by it.
 
 Like canvassing status and notes, visits are personal: users and agents see their own visits,
 admins see everyone's.
@@ -44,15 +42,9 @@ CREATE TABLE IF NOT EXISTS visit_voters (
 """
 
 OUTCOMES = {"met": "Met family", "nobody": "Nobody home", "later": "Come back later", "refused": "Refused"}
-LIVES = {"home": "At the registered house", "house": "Another house in Gadhdhoo", "male": "Malé",
-         "island": "Another island", "abroad": "Abroad", "unknown": "Not known"}
-AWAY = ("male", "island", "abroad")
 MAX_NOTES = 1000
 LOCAL_OFFSET = timedelta(hours=5)
 
-# The house a voter actually lives in on the island (NULL when they live away)
-RESIDENT_HOUSE = ("CASE WHEN lives_at = 'house' AND lives_detail != '' THEN lives_detail"
-                  " WHEN lives_at IN ('home', 'unknown') THEN house_name END")
 
 FILTERS = {
     "": "All houses",
@@ -78,12 +70,6 @@ def day_label(value):
 
 def init_schema(conn):
     conn.executescript(SCHEMA)
-    columns = {r[1] for r in conn.execute("PRAGMA table_info(voters)")}
-    for name, ddl in (("lives_at", "lives_at TEXT NOT NULL DEFAULT 'home'"),
-                      ("lives_detail", "lives_detail TEXT NOT NULL DEFAULT ''")):
-        if name not in columns:
-            conn.execute(f"ALTER TABLE voters ADD COLUMN {ddl}")
-    conn.execute("CREATE INDEX IF NOT EXISTS ix_voters_lives ON voters (lives_at)")
     conn.commit()
 
 
@@ -91,16 +77,6 @@ def today():
     return (datetime.now(timezone.utc) + LOCAL_OFFSET).date().isoformat()
 
 
-def lives_label(voter):
-    kind = voter["lives_at"] or "home"
-    if kind == "home":
-        return ""
-    detail = voter["lives_detail"]
-    if kind == "house":
-        return f"Lives at {detail}" if detail else LIVES["house"]
-    if kind == "unknown":
-        return "Where they live: not known"
-    return f"{LIVES[kind]}{' · ' + detail if detail else ''}"
 
 
 def _visits_scope(alias="x"):
@@ -111,7 +87,7 @@ def _visits_scope(alias="x"):
 
 
 def house_list():
-    """Every house someone in your scope lives in, with your (or, for admins, everyone's) visits."""
+    """Every house with voters in your scope, with your (or, for admins, everyone's) visits."""
     from .voters import scoped
 
     src = personal.source()
@@ -120,7 +96,7 @@ def house_list():
     latest = (f"(SELECT {{col}} FROM house_visits x WHERE x.house_name = h.house{vs}"
               " ORDER BY x.visited_at DESC, x.id DESC LIMIT 1)")
     sql = f"""
-        WITH r AS (SELECT {RESIDENT_HOUSE} AS house, status, location AS box FROM {src}{w}),
+        WITH r AS (SELECT house_name AS house, status, location AS box FROM {src}{w}),
              h AS (SELECT house, COUNT(*) AS total, SUM(status != 'new') AS reached,
                           SUM(box != '') AS with_box FROM r
                    WHERE house IS NOT NULL AND house != '' GROUP BY house)
@@ -253,7 +229,7 @@ def index():
     return render_template("visits/index.html", rows=rows[(page - 1) * size:page * size], total=len(rows),
                            counts=counts, filters=FILTERS, key=key, q=q, agent=agent, agents=agents, sort=sort,
                            sorts=SORTS, outcomes=OUTCOMES, today=now, page=page, pages=pages,
-                           query_args=query_args, away=away_counts(), box=box, boxes=box_options(),
+                           query_args=query_args, box=box, boxes=box_options(),
                            no_box=NO_BOX, house_boxes=house_boxes)
 
 
@@ -266,45 +242,36 @@ def box_options():
     return sorted(counts.items(), key=lambda kv: kv[0].casefold())
 
 
-def away_counts(box=""):
+
+
+def _house_people(house, box=""):
+    """The voters registered at a house, within your scope (and one box, when given)."""
     from .voters import scoped
 
-    w, p = scoped(" WHERE deceased = 0" + (" AND location = ?" if box else ""),
-                  [("" if box == NO_BOX else box)] if box else [])
-    row = get_db().execute(
-        "SELECT SUM(lives_at = 'male') AS male, SUM(lives_at = 'island') AS island,"
-        " SUM(lives_at = 'abroad') AS abroad, SUM(lives_at = 'unknown') AS unknown,"
-        f" SUM(lives_at IN ('male', 'island', 'abroad')) AS away FROM voters{w}", p).fetchone()
-    return {k: row[k] or 0 for k in ("male", "island", "abroad", "unknown", "away")}
-
-
-def _house_people(house):
-    """(residents, registered here but living elsewhere) for a house, within your scope."""
-    from .voters import scoped
-
-    src = personal.source()
-    w, p = scoped(f" WHERE deceased = 0 AND ({RESIDENT_HOUSE}) = ?", [house])
+    sql, params = " WHERE deceased = 0 AND house_name = ?", [house]
+    if box:
+        sql, params = sql + " AND location = ?", params + ["" if box == NO_BOX else box]
+    w, p = scoped(sql, params)
     order = " ORDER BY age IS NULL, age DESC, full_name COLLATE NOCASE"
-    residents = get_db().execute(f"SELECT * FROM {src}{w}{order}", p).fetchall()
-    w, p = scoped(f" WHERE deceased = 0 AND house_name = ? AND ({RESIDENT_HOUSE}) IS NOT ?", [house, house])
-    elsewhere = get_db().execute(f"SELECT * FROM {src}{w}{order}", p).fetchall()
-    return residents, elsewhere
+    return get_db().execute(f"SELECT * FROM {personal.source()}{w}{order}", p).fetchall()
 
 
-def _visible_house_or_404(house):
+def _visible_house_or_404(house, box=""):
     if not house:
         abort(404)
-    residents, elsewhere = _house_people(house)
-    if not residents and not elsewhere:
+    everyone = _house_people(house)
+    if not everyone:
         abort(404)
-    return residents, elsewhere
+    return everyone, ([v for v in everyone if v["location"] == ("" if box == NO_BOX else box)] if box else everyone)
 
 
 @bp.route("/visits/house")
 @login_required
 def house():
     name = request.args.get("h", "")
-    residents, elsewhere = _visible_house_or_404(name)
+    box = request.args.get("box", "")[:200]
+    everyone, residents = _visible_house_or_404(name, box)
+    boxes = sorted({v["location"] for v in everyone if v["location"]}, key=str.casefold)
     db = get_db()
     vs, vp = _visits_scope("x")
     history = db.execute(
@@ -322,9 +289,9 @@ def house():
                        " WHERE a.house_name = ?", (name,)).fetchone()
     from .voters import STATUSES
 
-    return render_template("visits/house.html", house=name, residents=residents, elsewhere=elsewhere,
-                           history=history, met=met, outcomes=OUTCOMES, statuses=STATUSES, lives=LIVES,
-                           lives_label=lives_label, agent=agent, today=today(),
+    return render_template("visits/house.html", house=name, residents=residents, everyone=len(everyone),
+                           box=box, boxes=boxes, no_box=NO_BOX, has_no_box=any(not v["location"] for v in everyone),
+                           history=history, met=met, outcomes=OUTCOMES, statuses=STATUSES, agent=agent, today=today(),
                            back=request.full_path.rstrip("?"))
 
 
@@ -377,7 +344,9 @@ def _parse_next(text):
 @login_required
 def record():
     name = request.form.get("h", "")
-    residents, _ = _visible_house_or_404(name)
+    box = request.form.get("box", "")[:200]
+    _, residents = _visible_house_or_404(name, box)  # with a box chosen, only the voters shown
+    back = url_for("visits.house", h=name, box=box or None)
     outcome = request.form.get("outcome", "")
     if outcome not in OUTCOMES:
         abort(400)
@@ -385,11 +354,11 @@ def record():
     met_ids = {nid for nid in request.form.getlist("met") if nid in resident_ids}
     if outcome in ("met", "refused") and not met_ids and residents:
         flash("Tick who you met, or choose “Nobody home”.", "error")
-        return redirect(url_for("visits.house", h=name))
+        return redirect(back)
     next_on = _parse_next(request.form.get("next_visit_on", ""))
     if next_on and next_on < today():
         flash("The next visit can't be in the past.", "error")
-        return redirect(url_for("visits.house", h=name))
+        return redirect(back)
     notes = request.form.get("notes", "").replace("\r\n", "\n").strip()[:MAX_NOTES]
     db = get_db()
     stamp = now_iso()
@@ -412,7 +381,7 @@ def record():
     if next_on:
         msg += f" Next visit {datetime.strptime(next_on, '%Y-%m-%d').strftime('%-d %b')}."
     flash(msg, "success")
-    return redirect(url_for("visits.house", h=name))
+    return redirect(back)
 
 
 @bp.post("/visits/<int:visit_id>/delete")
@@ -430,36 +399,8 @@ def delete(visit_id):
     return redirect(url_for("visits.house", h=visit["house_name"]))
 
 
-@bp.post("/voters/<national_id>/lives")
-@login_required
-def set_lives(national_id):
-    """Where the voter actually lives. Anyone who can see the voter can set it."""
-    from .voters import _safe_back, get_voter_or_404
-
-    voter = get_voter_or_404(national_id)
-    kind = request.form.get("lives_at", "")
-    if kind not in LIVES:
-        abort(400)
-    detail = clean_text(request.form.get("lives_detail", ""))[:120] if kind not in ("home", "unknown") else ""
-    if kind == "house" and not detail:
-        flash("Type the house they live at.", "error")
-        return redirect(_safe_back(request.form.get("back")))
-    if kind == "house" and detail.casefold() == (voter["house_name"] or "").casefold():
-        kind, detail = "home", ""
-    if (kind, detail) != (voter["lives_at"], voter["lives_detail"]):
-        db = get_db()
-        db.execute("UPDATE voters SET lives_at = ?, lives_detail = ? WHERE national_id = ?", (kind, detail, national_id))
-        audit.log("voter_lives", target=national_id,
-                  detail={"from": [voter["lives_at"], voter["lives_detail"]], "to": [kind, detail]}, commit=False)
-        db.commit()
-        flash(f"{voter['full_name']}: {lives_label({'lives_at': kind, 'lives_detail': detail}) or LIVES['home']}.",
-              "success")
-    return redirect(_safe_back(request.form.get("back")))
-
-
 def dashboard_numbers(box=""):
-    """For the admin dashboard: houses visited, visits today / this week, flags, away voters
-    (all for one box, when given)."""
+    """For the admin dashboard: houses visited, visits today / this week, flags (for one box, when given)."""
     rows = in_box(house_list(), box)
     now = today()
     db = get_db()
@@ -478,8 +419,7 @@ def dashboard_numbers(box=""):
         "today": count(day_start), "week": count(week_ago),
         "due": sum(1 for r in rows if r["next_on"] is not None and r["next_on"] <= now),
         "transport": sum(1 for r in rows if r["transport"]),
-        "senior": sum(1 for r in rows if r["senior"]),
-        "away": away_counts(box),
+        "senior": sum(1 for r in rows if r["senior"])
     }
 
 

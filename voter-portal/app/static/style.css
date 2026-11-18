@@ -847,3 +847,12 @@ a.kpi { color: inherit; text-decoration: none; }
 .box-pick { margin: 0 0 1rem; }
 .box-pick label { display: grid; gap: .25rem; font-size: .85rem; color: var(--muted); max-width: 28rem; }
 .box-pick select { width: 100%; min-width: 0; }
+.met { border-left: 4px solid var(--st, var(--border)); }
+.met .avatar { flex: none; }
+.met-main { flex: 1; gap: .1rem; }
+.met-open { flex: none; display: inline-flex; padding: .4rem; color: var(--muted); }
+.form .met-list label.met { gap: .5rem; padding: .5rem .5rem .5rem .6rem; }
+.met-open { padding: .2rem 0; }
+.met-main .muted { overflow-wrap: anywhere; }
+@media (min-width: 560px) { .met .avatar { width: 56px; height: 56px; } }
+.met-main strong { color: var(--text); font-size: 1rem; }

@@ -28,8 +28,6 @@
   <a class="kpi link-kpi" href="{{ url_for('visits.index', f='transport', box=box or None) }}"><span class="kpi-label">Needs transport</span>
     <strong>{{ vn.transport }}</strong><span class="muted">{{ vn.senior }} want a senior visit</span></a>
   {% endif %}
-  <a class="kpi link-kpi" href="{{ url_for('voters.search', lv='away', sort='location') }}"><span class="kpi-label">Live away</span>
-    <strong>{{ vn.away.away }}</strong><span class="muted">Malé {{ vn.away.male }} · islands {{ vn.away.island }} · abroad {{ vn.away.abroad }}{% if vn.away.unknown %} · {{ vn.away.unknown }} not known{% endif %}</span></a>
 </section>
 
 <section class="kpis" aria-label="Totals">

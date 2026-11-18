@@ -5,14 +5,29 @@
 <a class="backlink" href="{{ url_for('visits.index') }}">{{ icon('back', 18) }} House visits</a>
 <div class="page-head">
   <h1>{{ house }}</h1>
-  <p class="muted">{{ residents|length }} voter{{ 's' if residents|length != 1 }} live here
-    {%- if elsewhere %} · {{ elsewhere|length }} registered here live elsewhere{% endif %}
+  <p class="muted">{{ everyone }} voter{{ 's' if everyone != 1 }}
+    {%- if box %} · {{ residents|length }} at {{ 'no box' if box == no_box else box }}{% endif %}
     {%- if agent and current_user.role != 'agent' %} · agent {{ agent.username }}{% endif %}</p>
 </div>
+
+{% if boxes|length > 1 or (boxes and has_no_box) %}
+<form class="box-pick" method="get" action="{{ url_for('visits.house') }}">
+  <input type="hidden" name="h" value="{{ house }}">
+  <label>Box (where they live and vote)
+    <select name="box" data-autosubmit>
+      <option value="">All boxes</option>
+      {% for b in boxes %}<option value="{{ b }}" {{ 'selected' if box == b }}>{{ b }}</option>{% endfor %}
+      {% if has_no_box %}<option value="{{ no_box }}" {{ 'selected' if box == no_box }}>No box recorded</option>{% endif %}
+    </select>
+  </label>
+  <noscript><button class="small">Show</button></noscript>
+</form>
+{% endif %}
 
 <form class="card form visit-form" method="post" action="{{ url_for('visits.record') }}" id="record">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="h" value="{{ house }}">
+  {% if box %}<input type="hidden" name="box" value="{{ box }}">{% endif %}
   <h2>Record a visit</h2>
   <fieldset class="segmented outcome-seg">
     <legend>What happened?</legend>
@@ -25,18 +40,18 @@
   <fieldset class="met-list">
     <legend>Who did you meet? <span class="muted small-text">They become “Contacted” (or “Follow up” for come back later)</span></legend>
     {% for v in residents %}
-    <label class="met">
+    <label class="met st-{{ v.status }}">
       <input type="checkbox" name="met" value="{{ v.national_id }}">
       {{ avatar(v, 'sm') }}
       <span class="met-main"><strong>{{ v.full_name or '(no name)' }}</strong>
-        <span class="muted small-text">{% if v.age is not none %}{{ v.age }} · {% endif %}{{ v.sex or '—' }} · {{ statuses[v.status] }}
-          {%- if v.house_name != house %} · registered at {{ v.house_name }}{% endif %}
-          {%- if v.lives_at == 'unknown' %} · where they live not known{% endif %}</span></span>
+        <span class="muted">{% if v.phone %}<span class="mono">{{ v.phone }}</span>{% endif %}{% if v.phone and v.location %} · {% endif %}{{ v.location }}</span>
+        <span class="small-text muted">{% if v.age is not none %}{{ v.age }} · {% endif %}{{ v.sex or '—' }} · {{ statuses[v.status] }}</span></span>
+      <a class="met-open" href="{{ url_for('voters.detail', national_id=v.national_id, back=back) }}" aria-label="Open {{ v.full_name }}">{{ icon('chevron', 18) }}</a>
     </label>
     {% endfor %}
   </fieldset>
   {% else %}
-  <p class="muted">Nobody you can see lives here right now.</p>
+  <p class="muted">No voters {{ 'at this box ' if box }}here.</p>
   {% endif %}
 
   <div class="checks visit-flags">
@@ -51,52 +66,6 @@
   </label>
   <button class="primary big wide">{{ icon('check', 18) }} Save visit</button>
 </form>
-
-{% if residents %}
-<section class="housemates">
-  <h2>Living here</h2>
-  <ul class="mate-list">
-    {% for v in residents %}
-    <li class="mate st-{{ v.status }}">
-      <a href="{{ url_for('voters.detail', national_id=v.national_id, back=back) }}">
-        {{ avatar(v, 'sm') }}
-        <span class="mate-main"><strong>{{ v.full_name or '(no name)' }}</strong>
-          <span class="muted small-text">{% if v.phone %}<span class="mono">{{ v.phone }}</span> · {% endif %}{{ v.location or '' }}</span></span>
-        <span class="tag st-tag-{{ v.status }}">{{ statuses[v.status] }}</span>
-      </a>
-      <details class="lives-edit">
-        <summary class="small-text">Lives elsewhere?</summary>
-        {% with v=v %}{% include "visits/_lives_form.html" %}{% endwith %}
-      </details>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
-{% endif %}
-
-{% if elsewhere %}
-<section class="housemates">
-  <h2>Registered here, living elsewhere</h2>
-  <p class="muted small-text">Not counted in visits to this house. Reach them by phone, or from the
-    <a href="{{ url_for('voters.search', lv='away') }}">Away list</a>.</p>
-  <ul class="mate-list">
-    {% for v in elsewhere %}
-    <li class="mate away">
-      <a href="{{ url_for('voters.detail', national_id=v.national_id, back=back) }}">
-        {{ avatar(v, 'sm') }}
-        <span class="mate-main"><strong>{{ v.full_name or '(no name)' }}</strong>
-          <span class="muted small-text">{{ lives_label(v) }}{% if v.phone %} · <span class="mono">{{ v.phone }}</span>{% endif %}</span></span>
-        <span class="tag st-tag-{{ v.status }}">{{ statuses[v.status] }}</span>
-      </a>
-      <details class="lives-edit">
-        <summary class="small-text">Change</summary>
-        {% with v=v %}{% include "visits/_lives_form.html" %}{% endwith %}
-      </details>
-    </li>
-    {% endfor %}
-  </ul>
-</section>
-{% endif %}
 
 <section class="card visit-history">
   <h2>{{ 'Visits' if is_admin else 'Your visits' }}</h2>

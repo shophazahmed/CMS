@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head">
   <h1>House visits</h1>
-  <p class="muted">{{ 'Everyone’s visits.' if is_admin else 'Your visits.' }} Tap a house to see who lives there and record a visit.</p>
+  <p class="muted">{{ 'Everyone’s visits.' if is_admin else 'Your visits.' }} Tap a house to see its voters and record a visit.</p>
 </div>
 
 <form class="searchbar" method="get" action="{{ url_for('visits.index') }}" role="search">
@@ -53,13 +53,6 @@
   <noscript><button class="primary">Apply</button></noscript>
 </form>
 
-{% if away.away or away.unknown %}
-<p class="away-line small-text">
-  <a href="{{ url_for('voters.search', lv='away', sort='location') }}">{{ icon('home', 14) }} {{ away.away }} voter{{ 's' if away.away != 1 }} live away</a>
-  <span class="muted">· Malé {{ away.male }} · other islands {{ away.island }} · abroad {{ away.abroad }}</span>
-  {% if away.unknown %}· <a href="{{ url_for('voters.search', lv='unknown') }}">{{ away.unknown }} not known</a>{% endif %}
-</p>
-{% endif %}
 
 <p class="muted small-text">{{ total }} house{{ 's' if total != 1 }}</p>
 {% if rows %}

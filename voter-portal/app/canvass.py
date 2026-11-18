@@ -53,9 +53,7 @@ def house_rows(where="", params=(), sort="progress", count_if=("1", []), having=
     if clause:
         where, params = f"{where} AND {clause}", list(params) + extra
     cond, cond_params = count_if
-    # Only the people who live in the house: voters living away or at another house aren't counted here
-    sql = (f"{HOUSE_STATS.format(c=f'({cond})', src=src)} WHERE v.house_name != ''"
-           f" AND v.lives_at IN ('home', 'unknown') {where} GROUP BY v.house_name"
+    sql = (f"{HOUSE_STATS.format(c=f'({cond})', src=src)} WHERE v.house_name != '' {where} GROUP BY v.house_name"
            f" {having} ORDER BY {SORTS[sort]}")
     return get_db().execute(sql, list(cond_params) * HOUSE_STATS.count("{c}") + list(params)).fetchall()
 

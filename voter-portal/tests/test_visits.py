@@ -98,42 +98,23 @@ def test_visits_are_personal_admins_see_all(app):
     assert u.get("/visits/export.csv").status_code == 403
 
 
-def test_lives_at_moves_voters_out_of_house_visits(app):
+def test_house_page_box_filter(app):
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Gdh. Gadhdhoo', phone = '7773680' WHERE national_id = 'A200001'")
+    conn.execute("UPDATE voters SET location = ? WHERE national_id = 'A200003'", ("GDH. Atoll, Male (Male' hub)",))
+    conn.commit()
     u = app.test_client()
     login(u, "viewer", USER_PW)
-    token = csrf(u, "/")
-    u.post("/voters/A200003/lives", data={"csrf_token": token, "lives_at": "male", "lives_detail": "Henveiru",
-                                          "back": "/visits/house?h=Rose+Villa"})
-    house = u.get("/visits/house?h=Rose+Villa").get_data(as_text=True)
-    assert "Registered here, living elsewhere" in house and "Malé · Henveiru" in house
-    assert len(re.findall(r'name="met" value="(A\d+)"', house)) == 1                 # only Aminath lives there
-    visit(u, ROSE, "nobody")
-    assert own_status(app, "A200003", "viewer") == "new"                             # away: not touched
-
-    # Aminath now stays at Blue Ge: she shows up there, and Rose Villa has nobody living in it
-    u.post("/voters/A200001/lives", data={"csrf_token": token, "lives_at": "house", "lives_detail": BLUE})
-    blue = u.get("/visits/house?h=Blue+Ge").get_data(as_text=True)
-    assert set(re.findall(r'name="met" value="(A\d+)"', blue)) == {"A200001", "A200002"}
-    assert "registered at Rose Villa" in blue
-    assert u.post("/voters/A200001/lives", data={"csrf_token": token, "lives_at": "house"}).status_code == 302
-    assert u.post("/voters/A200001/lives", data={"csrf_token": token, "lives_at": "moon"}).status_code == 400
-
-    # the Away list and the voter card
-    page = u.get("/?lv=away").get_data(as_text=True)
-    assert page.count('id="v-A2000') == 1 and "Lives away" in page
-    assert u.get("/?lv=house").get_data(as_text=True).count('id="v-A2000') == 1
-    assert "Lives at" in u.get("/voters/A200003").get_data(as_text=True)
-
-    # admin dashboard: house progress counts only people living in the house; away count shown
-    a = app.test_client()
-    login(a, "boss", ADMIN_PW)
-    dash = a.get("/dashboard").get_data(as_text=True)
-    # Rose Villa: nobody lives there now; Blue Ge: Moosa (Aminath stays there but is registered elsewhere)
-    assert "Live away" in dash and "0 of 1" in dash and ROSE not in dash.split("Most active")[0].split("house-list")[-1]
-    header, *lines = a.get("/export.csv").get_data(as_text=True).lstrip("﻿").strip().splitlines()
-    assert header.endswith("Lives at") or ",Lives at" in header
-    assert any("Malé · Henveiru" in line for line in lines)
-    assert "voter_lives" in a.get("/admin/audit").get_data(as_text=True)
+    page = u.get("/visits/house?h=Rose+Villa").get_data(as_text=True)
+    assert "Box (where they live and vote)" in page and "Living here" not in page
+    assert "7773680</span> · Gdh. Gadhdhoo" in page                                  # phone · box on each row
+    assert len(re.findall(r'name="met" value="(A\d+)"', page)) == 2
+    male = u.get("/visits/house", query_string={"h": ROSE, "box": "GDH. Atoll, Male (Male' hub)"}).get_data(as_text=True)
+    assert re.findall(r'name="met" value="(A\d+)"', male) == ["A200003"]
+    # with a box chosen, "nobody home" only touches the voters shown
+    visit(u, ROSE, "nobody", box="GDH. Atoll, Male (Male' hub)")
+    assert own_status(app, "A200003", "viewer") == "noanswer" and own_status(app, "A200001", "viewer") == "new"
+    assert u.post("/voters/A200001/lives", data={"csrf_token": csrf(u, "/"), "lives_at": "male"}).status_code == 404
 
 
 def test_agents_only_get_their_houses(app):

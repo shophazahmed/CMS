@@ -123,13 +123,11 @@ updates the visitor's own canvassing status, never undoing a better one:
 Agents, read-only users and admins can record visits (agents only for their own houses). Like
 status and notes, visits are personal: users and agents see their own, admins see everyone's, can
 delete a wrong visit and download all visits as CSV. My dashboard shows your next houses to visit;
-the admin Dashboard shows houses visited, visits today / this week, transport and away counts.
+the admin Dashboard shows houses visited, visits today / this week and transport counts.
 
-**Lives at:** a voter registered at a house may live elsewhere: another house in Gadhdhoo, Malé,
-another island, abroad, or not known. Set it on the voter page or from the house page ("Lives
-elsewhere?"). Visits and house progress count only the people who live in the house; someone staying
-at another house shows up there. **Search → Lives at → Away** is the list to reach by phone.
-"Votes at" is the existing Location field from the official lists.
+**Box:** a voter's box (the Location field from the official lists) is where they live and vote.
+Visits, the house page, the Dashboard and My dashboard can all be filtered by box; on a house page
+"Who did you meet?" then lists only that box's voters, and the visit's status changes touch only them.
 
 ## Colours
 
