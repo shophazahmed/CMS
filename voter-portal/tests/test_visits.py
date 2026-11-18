@@ -151,3 +151,22 @@ def test_agents_only_get_their_houses(app):
     assert own_status(app, "A200002", "ali") == "contacted"
     my = g.get("/my").get_data(as_text=True)
     assert "Next houses to visit" not in my or BLUE in my
+
+
+def test_box_filter_and_voter_count_sorts(app):
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Gadhdhoo' WHERE house_name = ?", (ROSE,))
+    conn.execute("UPDATE voters SET location = 'Male 1' WHERE house_name = ?", (BLUE,))
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    houses = lambda path: re.findall(r'class="house-name">([^<]+)<', a.get(path).get_data(as_text=True))  # noqa: E731
+    page = a.get("/visits").get_data(as_text=True)
+    assert "Gadhdhoo (1)" in page and "Male 1 (1)" in page                       # box dropdown
+    assert houses("/visits?box=Male+1") == [BLUE]
+    assert houses("/visits?box=Gadhdhoo&f=never") == [ROSE]
+    assert "Never visited <b>1</b>" in a.get("/visits?box=Gadhdhoo").get_data(as_text=True)  # chips follow the box
+    assert houses("/visits?box=(none)") == []
+    assert houses("/visits?sort=box") == [ROSE, BLUE]                             # Gadhdhoo before Male 1
+    assert houses("/visits?sort=voters") == [ROSE, BLUE]                          # 2 voters, then 1
+    assert houses("/visits?sort=fewest") == [BLUE, ROSE]

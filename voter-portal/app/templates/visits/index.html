@@ -11,7 +11,7 @@
   <div class="search-input">
     {{ icon('search') }}
     <input type="search" name="q" value="{{ q }}" placeholder="House name" aria-label="Search houses" autocomplete="off" enterkeyhint="search">
-    {% for k in ('f', 'agent', 'sort') %}{% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}{% endfor %}
+    {% for k in ('f', 'agent', 'sort', 'box') %}{% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}{% endfor %}
     <button class="primary" type="submit">Search</button>
   </div>
 </form>
@@ -33,6 +33,15 @@
       <option value="">All houses</option>
       <option value="none" {{ 'selected' if agent == 'none' }}>No agent</option>
       {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if agent == a.id|string }}>{{ a.username }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
+  {% if boxes %}
+  <label>Box
+    <select name="box" data-autosubmit>
+      <option value="">All boxes</option>
+      {% for b, n in boxes %}<option value="{{ b }}" {{ 'selected' if box == b }}>{{ b }} ({{ n }})</option>{% endfor %}
+      <option value="{{ no_box }}" {{ 'selected' if box == no_box }}>No box recorded</option>
     </select>
   </label>
   {% endif %}
@@ -61,6 +70,7 @@
     <a class="house-link" href="{{ url_for('visits.house', h=r.house) }}">
       <span class="house-name">{{ r.house }}</span>
       <span class="house-meta">
+        {% set hb = house_boxes(r) %}{% if r.box %}<span class="tag box-tag" title="{{ hb|join(', ') }}">{{ icon('chevron', 12) }} {{ r.box }}{% if hb|length > 1 %} +{{ hb|length - 1 }}{% endif %}</span>{% endif %}
         <span class="mono">{{ r.reached or 0 }}/{{ r.total }}</span>
         {% if r.agent and current_user.role != 'agent' %}<span class="tag">{{ icon('user', 12) }} {{ r.agent }}</span>{% endif %}
       </span>

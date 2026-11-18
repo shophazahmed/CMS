@@ -120,10 +120,13 @@ def house_list():
     latest = (f"(SELECT {{col}} FROM house_visits x WHERE x.house_name = h.house{vs}"
               " ORDER BY x.visited_at DESC, x.id DESC LIMIT 1)")
     sql = f"""
-        WITH r AS (SELECT {RESIDENT_HOUSE} AS house, status FROM {src}{w}),
-             h AS (SELECT house, COUNT(*) AS total, SUM(status != 'new') AS reached FROM r
+        WITH r AS (SELECT {RESIDENT_HOUSE} AS house, status, location AS box FROM {src}{w}),
+             h AS (SELECT house, COUNT(*) AS total, SUM(status != 'new') AS reached,
+                          group_concat(DISTINCT NULLIF(box, '')) AS boxes FROM r
                    WHERE house IS NOT NULL AND house != '' GROUP BY house)
-        SELECT h.house, h.total, h.reached,
+        SELECT h.house, h.total, h.reached, h.boxes,
+               (SELECT r2.box FROM r r2 WHERE r2.house = h.house AND r2.box != '' GROUP BY r2.box
+                ORDER BY COUNT(*) DESC, r2.box LIMIT 1) AS box,
                (SELECT COUNT(*) FROM house_visits x WHERE x.house_name = h.house{vs}) AS visits,
                {latest.format(col='visited_at')} AS last_at,
                {latest.format(col='outcome')} AS last_outcome,
@@ -134,7 +137,9 @@ def house_list():
                a.user_id AS agent_id, u.username AS agent
         FROM h LEFT JOIN house_assignments a ON a.house_name = h.house LEFT JOIN users u ON u.id = a.user_id
     """
-    return get_db().execute(sql, p + vp * 7).fetchall()
+    if "visit_houses" not in g:  # used more than once per page
+        g.visit_houses = get_db().execute(sql, p + vp * 7).fetchall()
+    return g.visit_houses
 
 
 def _matches(row, key, now, week_ago):
@@ -172,22 +177,37 @@ def _plan_order(row, now):
     return (3, row["last_at"] or "", row["house"].casefold())
 
 
-SORTS = {"plan": "To visit first", "last": "Recently visited", "name": "House name", "voters": "Most voters"}
+SORTS = {"plan": "To visit first", "box": "Box (where they vote)", "voters": "Most voters",
+         "fewest": "Fewest voters", "last": "Recently visited", "name": "House name"}
+NO_BOX = "(none)"
 
 
-def filtered_houses(key="", q="", agent="", sort="plan"):
+def house_boxes(row):
+    return [b for b in (row["boxes"] or "").split(",") if b]
+
+
+def filtered_houses(key="", q="", agent="", sort="plan", box=""):
     now = today()
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
     rows = house_list()
+    if q:
+        rows = [r for r in rows if q.casefold() in r["house"].casefold()]
+    if agent == "none":
+        rows = [r for r in rows if r["agent_id"] is None]
+    elif agent.isdigit():
+        rows = [r for r in rows if r["agent_id"] == int(agent)]
+    if box == NO_BOX:
+        rows = [r for r in rows if not house_boxes(r)]
+    elif box:
+        rows = [r for r in rows if box in house_boxes(r)]
+    # chip counts follow the search, agent and box, so they match what a tap shows
     counts = {k: sum(1 for r in rows if _matches(r, k, now, week_ago)) for k in FILTERS}
     out = [r for r in rows if _matches(r, key, now, week_ago)]
-    if q:
-        out = [r for r in out if q.casefold() in r["house"].casefold()]
-    if agent == "none":
-        out = [r for r in out if r["agent_id"] is None]
-    elif agent.isdigit():
-        out = [r for r in out if r["agent_id"] == int(agent)]
-    if sort == "last":
+    if sort == "box":
+        out.sort(key=lambda r: (r["box"] is None, (r["box"] or "").casefold(), r["house"].casefold()))
+    elif sort == "fewest":
+        out.sort(key=lambda r: (r["total"], r["house"].casefold()))
+    elif sort == "last":
         out.sort(key=lambda r: r["last_at"] or "", reverse=True)
     elif sort == "name":
         out.sort(key=lambda r: r["house"].casefold())
@@ -207,7 +227,8 @@ def index():
     agent = request.args.get("agent", "") if personal.sees_everyone() or g.user["role"] == "user" else ""
     sort = request.args.get("sort", "plan")
     sort = sort if sort in SORTS else "plan"
-    rows, counts, now = filtered_houses(key, q, agent, sort)
+    box = clean_text(request.args.get("box", ""))[:200]
+    rows, counts, now = filtered_houses(key, q, agent, sort, box)
     try:
         page = max(1, int(request.args.get("page", 1)))
     except ValueError:
@@ -222,7 +243,17 @@ def index():
     return render_template("visits/index.html", rows=rows[(page - 1) * size:page * size], total=len(rows),
                            counts=counts, filters=FILTERS, key=key, q=q, agent=agent, agents=agents, sort=sort,
                            sorts=SORTS, outcomes=OUTCOMES, today=now, page=page, pages=pages,
-                           query_args=query_args, away=away_counts())
+                           query_args=query_args, away=away_counts(), box=box, boxes=box_options(),
+                           no_box=NO_BOX, house_boxes=house_boxes)
+
+
+def box_options():
+    """Boxes (voters.location) of the people you can see, with how many houses vote there."""
+    counts = {}
+    for r in house_list():
+        for b in house_boxes(r):
+            counts[b] = counts.get(b, 0) + 1
+    return sorted(counts.items(), key=lambda kv: kv[0].casefold())
 
 
 def away_counts():
