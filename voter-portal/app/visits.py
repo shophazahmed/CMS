@@ -483,9 +483,9 @@ def dashboard_numbers(box=""):
     }
 
 
-def next_houses(limit=5):
+def next_houses(limit=5, box=""):
     """Your next houses to visit (My dashboard): overdue and due, then never visited."""
-    rows, _, now = filtered_houses("todo")
+    rows, _, now = filtered_houses("todo", box=box)
     return rows[:limit], now
 
 

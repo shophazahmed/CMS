@@ -13,11 +13,25 @@
   {% endif %}
 </div>
 
+{% if boxes %}
+<form class="box-pick" method="get">
+  {% for k, val in request.args.items() if k not in ('box', 'page') %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
+  <label>Box (where they vote)
+    <select name="box" data-autosubmit>
+      <option value="">All boxes</option>
+      {% for b, n in boxes %}<option value="{{ b }}" {{ 'selected' if box == b }}>{{ b }} ({{ n }})</option>{% endfor %}
+      <option value="{{ no_box }}" {{ 'selected' if box == no_box }}>No box recorded</option>
+    </select>
+  </label>
+  <noscript><button class="small">Show</button></noscript>
+</form>
+{% endif %}
+
 {% if next_houses %}
 <section class="card next-houses">
   <div class="list-head">
     <h2>{{ icon('home', 18) }} Next houses to visit</h2>
-    <a href="{{ url_for('visits.index', f='todo') }}">All ›</a>
+    <a href="{{ url_for('visits.index', f='todo', box=box or None) }}">All ›</a>
   </div>
   <ul class="recent-list">
     {% for r in next_houses %}
@@ -33,16 +47,16 @@
 </section>
 {% endif %}
 
-<h2>{{ 'Their' if viewing_other else 'Your' }} canvassing{% if rng.label %} · {{ rng.label }}{% endif %}</h2>
+<h2>{{ 'Their' if viewing_other else 'Your' }} canvassing{% if rng.label %} · {{ rng.label }}{% endif %}{% if box %} · {{ 'no box' if box == no_box else box }}{% endif %}</h2>
 {{ range_picker(rng, 'canvass.my_houses', request.args.to_dict()) }}
 <section class="kpis" aria-label="Canvassing by {{ agent.username }}">
-  <a class="kpi link-kpi hero" href="{{ url_for('voters.search', by=agent.id, sort='house') }}">
+  <a class="kpi link-kpi hero" href="{{ url_for('voters.search', by=agent.id, sort='house', loc=box or None) }}">
     <span class="kpi-label">Voters reached by {{ agent.username if viewing_other else 'you' }}</span>
     <strong>{{ mine.total }}</strong>
     <span class="muted">{{ mine.contacted or 0 }} contacted · {{ mine.followup or 0 }} follow up · {{ mine.noanswer or 0 }} no answer · {{ mine.wontvote or 0 }} will not vote</span>
     {{ progress({'total': mine.total, 'reached': mine.total, 'contacted': mine.contacted, 'followup': mine.followup, 'noanswer': mine.noanswer, 'wontvote': mine.wontvote}, 'lg') }}
   </a>
-  <a class="kpi link-kpi" href="{{ url_for('voters.search', by=agent.id, status='followup', sort='house') }}">
+  <a class="kpi link-kpi" href="{{ url_for('voters.search', by=agent.id, status='followup', sort='house', loc=box or None) }}">
     <span class="kpi-label"><i class="dot seg-followup"></i>{{ 'Their' if viewing_other else 'Your' }} follow-ups</span><strong>{{ mine.followup or 0 }}</strong>
     <span class="muted">Tap to see them</span></a>
   {% if rng.label %}
@@ -56,7 +70,7 @@
 <div class="card">
   <div class="list-head">
     <h2>Latest</h2>
-    <a href="{{ url_for('voters.search', by=agent.id) }}">See all ›</a>
+    <a href="{{ url_for('voters.search', by=agent.id, loc=box or None) }}">See all ›</a>
   </div>
   <ul class="recent-list">
     {% for r in recent %}
@@ -78,7 +92,7 @@
 
 {% if is_agent %}
 {% if singles.total %}
-<a class="card next-up" href="{{ url_for('voters.search', va=agent.id, sort='house') }}">
+<a class="card next-up" href="{{ url_for('voters.search', va=agent.id, sort='house', loc=box or None) }}">
   <span class="kpi-label">Voters given to {{ agent.username if viewing_other else 'you' }} one by one</span>
   <strong>{{ singles.total }} voter{{ 's' if singles.total != 1 }}</strong>
   <span class="muted">{{ singles.reached or 0 }} reached{% if singles.followup %} · {{ singles.followup }} follow-up{{ 's' if singles.followup != 1 }}{% endif %}</span>
@@ -100,16 +114,16 @@
     <span class="muted">{{ t.reached }} of {{ t.total }} in {{ t.houses }} house{{ 's' if t.houses != 1 }}, by anyone</span>
     {{ progress(t, 'lg') }}
   </div>
-  <a class="kpi link-kpi" href="{{ url_for('voters.search', status='followup', sort='house') }}">
+  <a class="kpi link-kpi" href="{{ url_for('voters.search', status='followup', sort='house', loc=box or None) }}">
     <span class="kpi-label"><i class="dot seg-followup"></i>Follow-ups</span><strong>{{ t.followup }}</strong>
     <span class="muted">Tap to see them</span></a>
-  <a class="kpi link-kpi" href="{{ url_for('voters.search', status='new', sort='house') }}">
+  <a class="kpi link-kpi" href="{{ url_for('voters.search', status='new', sort='house', loc=box or None) }}">
     <span class="kpi-label"><i class="dot seg-track"></i>Not contacted</span><strong>{{ t.new }}</strong>
     <span class="muted">Tap to see them</span></a>
 </section>
 
 {% if suggestion and not viewing_other %}
-<a class="card next-up" href="{{ url_for('voters.search', h=suggestion.house, sort='house') }}">
+<a class="card next-up" href="{{ url_for('voters.search', h=suggestion.house, sort='house', loc=box or None) }}">
   <span class="kpi-label">Suggested next</span>
   <strong>{{ suggestion.house }}</strong>
   <span class="muted">
@@ -124,6 +138,7 @@
   <h2>Houses</h2>
   <form method="get">
     {% if viewing_other %}<input type="hidden" name="agent" value="{{ agent.id }}">{% endif %}
+    {% if box %}<input type="hidden" name="box" value="{{ box }}">{% endif %}
     <select name="sort" data-autosubmit aria-label="Sort houses">
       {% for key, label in [('progress', 'Least progress'), ('remaining', 'Most left'), ('name', 'Name'), ('recent', 'Recent')] %}
       <option value="{{ key }}" {{ 'selected' if sort == key }}>{{ label }}</option>
@@ -135,7 +150,7 @@
 <ul class="house-list">
   {% for r in rows %}
   <li class="house-row {{ 'done' if r.reached == r.total }}">
-    <a class="house-link" href="{{ url_for('voters.search', h=r.house, sort='house') }}">
+    <a class="house-link" href="{{ url_for('voters.search', h=r.house, sort='house', loc=box or None) }}">
       <span class="house-name">{% if r.reached == r.total %}✓ {% endif %}{{ r.house }}</span>
       <span class="house-meta">
         <span class="mono">{{ r.reached }}/{{ r.total }}</span>

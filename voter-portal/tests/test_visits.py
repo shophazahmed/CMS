@@ -188,3 +188,28 @@ def test_box_names_with_commas_and_dashboard_box_filter(app):
     houses = dash.split("Most active")[0]
     assert BLUE in houses and ROSE not in houses.split("house-list")[-1]
     assert "0 of 2" in a.get("/dashboard?box=Gdh.+Gadhdhoo").get_data(as_text=True)
+
+
+def test_my_dashboard_box_filter(app):
+    ali = add_agent(app, "ali")
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Gdh. Gadhdhoo' WHERE house_name = ?", (ROSE,))
+    conn.execute("UPDATE voters SET location = 'ViliMale, Ehenihen' WHERE house_name = ?", (BLUE,))
+    for h in (ROSE, BLUE):
+        conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES (?, ?, 't')", (h, ali))
+    conn.commit()
+    g = app.test_client()
+    login(g, "ali", AGENT_PW)
+    token = csrf(g, "/")
+    g.post("/voters/A200001/canvass", data={"csrf_token": token, "status": "contacted"})
+    g.post("/voters/A200002/canvass", data={"csrf_token": token, "status": "followup"})
+    page = g.get("/my").get_data(as_text=True)
+    assert "Box (where they vote)" in page and "ViliMale, Ehenihen (1)" in page
+    assert "Aminath Alpha" in page and "Moosa Beta" in page
+    page = g.get("/my", query_string={"box": "ViliMale, Ehenihen"}).get_data(as_text=True)
+    recent = page.split("Latest")[1].split("</ul>")[0] if "Latest" in page else page
+    assert "Moosa Beta" in recent and "Aminath Alpha" not in recent
+    assert "· ViliMale, Ehenihen</h2>" in page
+    houses = re.findall(r'class="house-name">(?:✓ )?([^<]+)<', page)
+    assert BLUE in houses and ROSE not in houses
+    assert "loc=ViliMale" in page                                             # links keep the box

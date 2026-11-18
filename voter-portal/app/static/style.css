@@ -844,3 +844,6 @@ button.linklike { background: none; border: 0; padding: 0; color: var(--danger);
 .tag.wing-yw { background: color-mix(in srgb, #e08a12 16%, var(--surface)); color: var(--text); border: 1px solid color-mix(in srgb, #e08a12 55%, transparent); }
 a.kpi { color: inherit; text-decoration: none; }
 .tag.box-tag { display: inline-flex; align-items: center; gap: .15rem; }
+.box-pick { margin: 0 0 1rem; }
+.box-pick label { display: grid; gap: .25rem; font-size: .85rem; color: var(--muted); max-width: 28rem; }
+.box-pick select { width: 100%; min-width: 0; }

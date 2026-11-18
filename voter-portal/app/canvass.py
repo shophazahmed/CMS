@@ -198,12 +198,15 @@ def dashboard():
     )
 
 
-def personal(user_id, rng=None):
+def personal(user_id, rng=None, box=""):
     """One person's own canvassing: voters they last marked as reached, and their latest ones."""
     from .voters import scoped  # here to avoid a circular import at load time
 
     db = get_db()
     parts, extra = range_condition(rng, "status_at") if rng else ([], [])
+    if box:
+        parts.append("location = ?")
+        extra = extra + ["" if box == visits.NO_BOX else box]
     w, p = scoped(" WHERE status != 'new'" + "".join(f" AND {x}" for x in parts), extra)
     src = own_view.own_source(user_id)  # their own status for every voter they reached
     mine = db.execute(
@@ -228,10 +231,12 @@ def my_houses():
     sort = request.args.get("sort", "progress")
     if sort not in SORTS:
         sort = "progress"
+    box = request.args.get("box", "")[:200]
+    box_sql, box_params = ((" AND v.location = ?", ["" if box == visits.NO_BOX else box]) if box else ("", []))
     # Voters in their houses that were handed to another agent one by one aren't theirs
     rows = house_rows(" AND a.user_id = ? AND v.national_id NOT IN"
-                      " (SELECT national_id FROM voter_assignments WHERE user_id != ?)",
-                      [user["id"], user["id"]], sort, src=own_view.own_source(user["id"], "v"))
+                      " (SELECT national_id FROM voter_assignments WHERE user_id != ?)" + box_sql,
+                      [user["id"], user["id"]] + box_params, sort, src=own_view.own_source(user["id"], "v"))
     t = totals(rows)
     clause, extra = campaign.party_scope("v.party")
     singles = get_db().execute(
@@ -239,7 +244,7 @@ def my_houses():
         " SUM(v.status = 'followup') AS followup, SUM(v.status = 'noanswer') AS noanswer,"
         " SUM(v.status = 'wontvote') AS wontvote"
         f" FROM voter_assignments va JOIN {own_view.own_source(user['id'], 'v')} ON v.national_id = va.national_id"
-        f" WHERE va.user_id = ?{' AND ' + clause if clause else ''}", [user["id"]] + extra).fetchone()
+        f" WHERE va.user_id = ?{' AND ' + clause if clause else ''}{box_sql}", [user["id"]] + extra + box_params).fetchone()
     # Suggested next stop: follow-ups first (someone asked us to come back), then the house
     # with the most voters nobody has reached yet.
     open_rows = [r for r in rows if r["reached"] < r["total"] or r["followup"]]
@@ -247,12 +252,18 @@ def my_houses():
     if open_rows:
         suggestion = max(open_rows, key=lambda r: (r["followup"] or 0, r["total"] - r["reached"], -len(r["house"])))
     rng = read_range(request.args)
-    mine, recent = personal(user["id"], rng)
+    mine, recent = personal(user["id"], rng, box)
+    from .voters import scoped
+
+    w, p = scoped(" WHERE location != ''")
+    boxes = get_db().execute(f"SELECT location, COUNT(*) FROM voters{w} GROUP BY location"
+                             " ORDER BY location COLLATE NOCASE", p).fetchall()
     return render_template("canvass/my.html", rows=rows, t=t, act=activity(user["id"], rng), agent=user, singles=singles,
                            rng=rng,
                            mine=mine, recent=recent, statuses=STATUS_LABELS,
                            suggestion=suggestion, sort=sort, viewing_other=user["id"] != g.user["id"],
-                           next_houses=visits.next_houses()[0] if user["id"] == g.user["id"] else [],
+                           next_houses=visits.next_houses(box=box)[0] if user["id"] == g.user["id"] else [],
+                           box=box, boxes=boxes, no_box=visits.NO_BOX,
                            today=visits.today(), outcomes=visits.OUTCOMES)
 
 
