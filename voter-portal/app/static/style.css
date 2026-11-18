@@ -875,3 +875,8 @@ a.kpi { color: inherit; text-decoration: none; }
 .house-title h1 { margin: 0; }
 .map-btn { display: inline-flex; align-items: center; gap: .35rem; }
 .tag.map-tag { display: inline-flex; align-items: center; gap: .2rem; text-decoration: none; color: var(--accent-ink); border-color: currentColor; }
+.map-state { margin: .2rem 0 0; display: inline-flex; align-items: center; gap: .3rem; color: var(--muted); }
+.map-state.on { color: var(--st-contacted); font-weight: 600; }
+.map-admin { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .75rem; margin: .4rem 0 0; }
+.map-setting-help { margin: .4rem 0 0; padding: .5rem .7rem; border-radius: 10px; background: color-mix(in srgb, #7c3aed 12%, var(--surface)); }
+.map-set[hidden], .map-admin[hidden], .map-setting-help[hidden], [data-map-normal][hidden] { display: none; }

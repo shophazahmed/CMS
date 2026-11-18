@@ -53,14 +53,16 @@ def test_upload_match_and_show(app):
     assert [(r["house_name"], r["source"]) for r in loc] == [("Rose Villa", "auto")]
 
     house = a.get("/visits/house?h=Rose+Villa").get_data(as_text=True)
-    assert "map-zoom" in house and "Wrong spot? Set it" in house
+    assert "map-zoom" not in house and "map-btn" in house and "On the map" in house   # button only, no picture
+    assert "Wrong spot? Set it" in a.get("/map?h=Rose+Villa").get_data(as_text=True)
+    assert "Set its spot" in a.get("/map?h=Blue+Ge").get_data(as_text=True)
+    assert "Found automatically" in a.get("/map?h=Rose+Villa").get_data(as_text=True)
+    assert "Not on the map yet" in a.get("/visits/house?h=Blue+Ge").get_data(as_text=True)
     img = a.get("/map/house.png?h=Rose+Villa")
     assert img.status_code == 200 and img.mimetype == "image/png" and img.data[:4] == b"\x89PNG"
     assert a.get("/map/full.png").mimetype == "image/png"
     full = a.get("/map?h=Rose+Villa").get_data(as_text=True)
     assert "data-map-ring" in full and re.search(r'viewBox="[\d.]+ [\d.]+ [\d.]+ [\d.]+"', full)
-    assert "isn&#39;t on the map yet" in a.get("/visits/house?h=Blue+Ge").get_data(as_text=True) or \
-        "isn't on the map yet" in a.get("/visits/house?h=Blue+Ge").get_data(as_text=True)
 
     # an admin sets Blue Ge's spot by hand; it survives a new upload and re-matching
     token = csrf(a, "/")
@@ -91,8 +93,9 @@ def test_agents_see_their_houses_on_the_map_only(app):
     upload(a, make_map())
     g = app.test_client()
     login(g, "ali", AGENT_PW)
-    assert "map-zoom" in g.get("/visits/house?h=Rose+Villa").get_data(as_text=True)
-    assert "Wrong spot" not in g.get("/visits/house?h=Rose+Villa").get_data(as_text=True)
+    assert "map-btn" in g.get("/visits/house?h=Rose+Villa").get_data(as_text=True)
+    assert "Wrong spot" not in g.get("/map?h=Rose+Villa").get_data(as_text=True)    # admins only
+    assert "data-map-pending" not in g.get("/map?h=Rose+Villa").get_data(as_text=True)
     assert g.get("/map/house.png?h=Rose+Villa").status_code == 200
     assert g.get("/map/house.png?h=Blue+Ge").status_code == 404              # not their house
     assert g.get("/map?h=Rose+Villa").status_code == 200

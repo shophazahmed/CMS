@@ -352,8 +352,25 @@ document.addEventListener("click", async (event) => {
   const pending = svg.querySelector("[data-map-pending]");
   const form = document.querySelector("[data-map-set]");
   if (pending && form) {
-    svg.classList.add("settable");
+    // Admins: "Wrong spot? Set it" switches this page into setting mode (no reload); Cancel leaves it.
+    let setting = svg.dataset.setting === "1";
+    const show = (on) => {
+      setting = on;
+      svg.classList.toggle("settable", on);
+      document.querySelectorAll("[data-map-normal]").forEach((el) => { el.hidden = on; });
+      document.querySelectorAll("[data-map-setting]").forEach((el) => { el.hidden = !on; });
+      if (!on) {
+        form.hidden = true;
+        pending.setAttribute("cx", "-100");
+        pending.setAttribute("cy", "-100");
+      }
+    };
+    show(setting);
+    const start = document.querySelector("[data-map-setmode]");
+    if (start) start.addEventListener("click", (event) => { event.preventDefault(); show(true); });
+    form.querySelector("[data-map-cancel]").addEventListener("click", () => show(false));
     svg.addEventListener("click", (event) => {
+      if (!setting) return;
       const pt = svg.createSVGPoint();
       pt.x = event.clientX;
       pt.y = event.clientY;
