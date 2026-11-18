@@ -4,7 +4,7 @@
 {% block content %}
 <div class="page-head">
   <h1>Canvassing dashboard</h1>
-  <p class="muted">Progress per house{{ ' · ' ~ party if party }}{% if agent == 'none' %} · unassigned houses{% endif %}
+  <p class="muted">Progress per house{{ ' · box ' ~ ('not recorded' if box == no_box else box) if box }}{{ ' · ' ~ party if party }}{% if agent == 'none' %} · unassigned houses{% endif %}
     {%- if who_name %} · reached by <strong>{{ who_name }}</strong>{% endif %}{% if rng.label %} · <strong>{{ rng.label }}</strong>{% endif %}</p>
 </div>
 
@@ -20,12 +20,12 @@
 {{ range_picker(rng, 'canvass.dashboard', request.args.to_dict()) }}
 
 <section class="kpis visit-kpis" aria-label="House visits">
-  <a class="kpi link-kpi" href="{{ url_for('visits.index') }}"><span class="kpi-label">{{ icon('home', 14) }} Houses visited</span>
+  <a class="kpi link-kpi" href="{{ url_for('visits.index', box=box or None) }}"><span class="kpi-label">{{ icon('home', 14) }} Houses visited</span>
     <strong>{{ vn.pct }}%</strong><span class="muted">{{ vn.visited }} of {{ vn.houses }}</span></a>
-  <a class="kpi link-kpi" href="{{ url_for('visits.index', f='todo') }}"><span class="kpi-label">Visits today</span>
+  <a class="kpi link-kpi" href="{{ url_for('visits.index', f='todo', box=box or None) }}"><span class="kpi-label">Visits today</span>
     <strong>{{ vn.today }}</strong><span class="muted">{{ vn.week }} this week · {{ vn.due }} due</span></a>
   {% if vn.transport or vn.senior %}
-  <a class="kpi link-kpi" href="{{ url_for('visits.index', f='transport') }}"><span class="kpi-label">Needs transport</span>
+  <a class="kpi link-kpi" href="{{ url_for('visits.index', f='transport', box=box or None) }}"><span class="kpi-label">Needs transport</span>
     <strong>{{ vn.transport }}</strong><span class="muted">{{ vn.senior }} want a senior visit</span></a>
   {% endif %}
   <a class="kpi link-kpi" href="{{ url_for('voters.search', lv='away', sort='location') }}"><span class="kpi-label">Live away</span>
@@ -57,6 +57,13 @@
 </section>
 
 <form class="card filters dash-filters" method="get">
+  <label>Box (where they vote)
+    <select name="box" data-autosubmit>
+      <option value="">All boxes</option>
+      {% for b, n in boxes %}<option value="{{ b }}" {{ 'selected' if box == b }}>{{ b }} ({{ n }})</option>{% endfor %}
+      <option value="{{ no_box }}" {{ 'selected' if box == no_box }}>No box recorded</option>
+    </select>
+  </label>
   <label>Party
     <select name="party" data-autosubmit>
       <option value="">All parties</option>
@@ -94,7 +101,7 @@
 <ul class="house-list">
   {% for r in rows %}
   <li class="house-row {{ 'done' if r.reached == r.total }}">
-    <a class="house-link" href="{{ url_for('voters.search', h=r.house, sort='house', party=party or None) }}">
+    <a class="house-link" href="{{ url_for('voters.search', h=r.house, sort='house', party=party or None, loc=box or None) }}">
       <span class="house-name">{{ r.house }}</span>
       <span class="house-meta">
         <span class="mono">{{ r.reached }}/{{ r.total }}</span>

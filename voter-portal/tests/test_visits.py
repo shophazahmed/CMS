@@ -170,3 +170,21 @@ def test_box_filter_and_voter_count_sorts(app):
     assert houses("/visits?sort=box") == [ROSE, BLUE]                             # Gadhdhoo before Male 1
     assert houses("/visits?sort=voters") == [ROSE, BLUE]                          # 2 voters, then 1
     assert houses("/visits?sort=fewest") == [BLUE, ROSE]
+
+
+def test_box_names_with_commas_and_dashboard_box_filter(app):
+    box = "GDH. Atoll, Male (Male' hub)"
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = ? WHERE house_name = ?", (box, BLUE))
+    conn.execute("UPDATE voters SET location = 'Gdh. Gadhdhoo' WHERE house_name = ?", (ROSE,))
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    page = a.get("/visits").get_data(as_text=True)
+    assert "GDH. Atoll, Male (Male&#39; hub) (1)" in page and ">GDH. Atoll (" not in page   # one box, not two
+    assert re.findall(r'class="house-name">([^<]+)<', a.get("/visits", query_string={"box": box}).get_data(as_text=True)) == [BLUE]
+    dash = a.get("/dashboard", query_string={"box": box}).get_data(as_text=True)
+    assert "Box (where they vote)" in dash and "0 of 1" in dash and "box GDH. Atoll, Male" in dash
+    houses = dash.split("Most active")[0]
+    assert BLUE in houses and ROSE not in houses.split("house-list")[-1]
+    assert "0 of 2" in a.get("/dashboard?box=Gdh.+Gadhdhoo").get_data(as_text=True)

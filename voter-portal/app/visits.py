@@ -122,9 +122,11 @@ def house_list():
     sql = f"""
         WITH r AS (SELECT {RESIDENT_HOUSE} AS house, status, location AS box FROM {src}{w}),
              h AS (SELECT house, COUNT(*) AS total, SUM(status != 'new') AS reached,
-                          group_concat(DISTINCT NULLIF(box, '')) AS boxes FROM r
+                          SUM(box != '') AS with_box FROM r
                    WHERE house IS NOT NULL AND house != '' GROUP BY house)
-        SELECT h.house, h.total, h.reached, h.boxes,
+        SELECT h.house, h.total, h.reached,
+               (SELECT group_concat(b, char(31)) FROM (SELECT DISTINCT r3.box AS b FROM r r3
+                 WHERE r3.house = h.house AND r3.box != '' ORDER BY r3.box)) AS boxes,
                (SELECT r2.box FROM r r2 WHERE r2.house = h.house AND r2.box != '' GROUP BY r2.box
                 ORDER BY COUNT(*) DESC, r2.box LIMIT 1) AS box,
                (SELECT COUNT(*) FROM house_visits x WHERE x.house_name = h.house{vs}) AS visits,
@@ -182,8 +184,19 @@ SORTS = {"plan": "To visit first", "box": "Box (where they vote)", "voters": "Mo
 NO_BOX = "(none)"
 
 
+BOX_SEP = "\x1f"  # box names can contain commas, so they're joined with a control character
+
+
 def house_boxes(row):
-    return [b for b in (row["boxes"] or "").split(",") if b]
+    return [b for b in (row["boxes"] or "").split(BOX_SEP) if b]
+
+
+def in_box(rows, box):
+    if box == NO_BOX:
+        return [r for r in rows if not house_boxes(r)]
+    if box:
+        return [r for r in rows if box in house_boxes(r)]
+    return rows
 
 
 def filtered_houses(key="", q="", agent="", sort="plan", box=""):
@@ -196,10 +209,7 @@ def filtered_houses(key="", q="", agent="", sort="plan", box=""):
         rows = [r for r in rows if r["agent_id"] is None]
     elif agent.isdigit():
         rows = [r for r in rows if r["agent_id"] == int(agent)]
-    if box == NO_BOX:
-        rows = [r for r in rows if not house_boxes(r)]
-    elif box:
-        rows = [r for r in rows if box in house_boxes(r)]
+    rows = in_box(rows, box)
     # chip counts follow the search, agent and box, so they match what a tap shows
     counts = {k: sum(1 for r in rows if _matches(r, k, now, week_ago)) for k in FILTERS}
     out = [r for r in rows if _matches(r, key, now, week_ago)]
@@ -256,10 +266,11 @@ def box_options():
     return sorted(counts.items(), key=lambda kv: kv[0].casefold())
 
 
-def away_counts():
+def away_counts(box=""):
     from .voters import scoped
 
-    w, p = scoped(" WHERE deceased = 0")
+    w, p = scoped(" WHERE deceased = 0" + (" AND location = ?" if box else ""),
+                  [("" if box == NO_BOX else box)] if box else [])
     row = get_db().execute(
         "SELECT SUM(lives_at = 'male') AS male, SUM(lives_at = 'island') AS island,"
         " SUM(lives_at = 'abroad') AS abroad, SUM(lives_at = 'unknown') AS unknown,"
@@ -446,16 +457,20 @@ def set_lives(national_id):
     return redirect(_safe_back(request.form.get("back")))
 
 
-def dashboard_numbers():
-    """For the admin dashboard: houses visited, visits today / this week, flags, away voters."""
-    rows = house_list()
+def dashboard_numbers(box=""):
+    """For the admin dashboard: houses visited, visits today / this week, flags, away voters
+    (all for one box, when given)."""
+    rows = in_box(house_list(), box)
     now = today()
     db = get_db()
     day_start = (datetime.strptime(now, "%Y-%m-%d").replace(tzinfo=timezone.utc) - LOCAL_OFFSET).isoformat(
         timespec="seconds")
     week_ago = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat(timespec="seconds")
-    count = lambda since: db.execute("SELECT COUNT(*) FROM house_visits WHERE visited_at >= ?",  # noqa: E731
-                                     (since,)).fetchone()[0]
+    names = {r["house"] for r in rows}
+
+    def count(since):
+        found = db.execute("SELECT house_name FROM house_visits WHERE visited_at >= ?", (since,)).fetchall()
+        return sum(1 for (h,) in found if not box or h in names)
     visited = sum(1 for r in rows if r["visits"])
     return {
         "houses": len(rows), "visited": visited,
@@ -464,7 +479,7 @@ def dashboard_numbers():
         "due": sum(1 for r in rows if r["next_on"] is not None and r["next_on"] <= now),
         "transport": sum(1 for r in rows if r["transport"]),
         "senior": sum(1 for r in rows if r["senior"]),
-        "away": away_counts(),
+        "away": away_counts(box),
     }
 
 

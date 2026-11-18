@@ -148,6 +148,7 @@ def activity(user_id=None, rng=None):
 def dashboard():
     db = get_db()
     party = request.args.get("party", "")
+    box = request.args.get("box", "")[:200]
     agent = request.args.get("agent", "")
     who = request.args.get("user", "")
     who = who if who.isdigit() else ""
@@ -165,6 +166,9 @@ def dashboard():
     if party:
         where += " AND v.party = ?"
         params.append(party)
+    if box:  # ballot box (voters.location)
+        where += " AND v.location = ?"
+        params.append("" if box == visits.NO_BOX else box)
     if agent == "none":
         where += " AND a.user_id IS NULL"
     elif agent.isdigit():
@@ -180,6 +184,8 @@ def dashboard():
     people = db.execute("SELECT id, username, role FROM users ORDER BY username COLLATE NOCASE").fetchall()
     who_name = next((u["username"] for u in people if str(u["id"]) == who), "")
     no_house = db.execute(f"SELECT COUNT(*) FROM voters WHERE house_name = ''{scope}", extra).fetchone()[0]
+    boxes = db.execute(f"SELECT location, COUNT(*) FROM voters WHERE location != ''{scope}"
+                       " GROUP BY location ORDER BY location COLLATE NOCASE", extra).fetchall()
     wings = db.execute(
         "SELECT SUM(ar) AS ar, SUM(ar AND status != 'new') AS ar_reached, SUM(yw) AS yw,"
         f" SUM(yw AND status != 'new') AS yw_reached FROM voters WHERE 1{scope}", extra).fetchone()
@@ -187,7 +193,8 @@ def dashboard():
         "canvass/dashboard.html", rows=rows, t=totals(rows), act=activity(int(who) if who else None, rng),
         parties=parties, agents=agents, people=people, who=who, who_name=who_name, rng=rng,
         party=party, agent=agent, sort=sort, sorts=SORTS, no_house=no_house,
-        leaders=activity(None, rng)["leaders"], vn=visits.dashboard_numbers(), wings=wings,
+        leaders=activity(None, rng)["leaders"], vn=visits.dashboard_numbers(box), wings=wings,
+        box=box, boxes=boxes, no_box=visits.NO_BOX,
     )
 
 
