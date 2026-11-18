@@ -105,3 +105,27 @@ def test_agents_see_their_houses_on_the_map_only(app):
     assert u.post("/admin/map", data={"csrf_token": csrf(u, "/")}).status_code == 403
     anon = app.test_client()
     assert anon.get("/map/full.png").status_code == 302                       # behind the login
+
+
+def test_admin_can_place_houses_outside_the_campaign_view_and_map_buttons(app):
+    from tests.test_campaign import set_parties
+
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET house_name_dv = 'ފިނިމާގެ' WHERE house_name = 'Rose Villa'")
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    upload(a, make_map())
+    set_parties(a, ["AAA"])                                   # Blue Ge's only voter is BBB: hidden
+    page = a.get("/admin/map").get_data(as_text=True)
+    assert "back=admin" in page and "Blue Ge" in page
+    assert "data-map-set" in a.get("/map?h=Blue+Ge&set=1&back=admin").get_data(as_text=True)
+    r = a.post("/map/locate", data={"csrf_token": csrf(a, "/"), "h": "Blue Ge", "x": "200", "y": "150", "back": "admin"})
+    assert r.status_code == 302 and r.headers["Location"].endswith("/admin/map")
+    assert a.get("/map?h=No+Such+House").status_code == 404
+
+    # Map button on the house page and on located houses in the Visits list
+    house = a.get("/visits/house?h=Rose+Villa").get_data(as_text=True)
+    assert 'class="button primary map-btn"' in house
+    listing = a.get("/visits").get_data(as_text=True)
+    assert 'class="tag map-tag"' in listing and listing.count('class="tag map-tag"') == 1   # Rose Villa only

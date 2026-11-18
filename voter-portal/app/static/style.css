@@ -871,3 +871,7 @@ a.kpi { color: inherit; text-decoration: none; }
 .map-ring { fill: none; stroke: #d62020; stroke-width: 3px; vector-effect: non-scaling-stroke; }
 .map-ring.pending { stroke: #7c3aed; stroke-dasharray: 4 3; }
 .map-set { margin-top: .75rem; position: sticky; bottom: calc(4.5rem + env(safe-area-inset-bottom)); }
+.house-title { display: flex; align-items: center; justify-content: space-between; gap: .75rem; flex-wrap: wrap; }
+.house-title h1 { margin: 0; }
+.map-btn { display: inline-flex; align-items: center; gap: .35rem; }
+.tag.map-tag { display: inline-flex; align-items: center; gap: .2rem; text-decoration: none; color: var(--accent-ink); border-color: currentColor; }

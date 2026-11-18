@@ -69,6 +69,7 @@
       </span>
     </a>
     <p class="visit-meta small-text">
+      {% if r.house in located %}<a class="tag map-tag" href="{{ url_for('islandmap.full', h=r.house) }}" aria-label="Map of {{ r.house }}">{{ icon('map', 12) }} Map</a>{% endif %}
       {% if r.visits %}
       <span class="tag vo-{{ r.last_outcome }}">{{ outcomes[r.last_outcome] }}</span>
       <span class="muted">{{ r.last_at|local }}{% if is_admin and r.last_by %} · {{ r.last_by }}{% endif %} · {{ r.visits }} visit{{ 's' if r.visits != 1 }}</span>

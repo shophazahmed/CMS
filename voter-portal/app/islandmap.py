@@ -94,6 +94,24 @@ def _page():
     return g.map_doc[0]
 
 
+def _house_allowed_or_404(name):
+    """Admins: any house in the voter list (also outside the campaign view, e.g. to set its spot).
+    Everyone else: only houses they can open on the Visits page."""
+    if not name:
+        abort(404)
+    if g.user["role"] == "admin":
+        if not get_db().execute("SELECT 1 FROM voters WHERE house_name = ? LIMIT 1", (name,)).fetchone():
+            abort(404)
+        return
+    from .visits import _visible_house_or_404
+
+    _visible_house_or_404(name)
+
+
+def located_houses():
+    return {r[0] for r in get_db().execute("SELECT house_name FROM house_locations")}
+
+
 def location(house):
     return get_db().execute("SELECT * FROM house_locations WHERE house_name = ?", (house,)).fetchone()
 
@@ -292,10 +310,8 @@ def house_image():
     """Close-up of one house with a red ring (only for houses the viewer can open)."""
     from PIL import Image, ImageDraw
 
-    from .visits import _visible_house_or_404
-
     name = request.args.get("h", "")
-    _visible_house_or_404(name)
+    _house_allowed_or_404(name)
     loc = location(name) or abort(404)
     page = _page()
     import pymupdf
@@ -327,9 +343,7 @@ def full():
     name = request.args.get("h", "")
     loc = None
     if name:
-        from .visits import _visible_house_or_404
-
-        _visible_house_or_404(name)
+        _house_allowed_or_404(name)
         loc = location(name)
     box = map_box()
     setting = bool(name) and request.args.get("set") == "1" and g.user["role"] == "admin"
@@ -341,10 +355,8 @@ def full():
 @admin_required
 def locate():
     """Save a house's spot: the point an admin tapped on the full map (PDF points)."""
-    from .visits import _visible_house_or_404
-
     name = request.form.get("h", "")
-    _visible_house_or_404(name)
+    _house_allowed_or_404(name)
     try:
         x, y = float(request.form.get("x", "")), float(request.form.get("y", ""))
     except ValueError:
@@ -360,6 +372,8 @@ def locate():
     audit.log("map_locate", target=name, detail={"x": round(x, 1), "y": round(y, 1)}, commit=False)
     db.commit()
     flash(f"Map location saved for {name}.", "success")
+    if request.form.get("back") == "admin":
+        return redirect(url_for("islandmap.admin"))
     return redirect(url_for("visits.house", h=name))
 
 

@@ -41,7 +41,7 @@
   <ul class="recent-list" id="map-missing">
     {% for h, has_dv in missing %}
     <li data-filter-text="{{ h|lower }}">
-      <a href="{{ url_for('islandmap.full', h=h, set='1') }}">{{ h }}</a>
+      <a href="{{ url_for('islandmap.full', h=h, set='1', back='admin') }}">{{ h }}</a>
       {% if not has_dv %}<span class="tag">No Dhivehi name</span>{% endif %}
     </li>
     {% endfor %}

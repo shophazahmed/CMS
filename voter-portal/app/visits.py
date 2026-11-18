@@ -230,6 +230,7 @@ def index():
                            counts=counts, filters=FILTERS, key=key, q=q, agent=agent, agents=agents, sort=sort,
                            sorts=SORTS, outcomes=OUTCOMES, today=now, page=page, pages=pages,
                            query_args=query_args, box=box, boxes=box_options(),
+                           located=islandmap.located_houses() if islandmap.has_map() else set(),
                            no_box=NO_BOX, house_boxes=house_boxes)
 
 

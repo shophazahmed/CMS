@@ -4,7 +4,10 @@
 {% block content %}
 <a class="backlink" href="{{ url_for('visits.index') }}">{{ icon('back', 18) }} House visits</a>
 <div class="page-head">
-  <h1>{{ house }}</h1>
+  <div class="house-title">
+    <h1>{{ house }}</h1>
+    {% if map_ready %}<a class="button primary map-btn" href="{{ url_for('islandmap.full', h=house) }}">{{ icon('map', 18) }} Map</a>{% endif %}
+  </div>
   <p class="muted">{{ everyone }} voter{{ 's' if everyone != 1 }}
     {%- if box %} · {{ residents|length }} at {{ 'no box' if box == no_box else box }}{% endif %}
     {%- if agent and current_user.role != 'agent' %} · agent {{ agent.username }}{% endif %}</p>

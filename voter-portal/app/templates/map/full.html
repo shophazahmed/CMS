@@ -2,7 +2,8 @@
 {% from "_macros.html" import icon %}
 {% block title %}Island map{% endblock %}
 {% block content %}
-{% if house %}<a class="backlink" href="{{ url_for('visits.house', h=house) }}">{{ icon('back', 18) }} {{ house }}</a>{% endif %}
+{% if request.args.get('back') == 'admin' %}<a class="backlink" href="{{ url_for('islandmap.admin') }}">{{ icon('back', 18) }} Island map</a>
+{% elif house %}<a class="backlink" href="{{ url_for('visits.house', h=house) }}">{{ icon('back', 18) }} {{ house }}</a>{% endif %}
 <div class="page-head">
   <h1>{{ 'Set the spot for ' ~ house if setting else ('Island map' if not house else house) }}</h1>
   {% if setting %}
@@ -30,6 +31,7 @@
 <form class="card form map-set" method="post" action="{{ url_for('islandmap.locate') }}" data-map-set hidden>
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <input type="hidden" name="h" value="{{ house }}">
+  {% if request.args.get('back') == 'admin' %}<input type="hidden" name="back" value="admin">{% endif %}
   <input type="hidden" name="x" value="">
   <input type="hidden" name="y" value="">
   <p><strong>Is the purple ring on {{ house }}?</strong> Tap again to move it.</p>
