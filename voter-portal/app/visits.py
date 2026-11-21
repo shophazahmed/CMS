@@ -437,7 +437,7 @@ def next_houses(limit=5, box=""):
     return rows[:limit], now
 
 
-HOUSE_EXPORT_HEADERS = ["#", "House", "Box", "Other boxes", "Voters", "Reached", "Agent", "Visits", "Last visit",
+HOUSE_EXPORT_HEADERS = ["#", "House", "Box", "Voters at box", "Other boxes (voters)", "Voters", "Reached", "Agent", "Visits", "Last visit",
                         "Last outcome", "Last visit by", "Next visit", "Due", "Needs transport", "Needs senior visit"]
 
 
@@ -454,6 +454,13 @@ def export_houses(fmt):
         abort(404)
     key, q, agent, sort, box = _list_args()
     rows, _, now = filtered_houses(key, q, agent, sort, box)
+    from .voters import scoped
+
+    w, p = scoped(" WHERE deceased = 0 AND house_name != ''")
+    at_box = {}  # (house, box) -> voters
+    for house, where, n in get_db().execute(
+            f"SELECT house_name, location, COUNT(*) FROM voters{w} GROUP BY house_name, location", p):
+        at_box[(house, where)] = n
     local = lambda s: (datetime.fromisoformat(s) + LOCAL_OFFSET).strftime("%Y-%m-%d %H:%M") if s else ""  # noqa: E731
 
     def due(r):
@@ -465,8 +472,12 @@ def export_houses(fmt):
 
     table = []
     for n, r in enumerate(rows, 1):
-        others = [b for b in house_boxes(r) if b != r["box"]]
-        table.append([n, _safe_cell(r["house"]), _safe_cell(r["box"] or ""), _safe_cell(", ".join(others)),
+        main = (box if box and box != NO_BOX else r["box"]) or ""   # the chosen box, else the house's main one
+        others = [f"{b} ({at_box.get((r['house'], b), 0)})" for b in house_boxes(r) if b != main]
+        if at_box.get((r["house"], "")) and main:
+            others.append(f"No box ({at_box[(r['house'], '')]})")
+        table.append([n, _safe_cell(r["house"]), _safe_cell(main), at_box.get((r["house"], main), 0),
+                      _safe_cell("; ".join(others)),
                       r["total"], r["reached"] or 0, _safe_cell(r["agent"] or ""), r["visits"], local(r["last_at"]),
                       OUTCOMES.get(r["last_outcome"], "") if r["last_outcome"] else "", _safe_cell(r["last_by"] or ""),
                       r["next_on"] or "", due(r), "yes" if r["transport"] else "", "yes" if r["senior"] else ""])
@@ -491,7 +502,7 @@ def export_houses(fmt):
         ws.append(row)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
-    for col, width in zip("ABCDEFGHIJKLMNO", (5, 26, 28, 22, 8, 9, 14, 8, 17, 16, 14, 12, 14, 10, 12)):
+    for col, width in zip("ABCDEFGHIJKLMNOP", (5, 26, 28, 9, 30, 8, 9, 14, 8, 17, 16, 14, 12, 14, 10, 12)):
         ws.column_dimensions[col].width = width
     out = io.BytesIO()
     wb.save(out)

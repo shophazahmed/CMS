@@ -214,7 +214,7 @@ def test_export_house_list(app):
     assert "/visits/houses.csv" in page and "/visits/houses.xlsx" in page
 
     rows = list(_csv.reader(_io.StringIO(a.get("/visits/houses.csv?sort=name").get_data(as_text=True).lstrip("﻿"))))
-    assert rows[0][:5] == ["#", "House", "Box", "Other boxes", "Voters"]
+    assert rows[0][:6] == ["#", "House", "Box", "Voters at box", "Other boxes (voters)", "Voters"]
     by_house = {r[1]: r for r in rows[1:]}
     assert set(by_house) == {ROSE, BLUE}
     rose = dict(zip(rows[0], by_house[ROSE]))
@@ -223,6 +223,23 @@ def test_export_house_list(app):
     assert rose["Next visit"] == tomorrow and rose["Needs transport"] == "yes" and rose["Last visit by"] == "boss"
     assert dict(zip(rows[0], by_house[BLUE]))["Due"] == "Never visited"
     assert dict(zip(rows[0], by_house[BLUE]))["Box"] == "GDH. Atoll, Male (Male' hub)"
+    assert rose["Voters at box"] == "2" and rose["Other boxes (voters)"] == ""
+    # a house split over two boxes: main box with its count, the other box with its count
+    conn.execute("UPDATE voters SET location = ? WHERE national_id = 'A200003'", ("GDH. Atoll, Male (Male' hub)",))
+    conn.execute("UPDATE voters SET location = 'Gdh. Gadhdhoo' WHERE national_id = 'A200001'")
+    conn.execute("INSERT INTO voters (national_id, full_name, house_name, location, created_at, updated_at)"
+                 " VALUES ('A200009', 'Extra', 'Rose Villa', 'Gdh. Gadhdhoo', 't', 't')")
+    conn.commit()
+    rows = list(_csv.reader(_io.StringIO(a.get("/visits/houses.csv").get_data(as_text=True).lstrip("\ufeff"))))
+    rose = dict(zip(rows[0], next(r for r in rows[1:] if r[1] == ROSE)))
+    assert (rose["Box"], rose["Voters at box"], rose["Other boxes (voters)"], rose["Voters"]) == \
+        ("Gdh. Gadhdhoo", "2", "GDH. Atoll, Male (Male' hub) (1)", "3")
+    # with a box chosen, that box's count comes first
+    rows = list(_csv.reader(_io.StringIO(a.get("/visits/houses.csv", query_string={
+        "box": "GDH. Atoll, Male (Male' hub)"}).get_data(as_text=True).lstrip("\ufeff"))))
+    rose = dict(zip(rows[0], next(r for r in rows[1:] if r[1] == ROSE)))
+    assert (rose["Box"], rose["Voters at box"], rose["Other boxes (voters)"]) == \
+        ("GDH. Atoll, Male (Male' hub)", "1", "Gdh. Gadhdhoo (2)")
 
     # follows the filters on the page
     only = list(_csv.reader(_io.StringIO(a.get("/visits/houses.csv?f=never").get_data(as_text=True).lstrip("﻿"))))
