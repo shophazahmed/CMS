@@ -205,7 +205,31 @@ def _confirmed_gate(test):
     return decorator
 
 
+def pledge_access(user=None):
+    """'owner', 'mark', 'view' or '' for the pledge sheet, given by the owner like the confirmed list.
+    Only the owner manages candidates, imports and downloads."""
+    user = user if user is not None else g.get("user")
+    if user is None:
+        return ""
+    if is_owner(user):
+        return "owner"
+    if not user["can_login"] or user["deleted_at"] or not user["is_active"]:
+        return ""
+    return user["pledge_access"] if user["pledge_access"] in ("view", "mark") else ""
+
+
+def can_view_pledges(user=None):
+    return pledge_access(user) in ("owner", "view", "mark")
+
+
+def can_mark_pledges(user=None):
+    return pledge_access(user) in ("owner", "mark")
+
+
 confirmed_viewer_required = _confirmed_gate(can_view_confirmed)
+pledge_viewer_required = _confirmed_gate(can_view_pledges)
+pledge_marker_required = _confirmed_gate(can_mark_pledges)
+pledge_owner_required = _confirmed_gate(is_owner)
 confirmed_marker_required = _confirmed_gate(can_mark_confirmed)
 
 

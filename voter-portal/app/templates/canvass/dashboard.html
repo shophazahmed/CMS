@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 {% from "_macros.html" import progress, legend, icon, range_picker %}
 {% block title %}Dashboard{% endblock %}
+{% block head %}{% if can_view_pledges %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endif %}{% endblock %}
 {% block content %}
 <div class="page-head">
   <h1>Canvassing dashboard</h1>
@@ -18,6 +19,27 @@
 {% endif %}
 
 {{ range_picker(rng, 'canvass.dashboard', request.args.to_dict()) }}
+
+{% if pn and pn.cands %}
+<section class="card dash-pledges" aria-label="Pledges per candidate">
+  <div class="list-head">
+    <h2>{{ icon('chart', 18) }} Pledges{% if box %} · {{ 'no box' if box == no_box else box }}{% endif %}</h2>
+    <a href="{{ url_for('pledges.distribution', loc=box or None, party=party or None) }}">How the vote splits ›</a>
+  </div>
+  <div class="pledge-totals">
+    {% for c in pn.cands %}
+    <a class="pledge-total cand-{{ c.id }}" href="{{ url_for('pledges.sheet', pc=c.id, pv='yes', loc=box or None, party=party or None) }}">
+      <span class="pt-name">{{ c.name }}</span><strong>{{ c.yes }}</strong>
+      <span class="muted small-text">{{ c.pct }}% of {{ pn.total }} voters</span>
+    </a>
+    {% endfor %}
+    <a class="pledge-total dist-none" href="{{ url_for('pledges.sheet', pc='any', pv='none', loc=box or None, party=party or None) }}">
+      <span class="pt-name">Not pledged yet</span><strong>{{ pn.not_pledged }}</strong>
+      <span class="muted small-text">no Yes for anyone</span>
+    </a>
+  </div>
+</section>
+{% endif %}
 
 <section class="kpis visit-kpis" aria-label="House visits">
   <a class="kpi link-kpi" href="{{ url_for('visits.index', box=box or None) }}"><span class="kpi-label">{{ icon('home', 14) }} Houses visited</span>

@@ -40,8 +40,10 @@
       <a href="{{ url_for('canvass.agents') }}" {{ 'aria-current=page' if ep == 'canvass.agents' or (ep == 'canvass.my_houses') }}>Agents</a>
       <a href="{{ url_for('imports.index') }}" {{ 'aria-current=page' if ep.startswith('imports.') }}>Import</a>
       <a href="{{ url_for('admin.users') }}" {{ 'aria-current=page' if ep.startswith('admin.user') }}>Users</a>
-      <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep.startswith('pledges.') }}>Pledges</a>
       <a href="{{ url_for('campaign.settings') }}" {{ 'aria-current=page' if ep == 'campaign.settings' }}>Settings</a>
+      {% endif %}
+      {% if can_view_pledges %}
+      <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep.startswith('pledges.') }}>Pledges</a>
       {% endif %}
       {% if can_view_cf %}
       <a href="{{ url_for('confirmed.overview') }}" {{ 'aria-current=page' if ep == 'confirmed.overview' }}>Confirmed</a>
@@ -60,11 +62,11 @@
         <a href="{{ url_for('admin.audit_log') }}">Activity log</a>
         <a href="{{ url_for('campaign.settings') }}">Campaign settings</a>
         <a href="{{ url_for('islandmap.admin') }}">Island map</a>
-        <a href="{{ url_for('pledges.sheet') }}">Pledge sheet</a>
-        <a href="{{ url_for('pledges.distribution') }}">Pledge distribution</a>
         {% endif %}
         <a href="{{ url_for('announce.index') }}">Announcements</a>
         {% if can_view_cf %}<a href="{{ url_for('confirmed.overview') }}">100% confirmed voters</a>{% endif %}
+        {% if can_view_pledges %}<a href="{{ url_for('pledges.sheet') }}">Pledge sheet</a>
+        <a href="{{ url_for('pledges.distribution') }}">Pledge distribution</a>{% endif %}
         <form class="appearance" method="post" action="{{ url_for('theme.set_appearance') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">

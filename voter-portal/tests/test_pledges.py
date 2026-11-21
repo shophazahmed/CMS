@@ -9,6 +9,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from app.db import connect  # noqa: E402
 from tests.test_app import ADMIN_PW, USER_PW, app, csrf, login  # noqa: E402,F401
 from tests.test_canvass import AGENT_PW, add_agent  # noqa: E402
+from tests.test_confirmed import OWNER_PW, add_owner  # noqa: E402
 # fixture voters: A200001 Aminath Alpha (F 30, Rose Villa), A200002 Moosa Beta (M 55, Blue Ge), A200003 (M 70, Rose Villa)
 
 
@@ -26,8 +27,9 @@ def mark(client, token, nid, cid, value):
 
 
 def test_sheet_marks_totals_and_filters(app):
+    add_owner(app)
     a = app.test_client()
-    login(a, "boss", ADMIN_PW)
+    login(a, "admin", OWNER_PW)
     assert "No candidates yet" in a.get("/pledges").get_data(as_text=True)
     token, ids = setup(a)
     assert "already on the list" in a.post("/pledges/candidates", data={"csrf_token": token, "action": "add", "name": "jade"},
@@ -56,8 +58,9 @@ def test_sheet_marks_totals_and_filters(app):
 
 
 def test_distribution(app):
+    add_owner(app)
     a = app.test_client()
-    login(a, "boss", ADMIN_PW)
+    login(a, "admin", OWNER_PW)
     conn = connect(app.config["DATABASE"])
     conn.execute("UPDATE voters SET location = 'Gdh. Gadhdhoo'")
     conn.commit()
@@ -85,8 +88,9 @@ def test_distribution(app):
 def test_export_and_import(app):
     from openpyxl import Workbook, load_workbook
 
+    add_owner(app)
     a = app.test_client()
-    login(a, "boss", ADMIN_PW)
+    login(a, "admin", OWNER_PW)
     token, ids = setup(a, ("Shoppe", "Rayya", "Jade", "Thalaal"))
     # an existing sheet like the campaign's: a title row, then the header
     wb = Workbook()
@@ -110,7 +114,7 @@ def test_export_and_import(app):
     assert marks[("A200002", ids["Thalaal"])] == "maybe"
 
     rows = list(csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("﻿"))))
-    assert rows[0][-4:] == ["Shoppe", "Rayya", "Jade", "Thalaal"] and "100% confirmed" not in rows[0]   # not the owner
+    assert rows[0][-4:] == ["Shoppe", "Rayya", "Jade", "Thalaal"] and "100% confirmed" in rows[0]   # the owner
     alpha = dict(zip(rows[0], next(r for r in rows[1:] if r[1] == "A200001")))
     assert (alpha["Shoppe"], alpha["Jade"], alpha["Rayya"]) == ("yes", "yes", "")
     ws = load_workbook(io.BytesIO(a.get("/pledges/export.xlsx").data)).active
@@ -121,11 +125,67 @@ def test_export_and_import(app):
     assert "No “ID” column" in r.get_data(as_text=True)
 
 
-def test_admins_only(app):
-    add_agent(app, "ali")
-    for user, pw in (("viewer", USER_PW), ("ali", AGENT_PW)):
+def test_access_is_given_by_the_owner(app):
+    ali = add_agent(app, "ali")
+    add_owner(app)
+    o = app.test_client()
+    login(o, "admin", OWNER_PW)
+    token, ids = setup(o)
+    mark(o, token, "A200001", ids["Shoppe"], "yes")
+    conn = connect(app.config["DATABASE"])
+    boss, viewer = (conn.execute("SELECT id FROM users WHERE username = ?", (n,)).fetchone()[0] for n in ("boss", "viewer"))
+
+    # nobody else has access yet, not even another admin
+    for user, pw in (("boss", ADMIN_PW), ("viewer", USER_PW), ("ali", AGENT_PW)):
         c = app.test_client()
         login(c, user, pw)
         for path in ("/pledges", "/pledges/distribution", "/pledges/candidates", "/pledges/export.csv"):
-            assert c.get(path).status_code == 403, path
+            assert c.get(path).status_code == 403, (user, path)
         assert c.post("/pledges/set", data={"csrf_token": csrf(c, "/")}).status_code == 403
+        assert "Pledges" not in c.get("/").get_data(as_text=True).split("</nav>")[0]
+
+    # the owner gives "view" to the read-only user and "mark" to the other admin (Users page)
+    users_page = o.get("/admin/users").get_data(as_text=True)
+    assert "Pledge sheet" in users_page and "set_pledge_access" in users_page
+    o.post(f"/admin/users/{viewer}", data={"csrf_token": token, "action": "set_pledge_access", "level": "view"})
+    o.post(f"/admin/users/{boss}", data={"csrf_token": token, "action": "set_pledge_access", "level": "mark"})
+    v = app.test_client()
+    login(v, "viewer", USER_PW)
+    page = v.get("/pledges").get_data(as_text=True)
+    assert "ask the owner" in page and "data-pledge-form" not in page and "pl pl-yes" in page
+    assert v.get("/pledges/distribution").status_code == 200
+    assert mark(v, csrf(v, "/"), "A200002", ids["Shoppe"], "yes").status_code == 403
+    for path in ("/pledges/candidates", "/pledges/export.csv"):
+        assert v.get(path).status_code == 403
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert "data-pledge-form" in b.get("/pledges").get_data(as_text=True)
+    assert mark(b, csrf(b, "/"), "A200002", ids["Shoppe"], "yes").status_code == 200
+    assert b.get("/pledges/export.csv").status_code == 403                       # downloads stay with the owner
+    assert "Candidates &amp; import" not in b.get("/pledges").get_data(as_text=True)
+    # only the owner hands out access
+    assert b.post(f"/admin/users/{viewer}", data={"csrf_token": csrf(b, "/"), "action": "set_pledge_access",
+                                                  "level": "mark"}).status_code == 403
+    assert "pledge_access" in o.get("/admin/audit").get_data(as_text=True)
+
+
+def test_dashboard_shows_candidates(app):
+    add_owner(app)
+    o = app.test_client()
+    login(o, "admin", OWNER_PW)
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Gdh. Gadhdhoo' WHERE house_name = 'Rose Villa'")
+    conn.execute("UPDATE voters SET location = 'ViliMale, Ehenihen' WHERE house_name = 'Blue Ge'")
+    conn.commit()
+    token, ids = setup(o, ("Shoppe", "Rayya"))
+    mark(o, token, "A200001", ids["Shoppe"], "yes")
+    mark(o, token, "A200002", ids["Rayya"], "yes")
+    dash = o.get("/dashboard").get_data(as_text=True)
+    assert "How the vote splits" in dash and "Shoppe" in dash and "33.3% of 3 voters" in dash
+    assert "Not pledged yet" in dash
+    boxed = o.get("/dashboard", query_string={"box": "ViliMale, Ehenihen"}).get_data(as_text=True)
+    assert "100.0% of 1 voters" in boxed                                        # Rayya at that box
+    # an admin without pledge access sees no pledge tiles
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert "How the vote splits" not in b.get("/dashboard").get_data(as_text=True)

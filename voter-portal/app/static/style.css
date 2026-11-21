@@ -940,3 +940,6 @@ a.kpi { color: inherit; text-decoration: none; }
   .dist-list .dbar { grid-column: 2; grid-row: 1; }
   .dist-list .dist-num { grid-column: 3; text-align: left; }
 }
+.dash-pledges { margin-bottom: 1rem; }
+.dash-pledges h2 { display: inline-flex; align-items: center; gap: .35rem; }
+.dash-pledges .pledge-totals { margin: .5rem 0 0; }

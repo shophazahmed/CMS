@@ -158,7 +158,19 @@ def update_user(user_id):
     if user["deleted_at"]:
         abort(404)
 
-    if action == "set_confirmed_access":
+    if action == "set_pledge_access":
+        if not is_owner() or is_owner(user) or not user["can_login"]:
+            audit.log("access_denied", target=f"user {user['username']}", detail={"action": action})
+            abort(403)
+        level = request.form.get("level", "")
+        if level not in CONFIRMED_ACCESS:
+            abort(400)
+        if level != user["pledge_access"]:
+            db.execute("UPDATE users SET pledge_access = ? WHERE id = ?", (level, user_id))
+            audit.log("pledge_access", target=user["username"], detail={"from": user["pledge_access"], "to": level})
+            flash(f"{user['username']}: pledge sheet {CONFIRMED_ACCESS[level].lower()}.", "success")
+
+    elif action == "set_confirmed_access":
         # Only the owner hands out the 100% confirmed list, and only to people who sign in
         if not is_owner() or is_owner(user) or not user["can_login"]:
             audit.log("access_denied", target=f"user {user['username']}", detail={"action": action})

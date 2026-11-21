@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS users (
     can_login            INTEGER NOT NULL DEFAULT 1,  -- 0: a canvasser listed by name, never signs in
     deleted_at           TEXT,                        -- set when deleted; kept so history keeps the name
     is_owner             INTEGER NOT NULL DEFAULT 0,  -- the candidate's account (100% confirmed list); survives renames
-    confirmed_access     TEXT NOT NULL DEFAULT ''     -- given by the owner: '' none, 'view', 'mark' (never downloads)
+    confirmed_access     TEXT NOT NULL DEFAULT '',    -- given by the owner: '' none, 'view', 'mark' (never downloads)
+    pledge_access        TEXT NOT NULL DEFAULT ''     -- the pledge sheet, the same way
 );
 
 CREATE TABLE IF NOT EXISTS voters (
@@ -172,6 +173,7 @@ def _add_user_columns(conn):
         ("deleted_at", "deleted_at TEXT"),
         ("is_owner", "is_owner INTEGER NOT NULL DEFAULT 0"),
         ("confirmed_access", "confirmed_access TEXT NOT NULL DEFAULT ''"),
+        ("pledge_access", "pledge_access TEXT NOT NULL DEFAULT ''"),
     ):
         if name in columns:
             continue

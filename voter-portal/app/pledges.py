@@ -4,7 +4,8 @@ Admins set up the candidates (e.g. Shoppe, Rayya, Jade, Thalaal). Each voter can
 Maybe or No for each candidate (blank = not asked). The sheet looks like the campaign's Excel sheet
 and exports in the same layout; an existing sheet can be imported (voters by ID, candidates by column
 name). The distribution page shows how pledges split: per candidate, overlap, exclusive supporters,
-by box, age and sex, and per week. Admins only; the 100% confirmed column follows the existing
+by box, age and sex, and per week. Access is given by the owner, like the 100% confirmed list: view, or view and
+mark; only the owner manages candidates, imports and downloads. The 100% confirmed column follows the
 confirmed-list access.
 """
 import csv
@@ -15,7 +16,8 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
 from . import audit, campaign
-from .auth import admin_required, can_view_confirmed, is_owner
+from .auth import (can_mark_pledges, can_view_confirmed, is_owner, pledge_marker_required, pledge_owner_required,
+                   pledge_viewer_required)
 from .db import get_db, now_iso
 from .normalize import clean_text
 
@@ -120,7 +122,7 @@ def _totals(where, params, cands):
 
 
 @bp.route("/pledges")
-@admin_required
+@pledge_viewer_required
 def sheet():
     from .confirmed import CONFIRMED_COLUMN
     from .voters import SORTS
@@ -144,7 +146,8 @@ def sheet():
     return render_template("pledges/sheet.html", rows=rows, pledges=_pledge_map([r["national_id"] for r in rows]),
                            cands=cands, totals=_totals(where, params, cands), total=total, page=page, pages=pages,
                            size=size, sizes=PAGE_SIZES, f=f, pc=pc, pv=pv, values=VALUES, boxes=boxes,
-                           show_cf=can_view_confirmed(), query_args=query_args, first=(page - 1) * size)
+                           show_cf=can_view_confirmed(), can_mark=can_mark_pledges(), owner=is_owner(),
+                           query_args=query_args, first=(page - 1) * size)
 
 
 def _scoped_where(sql="", params=()):
@@ -154,7 +157,7 @@ def _scoped_where(sql="", params=()):
 
 
 @bp.post("/pledges/set")
-@admin_required
+@pledge_marker_required
 def set_pledge():
     from .voters import get_voter_or_404
 
@@ -184,7 +187,7 @@ def set_pledge():
 
 
 @bp.route("/pledges/colors.css")
-@admin_required
+@pledge_viewer_required
 def colors_css():
     """Each candidate's colour as CSS (a file, since the CSP forbids inline styles)."""
     css = "".join(f".cand-{c['id']}{{--cand:{c['color']};}}\n" for c in candidates(active_only=False))
@@ -194,7 +197,7 @@ def colors_css():
 # --- candidates -------------------------------------------------------------------------------
 
 @bp.route("/pledges/candidates", methods=["GET", "POST"])
-@admin_required
+@pledge_owner_required
 def manage():
     db = get_db()
     if request.method == "POST":
@@ -254,7 +257,7 @@ def manage():
 # --- export / import -----------------------------------------------------------------------
 
 @bp.route("/pledges/export.<fmt>")
-@admin_required
+@pledge_owner_required
 def export(fmt):
     """The sheet in the campaign's Excel layout, with the same filters."""
     from .confirmed import CONFIRMED_COLUMN
@@ -340,7 +343,7 @@ def _cell_value(text):
 
 
 @bp.post("/pledges/import")
-@admin_required
+@pledge_owner_required
 def import_sheet():
     from .normalize import normalize_id
 
@@ -400,10 +403,32 @@ def import_sheet():
     return redirect(url_for("pledges.manage"))
 
 
+def dashboard_numbers(box="", party=""):
+    """Yes pledges per candidate for the admin dashboard (campaign voters; one box / party when given)."""
+    from .voters import scoped
+
+    sql, params = " WHERE deceased = 0", []
+    if box:
+        sql, params = sql + " AND location = ?", params + ["" if box == "(none)" else box]
+    if party:
+        sql, params = sql + " AND party = ?", params + [party]
+    w, p = scoped(sql, params)
+    db = get_db()
+    total = db.execute(f"SELECT COUNT(*) FROM voters{w}", p).fetchone()[0]
+    rows = dict(db.execute(f"SELECT candidate_id, COUNT(*) FROM pledges WHERE value = 'yes' AND national_id IN"
+                           f" (SELECT national_id FROM voters{w}) GROUP BY candidate_id", p).fetchall())
+    anyone = db.execute(f"SELECT COUNT(DISTINCT national_id) FROM pledges WHERE value = 'yes' AND national_id IN"
+                        f" (SELECT national_id FROM voters{w})", p).fetchone()[0]
+    cands = candidates()
+    return {"total": total, "not_pledged": total - anyone,
+            "cands": [{"id": c["id"], "name": c["name"], "yes": rows.get(c["id"], 0),
+                       "pct": round(100 * rows.get(c["id"], 0) / total, 1) if total else 0} for c in cands]}
+
+
 # --- distribution ----------------------------------------------------------------------------
 
 @bp.route("/pledges/distribution")
-@admin_required
+@pledge_viewer_required
 def distribution():
     f, where, params, cands, pc, pv = _filters()
     db = get_db()

@@ -3,9 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
 
-from . import audit, campaign, visits
+from . import audit, campaign, pledges, visits
 from . import personal as own_view  # (canvass.personal() is a function here)
-from .auth import role_required
+from .auth import can_view_pledges, role_required
 from .db import get_db, now_iso
 
 bp = Blueprint("canvass", __name__)
@@ -192,6 +192,7 @@ def dashboard():
         parties=parties, agents=agents, people=people, who=who, who_name=who_name, rng=rng,
         party=party, agent=agent, sort=sort, sorts=SORTS, no_house=no_house,
         leaders=activity(None, rng)["leaders"], vn=visits.dashboard_numbers(box), wings=wings,
+        pn=pledges.dashboard_numbers(box, party) if can_view_pledges() else None,
         box=box, boxes=boxes, no_box=visits.NO_BOX,
     )
 

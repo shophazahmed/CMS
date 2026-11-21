@@ -8,15 +8,15 @@
     <h1>Pledge sheet</h1>
     <span class="list-links">
       <a class="button small" href="{{ url_for('pledges.distribution', **query_args) }}">{{ icon('chart', 16) }} Distribution</a>
-      <a class="button small" href="{{ url_for('pledges.manage') }}">Candidates &amp; import</a>
+      {% if owner %}<a class="button small" href="{{ url_for('pledges.manage') }}">Candidates &amp; import</a>{% endif %}
     </span>
   </div>
-  <p class="muted">Tap a cell to mark it: Yes → Maybe → No → blank. It saves straight away.</p>
+  <p class="muted">{% if can_mark %}Tap a cell to mark it: Yes → Maybe → No → blank. It saves straight away.{% else %}You can view the sheet; ask the owner for “view and mark” to change it.{% endif %}</p>
 </div>
 
 {% if not cands %}
 <div class="empty card"><p><strong>No candidates yet.</strong></p>
-  <p class="muted"><a href="{{ url_for('pledges.manage') }}">Add the candidates</a> (e.g. Shoppe, Rayya, Jade, Thalaal), then come back.</p></div>
+  <p class="muted">{% if owner %}<a href="{{ url_for('pledges.manage') }}">Add the candidates</a> (e.g. Shoppe, Rayya, Jade, Thalaal), then come back.{% else %}The owner hasn't added the candidates yet.{% endif %}</p></div>
 {% else %}
 {% set box_list_options = boxes %}{% set with_pledge_filter = True %}
 <details class="filter-panel card" {{ 'open' if request.args }}>
@@ -35,10 +35,10 @@
 
 <div class="resultbar">
   <p><strong>{{ total }}</strong> voter{{ 's' if total != 1 }}</p>
-  <div class="export">
+  {% if owner %}<div class="export">
     <a class="button small" href="{{ url_for('pledges.export', fmt='csv', **query_args) }}">{{ icon('download', 16) }} CSV</a>
     <a class="button small" href="{{ url_for('pledges.export', fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
-  </div>
+  </div>{% endif %}
 </div>
 
 <div class="pledge-wrap">
@@ -58,6 +58,7 @@
     {% if show_cf %}<td class="cf-col">{{ 'yes' if v.confirmed }}</td>{% endif %}
     {% for c in cands %}{% set val = mine.get(c.id, '') %}
     <td class="cand cand-{{ c.id }}">
+      {% if not can_mark %}<span class="pl pl-{{ val or 'blank' }}">{{ values.get(val, '·') }}</span>{% else %}
       <form method="post" action="{{ url_for('pledges.set_pledge') }}" data-pledge-form>
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="national_id" value="{{ v.national_id }}">
@@ -65,7 +66,7 @@
         <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
         <input type="hidden" name="value" value="{{ {'': 'yes', 'yes': 'maybe', 'maybe': 'no', 'no': ''}[val] }}">
         <button class="pl pl-{{ val or 'blank' }}" aria-label="{{ c.name }} for {{ v.full_name }}: {{ values.get(val, 'not marked') }}">{{ values.get(val, '·') }}</button>
-      </form>
+      </form>{% endif %}
     </td>
     {% endfor %}
   </tr>

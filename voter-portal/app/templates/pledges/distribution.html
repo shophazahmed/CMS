@@ -17,7 +17,7 @@
 </div>
 
 {% if not cands %}
-<div class="empty card"><p><a href="{{ url_for('pledges.manage') }}">Add the candidates</a> first.</p></div>
+<div class="empty card"><p>No candidates yet.</p></div>
 {% else %}
 {% set box_list_options = box_options %}{% set with_pledge_filter = False %}
 <details class="filter-panel card" {{ 'open' if query_args }}>
