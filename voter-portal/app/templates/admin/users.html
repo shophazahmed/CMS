@@ -141,6 +141,17 @@
           </select>
           <noscript><button>Save</button></noscript>
         </form>
+        {% if u.role != 'admin' and u.can_login %}
+        <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline cf-access">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="set_pledge_only">
+          <select name="on" data-autosubmit aria-label="What {{ u.username }} sees">
+            <option value="0" {{ 'selected' if not u.pledge_only }}>Whole portal</option>
+            <option value="1" {{ 'selected' if u.pledge_only }}>Pledge sheet only</option>
+          </select>
+          <noscript><button>Save</button></noscript>
+        </form>
+        {% endif %}
         {% else %}<span class="muted small-text">Owner</span>{% endif %}
       </td>{% endif %}
       <td data-label="Status">

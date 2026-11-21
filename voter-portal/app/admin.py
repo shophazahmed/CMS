@@ -117,7 +117,7 @@ def create_user():
     problem = None
     if not USERNAME_RE.match(username):
         problem = "Username: 3-32 letters, digits, dot, dash or underscore."
-    elif role not in ("user", "admin"):
+    elif role not in ("user", "admin") and not (role == "pledge" and is_owner()):
         problem = "Pick a valid role."
     elif db.execute("SELECT 1 FROM users WHERE username = ?", (username,)).fetchone():
         problem = f"Username '{username}' is taken."
@@ -127,10 +127,12 @@ def create_user():
         flash(problem, "error")
         return redirect(url_for("admin.users"))
     stamp = now_iso(precise=True)
+    pledge_only = role == "pledge"  # a read-only account that sees only the pledge sheet (view and mark)
     db.execute(
         "INSERT INTO users (username, password_hash, role, is_active, must_change_password,"
-        " password_changed_at, created_at) VALUES (?, ?, ?, 1, 1, ?, ?)",
-        (username, hash_password(password), role, stamp, stamp),
+        " password_changed_at, created_at, pledge_only, pledge_access) VALUES (?, ?, ?, 1, 1, ?, ?, ?, ?)",
+        (username, hash_password(password), "user" if pledge_only else role, stamp, stamp,
+         1 if pledge_only else 0, "mark" if pledge_only else ""),
     )
     audit.log("user_create", target=username, detail={"role": role}, commit=False)
     db.commit()
@@ -158,7 +160,20 @@ def update_user(user_id):
     if user["deleted_at"]:
         abort(404)
 
-    if action == "set_pledge_access":
+    if action == "set_pledge_only":
+        if not is_owner() or is_owner(user) or user["role"] == "admin" or not user["can_login"]:
+            audit.log("access_denied", target=f"user {user['username']}", detail={"action": action})
+            abort(403)
+        on = request.form.get("on") == "1"
+        if on != bool(user["pledge_only"]):
+            # someone who may see only the pledge sheet needs at least View on it
+            access = user["pledge_access"] or ("view" if on else "")
+            db.execute("UPDATE users SET pledge_only = ?, pledge_access = ? WHERE id = ?", (1 if on else 0, access, user_id))
+            audit.log("pledge_only", target=user["username"], detail={"on": on}, commit=False)
+            flash(f"{user['username']} now sees {'only the pledge sheet and distribution' if on else 'the whole portal again'}.",
+                  "success")
+
+    elif action == "set_pledge_access":
         if not is_owner() or is_owner(user) or not user["can_login"]:
             audit.log("access_denied", target=f"user {user['username']}", detail={"action": action})
             abort(403)

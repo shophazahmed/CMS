@@ -218,6 +218,31 @@ def pledge_access(user=None):
     return user["pledge_access"] if user["pledge_access"] in ("view", "mark") else ""
 
 
+# What a "pledge sheet only" account may open: the sheet, the distribution, marking, and what those
+# pages need (photos, colours, fonts, appearance), plus signing in and out and the password.
+PLEDGE_ONLY_ENDPOINTS = {
+    "pledges.sheet", "pledges.distribution", "pledges.set_pledge", "pledges.set_noshow", "pledges.colors_css",
+    "voters.photo", "theme.theme_css", "theme.set_appearance", "fonts.stylesheet", "fonts.serve",
+    "auth.login", "auth.logout", "auth.change_password", "static",
+}
+
+
+def is_pledge_only(user=None):
+    user = user if user is not None else g.get("user")
+    return user is not None and user["role"] != "admin" and bool(user["pledge_only"])
+
+
+def pledge_only_guard():
+    """Before every request: a pledge-sheet-only account is kept to the pledge pages."""
+    user = g.get("user")
+    if user is None or not is_pledge_only(user) or request.endpoint in PLEDGE_ONLY_ENDPOINTS:
+        return None
+    if request.method in ("GET", "HEAD"):
+        return redirect(url_for("pledges.sheet"))
+    audit.log("access_denied", target=request.path, detail={"pledge_only": True})
+    abort(403)
+
+
 def can_view_pledges(user=None):
     return pledge_access(user) in ("owner", "view", "mark")
 
@@ -262,6 +287,8 @@ def _safe_next(target, user=None):
 
 def home_url(user=None):
     user = user or g.get("user")
+    if user is not None and is_pledge_only(user):
+        return url_for("pledges.sheet")
     if user is not None and user["role"] == "agent":
         return url_for("canvass.my_houses")
     return url_for("voters.search")

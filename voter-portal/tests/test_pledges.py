@@ -269,3 +269,58 @@ def test_sheet_shows_photos(app):
     page = a.get("/pledges").get_data(as_text=True)
     assert 'class="avatar xs" src="/photos/A200001"' in page                       # photo
     assert page.count('class="avatar xs initials"') == 2                          # initials for the others
+
+
+def test_pledge_sheet_only_account(app):
+    add_owner(app)
+    o = app.test_client()
+    login(o, "admin", OWNER_PW)
+    token, ids = setup(o, ("Shoppe", "Rayya"))
+    # the owner creates a "pledge sheet only" account
+    assert "Pledge sheet only" in o.get("/admin/users").get_data(as_text=True)
+    o.post("/admin/users", data={"csrf_token": token, "username": "pledger", "role": "pledge",
+                                 "password": "pledger-pass-123"})
+    row = connect(app.config["DATABASE"]).execute(
+        "SELECT role, pledge_only, pledge_access, id FROM users WHERE username = 'pledger'").fetchone()
+    assert tuple(row)[:3] == ("user", 1, "mark")
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE users SET must_change_password = 0 WHERE username = 'pledger'")
+    conn.commit()
+
+    p = app.test_client()
+    r = login(p, "pledger", "pledger-pass-123")
+    assert p.get(r.headers["Location"], follow_redirects=True).request.path == "/pledges"   # lands on the sheet
+    page = p.get("/pledges").get_data(as_text=True)
+    nav = page.split("</header>")[0]
+    assert "Pledge sheet" in nav and "Distribution" in nav
+    for hidden in ("Search", "Visits", "Dashboard", "Announcements", "My dashboard"):
+        assert f">{hidden}<" not in nav, hidden
+    assert "/voters/A200001" not in page                                            # names aren't links
+    assert p.get("/pledges/distribution").status_code == 200
+    assert mark(p, csrf(p, "/pledges"), "A200001", ids["Shoppe"], "yes").status_code == 200
+    # everything else is out of reach
+    for path in ("/", "/visits", "/voters/A200001", "/my", "/announcements", "/visits/house?h=Rose+Villa"):
+        r = p.get(path)
+        assert r.status_code == 302 and r.headers["Location"].endswith("/pledges"), path
+    assert p.post("/voters/A200001/canvass", data={"csrf_token": csrf(p, "/pledges"), "status": "contacted"}).status_code == 403
+    for path in ("/pledges/export.csv", "/pledges/candidates"):                    # owner-only pages: back to the sheet
+        assert p.get(path).headers["Location"].endswith("/pledges"), path
+    assert p.get("/account/password").status_code == 200
+
+    # the owner can switch an existing user to "pledge sheet only" and back
+    viewer = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    o.post(f"/admin/users/{viewer}", data={"csrf_token": token, "action": "set_pledge_only", "on": "1"})
+    v = app.test_client()
+    login(v, "viewer", USER_PW)
+    assert v.get("/").status_code == 302 and v.get("/pledges").status_code == 200   # given View automatically
+    assert "data-pledge-form" not in v.get("/pledges").get_data(as_text=True)       # view only
+    o.post(f"/admin/users/{viewer}", data={"csrf_token": token, "action": "set_pledge_only", "on": "0"})
+    assert v.get("/").status_code == 200
+    # nobody but the owner can do it
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert b.post(f"/admin/users/{viewer}", data={"csrf_token": csrf(b, "/"), "action": "set_pledge_only",
+                                                  "on": "1"}).status_code == 403
+    assert b.post("/admin/users", data={"csrf_token": csrf(b, "/"), "username": "sneaky", "role": "pledge",
+                                        "password": "sneaky-pass-1234"}, follow_redirects=True).status_code == 200
+    assert connect(app.config["DATABASE"]).execute("SELECT 1 FROM users WHERE username = 'sneaky'").fetchone() is None

@@ -21,11 +21,15 @@
   {% if current_user %}
   {% set ep = request.endpoint or '' %}
   <header class="topbar">
-    <a class="brand" href="{{ url_for('voters.search') }}">
+    <a class="brand" href="{{ url_for('pledges.sheet') if pledge_only else url_for('voters.search') }}">
       <span class="brand-mark">{{ icon('logo', 18) }}</span>
       <span>Gadhdhoo <span class="brand-sub">voters</span></span>
     </a>
     <nav class="topnav" aria-label="Main">
+      {% if pledge_only %}
+      <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep == 'pledges.sheet' }}>Pledge sheet</a>
+      <a href="{{ url_for('pledges.distribution') }}" {{ 'aria-current=page' if ep == 'pledges.distribution' }}>Distribution</a>
+      {% else %}
       {% if role == 'agent' %}
       <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>My dashboard</a>
       {% endif %}
@@ -48,6 +52,7 @@
       {% if can_view_cf %}
       <a href="{{ url_for('confirmed.overview') }}" {{ 'aria-current=page' if ep == 'confirmed.overview' }}>Confirmed</a>
       {% endif %}
+      {% endif %}
     </nav>
     <details class="account">
       <summary aria-label="Account">
@@ -55,7 +60,8 @@
         <span class="account-name">{{ current_user.username }}</span>
       </summary>
       <div class="account-menu">
-        <p><strong>{{ current_user.username }}</strong><br><span class="muted">{{ {'admin': 'Admin', 'agent': 'Agent (canvasser)', 'user': 'Read-only user'}[role] }}</span></p>
+        <p><strong>{{ current_user.username }}</strong><br><span class="muted">{{ 'Pledge sheet' if pledge_only else {'admin': 'Admin', 'agent': 'Agent (canvasser)', 'user': 'Read-only user'}[role] }}</span></p>
+        {% if not pledge_only %}
         {% if is_admin %}
         <a href="{{ url_for('voters.create') }}">Add a voter</a>
         <a href="{{ url_for('admin.changes') }}">Changes</a>
@@ -67,6 +73,7 @@
         {% if can_view_cf %}<a href="{{ url_for('confirmed.overview') }}">100% confirmed voters</a>{% endif %}
         {% if can_view_pledges %}<a href="{{ url_for('pledges.sheet') }}">Pledge sheet</a>
         <a href="{{ url_for('pledges.distribution') }}">Pledge distribution</a>{% endif %}
+        {% endif %}
         <form class="appearance" method="post" action="{{ url_for('theme.set_appearance') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
@@ -102,7 +109,7 @@
       {% endif %}
     </form>
     {% endif %}
-    {% set un = urgent_notice() if current_user else none %}
+    {% set un = urgent_notice() if current_user and not pledge_only else none %}
     {% if un %}
     <form class="urgent-banner" method="post" action="{{ url_for('announce.mark_seen', aid=un.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -125,6 +132,10 @@
 
   {% if current_user %}
   <nav class="tabbar" aria-label="Main">
+    {% if pledge_only %}
+    <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep == 'pledges.sheet' }}>{{ icon('check') }}<span>Pledge sheet</span></a>
+    <a href="{{ url_for('pledges.distribution') }}" {{ 'aria-current=page' if ep == 'pledges.distribution' }}>{{ icon('chart') }}<span>Distribution</span></a>
+    {% else %}
     {% if role == 'agent' %}
     <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>{{ icon('home') }}<span>My dashboard</span></a>
     {% endif %}
@@ -139,6 +150,7 @@
     <a href="{{ url_for('canvass.agents') }}" {{ 'aria-current=page' if ep in ('canvass.agents', 'canvass.my_houses') }}>{{ icon('users') }}<span>Agents</span></a>
     <a href="{{ url_for('imports.index') }}" {{ 'aria-current=page' if ep.startswith('imports.') }}>{{ icon('upload') }}<span>Import</span></a>
     <a href="{{ url_for('admin.users') }}" {{ 'aria-current=page' if ep.startswith('admin.') }}>{{ icon('user') }}<span>Users</span></a>
+    {% endif %}
     {% endif %}
   </nav>
   {% endif %}

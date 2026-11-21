@@ -67,7 +67,7 @@
   {% for v in rows %}{% set mine = pledges.get(v.national_id, {}) %}
   <tr>
     <td class="num muted">{{ first + loop.index }}</td>
-    <td class="sticky"><a class="pl-name" href="{{ url_for('voters.detail', national_id=v.national_id, back=request.full_path.rstrip('?')) }}">{{ avatar(v, 'xs') }}<span>{{ v.full_name or '(no name)' }}</span></a></td>
+    <td class="sticky">{% if pledge_only %}<span class="pl-name">{{ avatar(v, 'xs') }}<span>{{ v.full_name or '(no name)' }}</span></span>{% else %}<a class="pl-name" href="{{ url_for('voters.detail', national_id=v.national_id, back=request.full_path.rstrip('?')) }}">{{ avatar(v, 'xs') }}<span>{{ v.full_name or '(no name)' }}</span></a>{% endif %}</td>
     <td class="mono">{{ v.national_id }}</td><td>{{ v.sex }}</td><td>{{ v.age if v.age is not none }}</td>
     <td class="trunc" title="{{ v.house_name }}">{{ v.house_name }}</td><td class="mono">{{ v.phone }}</td>
     <td class="small-text trunc" title="{{ v.location }}">{{ v.location }}</td>

@@ -152,7 +152,10 @@ sheet's layout. A **No-show** column marks voters who won't be able to vote: the
 separately, and the distribution shows each candidate's pledges "expected to vote" without them.
 **Access works like the 100% confirmed list:** the owner gives each person "View" or "View and mark"
 on the Users page (column "Pledge sheet"); everyone else, other admins included, has no access. Only the
-owner manages candidates, imports and downloads. The admin Dashboard shows a tile per candidate (Yes
+owner manages candidates, imports and downloads. **Pledge sheet only** accounts (owner only: pick it
+when creating a user, or switch "Whole portal / Pledge sheet only" on the Users page) see nothing but the
+pledge sheet and the distribution: every other page sends them back to the sheet, and voter names on
+the sheet aren't links. The admin Dashboard shows a tile per candidate (Yes
 pledges, % of voters, following the Box and Party filters) for anyone with pledge access. **Import** an existing Excel / CSV sheet: an "ID" column plus columns headed
 with the candidates' names (yes / maybe / no cells; empty cells are left alone).
 

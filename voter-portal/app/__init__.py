@@ -58,6 +58,7 @@ def create_app(test_config=None):
     app.teardown_appcontext(close_db)
     app.before_request(auth.load_user)
     app.before_request(auth.check_csrf)
+    app.before_request(auth.pledge_only_guard)
     app.register_blueprint(auth.bp)
     app.register_blueprint(voters.bp)
     app.register_blueprint(admin.bp)
@@ -95,7 +96,7 @@ def create_app(test_config=None):
     def inject():
         return {"csrf_token": auth.csrf_token, "current_user": g.get("user"), "is_admin": auth.is_admin(), "is_owner": auth.is_owner(),
                 "can_view_cf": auth.can_view_confirmed(), "can_mark_cf": auth.can_mark_confirmed(),
-                "can_view_pledges": auth.can_view_pledges(),
+                "can_view_pledges": auth.can_view_pledges(), "pledge_only": auth.is_pledge_only(),
                 "confirmed_metrics": confirmed.metrics,
                 "campaign_banner": campaign.banner, "whatsapp_url": campaign.whatsapp_url,
                 "sms_url": campaign.sms_url, "viber_url": campaign.viber_url, "campaign_message": campaign.message,
