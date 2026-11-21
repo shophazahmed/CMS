@@ -8,6 +8,13 @@
   {% if of %}<rect class="dbar-fill" x="0" y="0" width="{{ (100 * n / of)|round(2) }}" height="8"/>{% endif %}
 </svg>
 {%- endmacro %}
+{% macro box_th(key, label, cls='', first_dir='desc') -%}
+{%- set on = box_sort == key %}{% set next_dir = ('asc' if box_dir == 'desc' else 'desc') if on else first_dir %}
+<th class="{{ cls }} sortable {{ 'on' if on }}" aria-sort="{{ ('ascending' if box_dir == 'asc' else 'descending') if on else 'none' }}">
+  <a href="{{ url_for('pledges.distribution', **dict(query_args, bs=key, bd=next_dir)) }}#by-box">{{ label }}
+    <span class="sort-arrow" aria-hidden="true">{{ ('▲' if box_dir == 'asc' else '▼') if on else '↕' }}</span></a>
+</th>
+{%- endmacro %}
 {% block content %}
 <a class="backlink" href="{{ url_for('pledges.sheet', **query_args) }}">{{ icon('back', 18) }} Pledge sheet</a>
 <div class="page-head">
@@ -88,21 +95,25 @@
 {% endif %}
 
 <section class="card">
-  <h2>By box</h2>
+  <h2 id="by-box">By box</h2>
+  <p class="muted small-text">Tap a heading to sort; tap again to reverse. Under each candidate: pledges, or the % of the box.</p>
   <div class="table-wrap">
   <table class="overlap by-box">
-    <thead><tr><th>Box</th><th>Voters</th>{% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}<th>Leads</th></tr></thead>
+    <thead><tr>{{ box_th('box', 'Box', first_dir='asc') }}{{ box_th('voters', 'Voters') }}
+      {% for c in cands %}{{ box_th('c' ~ c.id, c.name, 'cand cand-' ~ c.id) }}{% endfor %}
+      {{ box_th('lead', 'Leads', first_dir='asc') }}</tr>
+    <tr class="sub-sort"><th></th><th></th>
+      {% for c in cands %}<th class="cand cand-{{ c.id }}"><a class="small-text {{ 'on' if box_sort == 'p' ~ c.id }}" href="{{ url_for('pledges.distribution', **dict(query_args, bs='p' ~ c.id, bd=('asc' if box_sort == 'p' ~ c.id and box_dir == 'desc' else 'desc'))) }}#by-box">by %</a></th>{% endfor %}
+      <th></th></tr></thead>
     <tbody>
     {% for b in box_list %}{% set counts = boxes.get(b, {}) %}
     <tr>
       <th><a href="{{ url_for('pledges.distribution', **dict(query_args, loc=(b or '(none)'))) }}">{{ b or 'No box' }}</a></th>
       <td>{{ box_total[b] }}</td>
-      {% set ns = namespace(top=None, n=0) %}
       {% for c in cands %}{% set n = counts.get(c.id, 0) %}
-        {% if n > ns.n %}{% set ns.top, ns.n = c.name, n %}{% endif %}
-        <td>{{ n }}<span class="muted small-text"> {{ ((100 * n / box_total[b])|round) if box_total[b] else 0 }}%</span></td>
+        <td class="{{ 'sorted' if box_sort in ('c' ~ c.id, 'p' ~ c.id) }}">{{ n }}<span class="muted small-text"> {{ ((100 * n / box_total[b])|round|int) if box_total[b] else 0 }}%</span></td>
       {% endfor %}
-      <td>{{ ns.top or '—' }}</td>
+      <td>{{ leader[b] or '—' }}</td>
     </tr>
     {% endfor %}
     </tbody>

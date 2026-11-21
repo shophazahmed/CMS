@@ -567,7 +567,31 @@ def distribution():
     boxes = {}
     for r in box_rows:
         boxes.setdefault(r["box"], {})[r["cid"]] = r["n"]
-    box_list = sorted(box_total, key=lambda b: (-box_total[b], b or "~"))
+    leader = {}
+    for b in box_total:
+        counts = boxes.get(b, {})
+        best = max(cands, key=lambda c: counts.get(c["id"], 0), default=None)
+        leader[b] = best["name"] if best is not None and counts.get(best["id"], 0) else ""
+    # ?bs= box | voters | lead | c<id> (pledges) | p<id> (% of the box) and ?bd= asc | desc
+    box_sort = request.args.get("bs", "voters")
+    valid = {"box", "voters", "lead"} | {f"c{c['id']}" for c in cands} | {f"p{c['id']}" for c in cands}
+    box_sort = box_sort if box_sort in valid else "voters"
+    default_dir = "asc" if box_sort in ("box", "lead") else "desc"
+    box_dir = request.args.get("bd", default_dir)
+    box_dir = box_dir if box_dir in ("asc", "desc") else default_dir
+
+    def box_key(b):
+        name = (b or "~").casefold()  # "No box" last
+        if box_sort == "box":
+            return (b == "", name)
+        if box_sort == "voters":
+            return (box_total[b], name)
+        if box_sort == "lead":
+            return (leader[b] == "", leader[b].casefold(), name)
+        n = boxes.get(b, {}).get(int(box_sort[1:]), 0)
+        return ((n / box_total[b]) if box_sort[0] == "p" and box_total[b] else n, name)
+
+    box_list = sorted(box_total, key=box_key, reverse=box_dir == "desc")
 
     # by age group and sex
     groups = []
@@ -604,6 +628,6 @@ def distribution():
         "pledges/distribution.html", cands=cands, total=total, yes=yes_count, maybe=dict(maybe), exclusive=exclusive,
         overlap=overlap, pledged_total=pledged_total, pledged_voters=len(by_voter), any_mark=any_mark,
         not_pledged=total - len(by_voter), multi=multi, max_votes=limit, over=over, noshows=len(away),
-        expected=expected, boxes=boxes, box_total=box_total,
+        expected=expected, boxes=boxes, box_total=box_total, leader=leader, box_sort=box_sort, box_dir=box_dir,
         box_list=box_list, group_rows=group_rows, trend=trend, trend_max=trend_max, f=f, box_options=box_options,
         query_args={k: v for k, v in request.args.items()})

@@ -986,3 +986,12 @@ a.kpi { color: inherit; text-decoration: none; }
 .pl-blank { color: color-mix(in srgb, var(--muted) 70%, transparent); border-style: dashed; }
 .pledge-table .pl-name { text-decoration: none; color: var(--text); }
 .pledge-table .pl-name:hover span, .pledge-table .pl-name:focus span { text-decoration: underline; color: var(--accent-ink); }
+.by-box th.sortable a { color: inherit; text-decoration: none; display: inline-flex; align-items: center; gap: .25rem; }
+.by-box th.sortable a:hover { text-decoration: underline; }
+.by-box th.sortable.on { color: var(--accent-ink); }
+.by-box th.sortable.on .sort-arrow { opacity: 1; }
+.by-box .sub-sort th { padding-top: 0; font-weight: 400; border-bottom-width: 1px; }
+.by-box .sub-sort a { color: var(--muted); }
+.by-box .sub-sort a.on { color: var(--accent-ink); font-weight: 600; }
+.by-box td.sorted { font-weight: 700; }
+#by-box { scroll-margin-top: 5rem; }

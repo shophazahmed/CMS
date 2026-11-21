@@ -1,5 +1,5 @@
 <form class="card filters pledge-filters" method="get">
-  {% for k in ('sort', 'dir') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args[k] }}">{% endif %}{% endfor %}
+  {% for k in ('sort', 'dir', 'bs', 'bd') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args[k] }}">{% endif %}{% endfor %}
   <label>Search
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone">
   </label>

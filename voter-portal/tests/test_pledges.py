@@ -324,3 +324,34 @@ def test_pledge_sheet_only_account(app):
     assert b.post("/admin/users", data={"csrf_token": csrf(b, "/"), "username": "sneaky", "role": "pledge",
                                         "password": "sneaky-pass-1234"}, follow_redirects=True).status_code == 200
     assert connect(app.config["DATABASE"]).execute("SELECT 1 FROM users WHERE username = 'sneaky'").fetchone() is None
+
+
+def test_distribution_sort_by_box(app):
+    import re
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Box B'")
+    conn.execute("UPDATE voters SET location = 'Box A' WHERE national_id = 'A200001'")
+    conn.commit()
+    token, ids = setup(a)
+    mark(a, token, "A200001", ids["Shoppe"], "yes")        # Box A: 1 of 1 voter = 100%
+    mark(a, token, "A200002", ids["Shoppe"], "yes")        # Box B: 1 of 2 = 50%, Rayya leads nowhere
+    mark(a, token, "A200003", ids["Rayya"], "yes")
+    mark(a, token, "A200002", ids["Rayya"], "yes")         # Box B: Rayya 2 pledges
+
+    def order(qs=""):
+        page = a.get("/pledges/distribution" + qs).get_data(as_text=True)
+        body = page.split('id="by-box"')[1].split("</table>")[0]
+        return [b for b in re.findall(r">(Box [AB])</a>", body)]
+
+    assert order() == ["Box B", "Box A"]                           # most voters first by default
+    assert order("?bs=box") == ["Box A", "Box B"]
+    assert order("?bs=box&bd=desc") == ["Box B", "Box A"]
+    assert order(f"?bs=p{ids['Shoppe']}") == ["Box A", "Box B"]    # highest share first
+    assert order(f"?bs=c{ids['Rayya']}") == ["Box B", "Box A"]     # most pledges first
+    assert order(f"?bs=c{ids['Rayya']}&bd=asc") == ["Box A", "Box B"]
+    assert order("?bs=bogus&bd=sideways") == ["Box B", "Box A"]    # bad values fall back
+    page = a.get("/pledges/distribution?bs=box&sex=F").get_data(as_text=True)
+    assert 'name="bs" value="box"' in page                         # the filters keep the sort
