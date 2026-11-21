@@ -11,7 +11,7 @@
   <div class="search-input">
     {{ icon('search') }}
     <input type="search" name="q" value="{{ q }}" placeholder="House name" aria-label="Search houses" autocomplete="off" enterkeyhint="search">
-    {% for k in ('f', 'agent', 'sort', 'box') %}{% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}{% endfor %}
+    {% for k in ('f', 'agent', 'sort', 'dir', 'box') %}{% if query_args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ query_args[k] }}">{% endif %}{% endfor %}
     <button class="primary" type="submit">Search</button>
   </div>
 </form>
@@ -48,6 +48,15 @@
   <label>Sort
     <select name="sort" data-autosubmit>
       {% for k, label in sorts.items() %}<option value="{{ k }}" {{ 'selected' if sort == k }}>{{ label }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Order
+    <select name="dir" data-autosubmit>
+      {% set orders = {'plan': ('To visit first', 'To visit last'), 'box': ('Box A to Z', 'Box Z to A'),
+                       'voters': ('Most voters first', 'Fewest voters first'), 'fewest': ('Fewest voters first', 'Most voters first'),
+                       'last': ('Latest visit first', 'Oldest visit first'), 'name': ('House A to Z', 'House Z to A')}[sort] %}
+      <option value="asc" {{ 'selected' if sort_dir == 'asc' }}>{{ orders[0] }}</option>
+      <option value="desc" {{ 'selected' if sort_dir == 'desc' }}>{{ orders[1] }}</option>
     </select>
   </label>
   <noscript><button class="primary">Apply</button></noscript>

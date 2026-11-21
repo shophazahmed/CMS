@@ -956,3 +956,4 @@ a.kpi { color: inherit; text-decoration: none; }
 .pledge-table th.sortable.on { color: var(--accent-ink); }
 .sort-arrow { font-size: .7rem; opacity: .6; }
 .pledge-table th.sortable.on .sort-arrow { opacity: 1; }
+.met-sort { margin: -.2rem 0 .3rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .2rem .35rem; }

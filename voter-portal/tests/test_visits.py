@@ -256,3 +256,29 @@ def test_export_house_list(app):
     login(u, "viewer", USER_PW)
     assert u.get("/visits/houses.csv").status_code == 403
     assert "/visits/houses.csv" not in u.get("/visits").get_data(as_text=True)
+
+
+def test_visits_order_and_house_page_sort(app):
+    conn = connect(app.config["DATABASE"])
+    conn.execute("INSERT INTO voters (national_id, full_name, age, house_name, created_at, updated_at)"
+                 " VALUES ('A200009', 'Zahir Young', 19, 'Rose Villa', 't', 't')")
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    houses = lambda q: re.findall(r'class="house-name">([^<]+)<', a.get("/visits" + q).get_data(as_text=True))  # noqa: E731
+    assert houses("?sort=name") == [BLUE, ROSE]
+    assert houses("?sort=name&dir=desc") == [ROSE, BLUE]                      # Z to A
+    assert houses("?sort=voters") == [ROSE, BLUE] and houses("?sort=voters&dir=desc") == [BLUE, ROSE]
+    page = a.get("/visits?sort=name&dir=desc").get_data(as_text=True)
+    assert "House Z to A" in page and 'name="dir" value="desc"' in page        # kept by the search box
+    import csv as _csv
+    import io as _io
+    rows = list(_csv.reader(_io.StringIO(a.get("/visits/houses.csv?sort=name&dir=desc").get_data(as_text=True).lstrip("﻿"))))
+    assert [r[1] for r in rows[1:]] == [ROSE, BLUE]                            # export follows
+
+    met = lambda q: re.findall(r'name="met" value="(A\d+)"', a.get("/visits/house?h=Rose+Villa" + q).get_data(as_text=True))  # noqa: E731
+    assert met("") == ["A200003", "A200001", "A200009"]                       # oldest first: 70, 30, 19
+    assert met("&vs=young") == ["A200009", "A200001", "A200003"]
+    assert met("&vs=name") == ["A200003", "A200001", "A200009"]               # '=HYPERLINK(1)', Aminath, Zahir
+    assert met("&vs=name_desc") == ["A200009", "A200001", "A200003"]
+    assert "Youngest first" in a.get("/visits/house?h=Rose+Villa").get_data(as_text=True)

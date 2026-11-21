@@ -43,6 +43,13 @@
   {% if residents %}
   <fieldset class="met-list">
     <legend>Who did you meet? <span class="muted small-text">They become “Contacted” (or “Follow up” for come back later)</span></legend>
+    {% if residents|length > 1 %}
+    <p class="met-sort small-text">Sort:
+      {% for k, label in people_sorts.items() %}
+      {% if k == people_sort %}<strong>{{ label }}</strong>{% else %}<a href="{{ url_for('visits.house', h=house, box=box or None, vs=k) }}">{{ label }}</a>{% endif %}{{ ' · ' if not loop.last }}
+      {% endfor %}
+    </p>
+    {% endif %}
     {% for v in residents %}
     <label class="met st-{{ v.status }}">
       <input type="checkbox" name="met" value="{{ v.national_id }}">

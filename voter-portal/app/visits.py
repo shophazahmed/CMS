@@ -216,11 +216,29 @@ def _list_args():
     return key, q, agent, sort, box
 
 
+def _ordered(rows):
+    """?dir=desc turns the chosen sort round (Z to A, fewest first, oldest visit first, ...)."""
+    return list(reversed(rows)) if request.args.get("dir") == "desc" else rows
+
+
+# Voters on a house page: oldest first (default), youngest first, name A to Z or Z to A
+PEOPLE_SORTS = {"age": "Oldest first", "young": "Youngest first", "name": "Name A to Z", "name_desc": "Name Z to A"}
+
+
+def _sort_people(people, key):
+    if key == "young":
+        return sorted(people, key=lambda v: (v["age"] is None, v["age"] or 0, (v["full_name"] or "").casefold()))
+    if key in ("name", "name_desc"):
+        return sorted(people, key=lambda v: (v["full_name"] or "").casefold(), reverse=key == "name_desc")
+    return people  # already oldest first
+
+
 @bp.route("/visits")
 @login_required
 def index():
     key, q, agent, sort, box = _list_args()
     rows, counts, now = filtered_houses(key, q, agent, sort, box)
+    rows = _ordered(rows)
     try:
         page = max(1, int(request.args.get("page", 1)))
     except ValueError:
@@ -235,6 +253,7 @@ def index():
     return render_template("visits/index.html", rows=rows[(page - 1) * size:page * size], total=len(rows),
                            counts=counts, filters=FILTERS, key=key, q=q, agent=agent, agents=agents, sort=sort,
                            sorts=SORTS, outcomes=OUTCOMES, today=now, page=page, pages=pages,
+                           sort_dir="desc" if request.args.get("dir") == "desc" else "asc",
                            query_args=query_args, box=box, boxes=box_options(),
                            located=islandmap.located_houses() if islandmap.has_map() else set(),
                            no_box=NO_BOX, house_boxes=house_boxes)
@@ -278,6 +297,9 @@ def house():
     name = request.args.get("h", "")
     box = request.args.get("box", "")[:200]
     everyone, residents = _visible_house_or_404(name, box)
+    people_sort = request.args.get("vs", "age")
+    people_sort = people_sort if people_sort in PEOPLE_SORTS else "age"
+    residents = _sort_people(residents, people_sort)
     boxes = sorted({v["location"] for v in everyone if v["location"]}, key=str.casefold)
     db = get_db()
     vs, vp = _visits_scope("x")
@@ -297,6 +319,7 @@ def house():
     from .voters import STATUSES
 
     return render_template("visits/house.html", house=name, residents=residents, everyone=len(everyone),
+                           people_sort=people_sort, people_sorts=PEOPLE_SORTS,
                            box=box, boxes=boxes, no_box=NO_BOX, has_no_box=any(not v["location"] for v in everyone),
                            history=history, met=met, outcomes=OUTCOMES, statuses=STATUSES, agent=agent, today=today(),
                            map_ready=islandmap.has_map(), map_loc=islandmap.location(name),
@@ -454,6 +477,7 @@ def export_houses(fmt):
         abort(404)
     key, q, agent, sort, box = _list_args()
     rows, _, now = filtered_houses(key, q, agent, sort, box)
+    rows = _ordered(rows)
     from .voters import scoped
 
     w, p = scoped(" WHERE deceased = 0 AND house_name != ''")
