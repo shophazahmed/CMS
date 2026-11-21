@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Pledge distribution{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
+{% macro bar(n, of, cls='') -%}
+<svg class="dbar {{ cls }}" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+  <rect class="dbar-track" x="0" y="0" width="100" height="8"/>
+  {% if of %}<rect class="dbar-fill" x="0" y="0" width="{{ (100 * n / of)|round(2) }}" height="8"/>{% endif %}
+</svg>
+{%- endmacro %}
+{% block content %}
+<a class="backlink" href="{{ url_for('pledges.sheet', **query_args) }}">{{ icon('back', 18) }} Pledge sheet</a>
+<div class="page-head">
+  <h1>How the vote splits</h1>
+  <p class="muted">Yes pledges among {{ total }} voter{{ 's' if total != 1 }}{{ ' (filtered)' if query_args }}.
+    {{ 'Voters can vote for several of these candidates.' if mode == 'several' else 'Voters can vote for only one of these candidates.' }}</p>
+</div>
+
+{% if not cands %}
+<div class="empty card"><p><a href="{{ url_for('pledges.manage') }}">Add the candidates</a> first.</p></div>
+{% else %}
+{% set box_list_options = box_options %}{% set with_pledge_filter = False %}
+<details class="filter-panel card" {{ 'open' if query_args }}>
+  <summary>{{ icon('filter') }} Filters (box, house, sex, age)</summary>
+  {% include "pledges/_filters.html" %}
+</details>
+
+<section class="card dist-main">
+  <h2>Pledges per candidate</h2>
+  <ul class="dist-list">
+    {% for c in cands %}
+    <li class="cand-{{ c.id }}">
+      <a class="dist-name" href="{{ url_for('pledges.sheet', **dict(query_args, pc=c.id, pv='yes')) }}">{{ c.name }}</a>
+      {{ bar(yes[c.id], total) }}
+      <span class="dist-num"><strong>{{ yes[c.id] }}</strong>
+        <span class="muted small-text">{{ ((100 * yes[c.id] / total)|round(1)) if total else 0 }}% of voters
+          · {{ ((100 * yes[c.id] / pledged_total)|round(1)) if pledged_total else 0 }}% of pledges
+          {%- if maybe.get(c.id) %} · {{ maybe[c.id] }} maybe{% endif %}</span></span>
+    </li>
+    {% endfor %}
+    <li class="dist-none">
+      <a class="dist-name" href="{{ url_for('pledges.sheet', **dict(query_args, pc='any', pv='none')) }}">Not pledged yet</a>
+      {{ bar(not_pledged, total) }}
+      <span class="dist-num"><strong>{{ not_pledged }}</strong>
+        <span class="muted small-text">{{ ((100 * not_pledged / total)|round(1)) if total else 0 }}% of voters have no Yes for anyone</span></span>
+    </li>
+  </ul>
+  <p class="muted small-text">{{ pledged_voters }} voter{{ 's' if pledged_voters != 1 }} pledged Yes to at least one candidate
+    {%- if multi %} · {{ multi }} to more than one{% endif %}.</p>
+  {% if mode == 'one' and multi %}
+  <p class="flash flash-error">{{ multi }} voter{{ 's' if multi != 1 }} pledged Yes to more than one candidate, but voters can vote for only one.
+    Check them on the <a href="{{ url_for('pledges.sheet', **query_args) }}">pledge sheet</a>.</p>
+  {% endif %}
+</section>
+
+<section class="card">
+  <h2>Solid base: voters pledged to only one candidate</h2>
+  <ul class="dist-list">
+    {% for c in cands %}
+    <li class="cand-{{ c.id }}">
+      <span class="dist-name">{{ c.name }}</span>
+      {{ bar(exclusive[c.id], yes[c.id] or 1) }}
+      <span class="dist-num"><strong>{{ exclusive[c.id] }}</strong>
+        <span class="muted small-text">{{ ((100 * exclusive[c.id] / yes[c.id])|round) if yes[c.id] else 0 }}% of their pledges</span></span>
+    </li>
+    {% endfor %}
+  </ul>
+</section>
+
+{% if cands|length > 1 %}
+<section class="card">
+  <h2>Shared supporters</h2>
+  <p class="muted small-text">How many voters pledged Yes to both candidates.</p>
+  <div class="table-wrap">
+  <table class="overlap">
+    <thead><tr><th></th>{% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for a in cands %}
+    <tr><th class="cand cand-{{ a.id }}">{{ a.name }}</th>
+      {% for b in cands %}<td class="{{ 'diag' if a.id == b.id }}">{{ '—' if a.id == b.id else overlap[a.id][b.id] }}</td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
+<section class="card">
+  <h2>By box</h2>
+  <div class="table-wrap">
+  <table class="overlap by-box">
+    <thead><tr><th>Box</th><th>Voters</th>{% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}<th>Leads</th></tr></thead>
+    <tbody>
+    {% for b in box_list %}{% set counts = boxes.get(b, {}) %}
+    <tr>
+      <th><a href="{{ url_for('pledges.distribution', **dict(query_args, loc=(b or '(none)'))) }}">{{ b or 'No box' }}</a></th>
+      <td>{{ box_total[b] }}</td>
+      {% set ns = namespace(top=None, n=0) %}
+      {% for c in cands %}{% set n = counts.get(c.id, 0) %}
+        {% if n > ns.n %}{% set ns.top, ns.n = c.name, n %}{% endif %}
+        <td>{{ n }}<span class="muted small-text"> {{ ((100 * n / box_total[b])|round) if box_total[b] else 0 }}%</span></td>
+      {% endfor %}
+      <td>{{ ns.top or '—' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>By age and sex</h2>
+  <div class="table-wrap">
+  <table class="overlap">
+    <thead><tr><th></th><th>Voters</th>{% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for label, n, counts in group_rows %}
+    <tr><th>{{ label }}</th><td>{{ n }}</td>
+      {% for c in cands %}{% set k = counts.get(c.id, 0) %}<td>{{ k }}<span class="muted small-text"> {{ ((100 * k / n)|round) if n else 0 }}%</span></td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="card">
+  <h2>New Yes pledges per week</h2>
+  <div class="table-wrap">
+  <table class="overlap trend">
+    <thead><tr><th>Week of</th>{% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}</tr></thead>
+    <tbody>
+    {% for label, counts in trend %}
+    <tr><th>{{ label }}</th>
+      {% for c in cands %}{% set k = counts.get(c.id, 0) %}<td class="cand-{{ c.id }}">{{ bar(k, trend_max, 'mini') }}<span class="small-text">{{ k }}</span></td>{% endfor %}</tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pager %}
+{% block title %}Pledge sheet{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div class="house-title">
+    <h1>Pledge sheet</h1>
+    <span class="list-links">
+      <a class="button small" href="{{ url_for('pledges.distribution', **query_args) }}">{{ icon('chart', 16) }} Distribution</a>
+      <a class="button small" href="{{ url_for('pledges.manage') }}">Candidates &amp; import</a>
+    </span>
+  </div>
+  <p class="muted">Tap a cell to mark it: Yes → Maybe → No → blank. It saves straight away.</p>
+</div>
+
+{% if not cands %}
+<div class="empty card"><p><strong>No candidates yet.</strong></p>
+  <p class="muted"><a href="{{ url_for('pledges.manage') }}">Add the candidates</a> (e.g. Shoppe, Rayya, Jade, Thalaal), then come back.</p></div>
+{% else %}
+{% set box_list_options = boxes %}{% set with_pledge_filter = True %}
+<details class="filter-panel card" {{ 'open' if request.args }}>
+  <summary>{{ icon('filter') }} Filters</summary>
+  {% include "pledges/_filters.html" %}
+</details>
+
+<section class="pledge-totals" aria-label="Pledges in this list">
+  {% for c in cands %}{% set t = totals[c.id] %}
+  <a class="pledge-total cand-{{ c.id }}" href="{{ url_for('pledges.sheet', **dict(query_args, pc=c.id, pv='yes')) }}">
+    <span class="pt-name">{{ c.name }}</span><strong>{{ t.yes }}</strong>
+    <span class="muted small-text">{% if t.maybe %}{{ t.maybe }} maybe · {% endif %}{{ ((100 * t.yes / total)|round(1)) if total else 0 }}%</span>
+  </a>
+  {% endfor %}
+</section>
+
+<div class="resultbar">
+  <p><strong>{{ total }}</strong> voter{{ 's' if total != 1 }}</p>
+  <div class="export">
+    <a class="button small" href="{{ url_for('pledges.export', fmt='csv', **query_args) }}">{{ icon('download', 16) }} CSV</a>
+    <a class="button small" href="{{ url_for('pledges.export', fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
+  </div>
+</div>
+
+<div class="pledge-wrap">
+<table class="pledge-table">
+  <thead><tr>
+    <th class="num">#</th><th class="sticky">Name</th><th>ID</th><th>Sex</th><th>Age</th><th>House</th><th>Phone</th><th>Box</th>
+    {% if show_cf %}<th class="cf-col">100% confirmed</th>{% endif %}
+    {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}
+  </tr></thead>
+  <tbody>
+  {% for v in rows %}{% set mine = pledges.get(v.national_id, {}) %}
+  <tr>
+    <td class="num muted">{{ first + loop.index }}</td>
+    <td class="sticky"><a href="{{ url_for('voters.detail', national_id=v.national_id, back=request.full_path.rstrip('?')) }}">{{ v.full_name or '(no name)' }}</a></td>
+    <td class="mono">{{ v.national_id }}</td><td>{{ v.sex }}</td><td>{{ v.age if v.age is not none }}</td>
+    <td>{{ v.house_name }}</td><td class="mono">{{ v.phone }}</td><td class="small-text">{{ v.location }}</td>
+    {% if show_cf %}<td class="cf-col">{{ 'yes' if v.confirmed }}</td>{% endif %}
+    {% for c in cands %}{% set val = mine.get(c.id, '') %}
+    <td class="cand cand-{{ c.id }}">
+      <form method="post" action="{{ url_for('pledges.set_pledge') }}" data-pledge-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="candidate_id" value="{{ c.id }}">
+        <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+        <input type="hidden" name="value" value="{{ {'': 'yes', 'yes': 'maybe', 'maybe': 'no', 'no': ''}[val] }}">
+        <button class="pl pl-{{ val or 'blank' }}" aria-label="{{ c.name }} for {{ v.full_name }}: {{ values.get(val, 'not marked') }}">{{ values.get(val, '·') }}</button>
+      </form>
+    </td>
+    {% endfor %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{{ pager('pledges.sheet', page, pages, query_args) }}
+<form class="page-size" method="get">
+  {% for k, val in query_args.items() if k != 'n' %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
+  <label>Voters per page
+    <select name="n" data-autosubmit>{% for s in sizes %}<option value="{{ s }}" {{ 'selected' if s == size }}>{{ s }}</option>{% endfor %}</select>
+  </label>
+</form>
+{% endif %}
+{% endblock %}

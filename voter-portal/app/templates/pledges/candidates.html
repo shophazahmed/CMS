@@ -1,0 +1,57 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Candidates{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
+{% block content %}
+<a class="backlink" href="{{ url_for('pledges.sheet') }}">{{ icon('back', 18) }} Pledge sheet</a>
+<div class="page-head"><h1>Candidates</h1>
+  <p class="muted">The columns of the pledge sheet. Hiding a candidate keeps their pledges.</p></div>
+
+<section class="card">
+  <ul class="cand-list">
+    {% for c in cands %}
+    <li class="cand-row cand-{{ c.id }} {{ 'retired' if not c.active }}">
+      <form class="cand-edit" method="post">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="id" value="{{ c.id }}">
+        <input type="color" name="color" value="{{ c.color }}" aria-label="Colour for {{ c.name }}">
+        <input name="name" value="{{ c.name }}" maxlength="60" aria-label="Name">
+        <span class="muted small-text">{{ counts.get(c.id, 0) }} yes</span>
+        <button name="action" value="rename" class="small">Save</button>
+        <button name="action" value="up" class="small" aria-label="Move up" {{ 'disabled' if loop.first }}>↑</button>
+        <button name="action" value="down" class="small" aria-label="Move down" {{ 'disabled' if loop.last }}>↓</button>
+        {% if c.active %}<button name="action" value="retire" class="small">Hide</button>
+        {% else %}<button name="action" value="restore" class="small">Show again</button>{% endif %}
+      </form>
+    </li>
+    {% else %}
+    <li class="muted">No candidates yet.</li>
+    {% endfor %}
+  </ul>
+  <form class="form cand-add" method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label>Add a candidate <input name="name" maxlength="60" required placeholder="e.g. Shoppe"></label>
+    <button class="primary" name="action" value="add">Add</button>
+  </form>
+</section>
+
+<form class="card form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h2>How many can a voter vote for?</h2>
+  {% for key, label in modes.items() %}
+  <label class="check"><input type="radio" name="mode" value="{{ key }}" {{ 'checked' if mode == key }}> {{ label }}</label>
+  {% endfor %}
+  <p class="muted small-text">With “only one”, voters pledged Yes to two or more candidates are flagged on the distribution page.</p>
+  <button class="primary" name="action" value="mode">Save</button>
+</form>
+
+<form class="card form" method="post" action="{{ url_for('pledges.import_sheet') }}" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h2>Import an existing pledge sheet</h2>
+  <p class="muted small-text">Excel (.xlsx) or CSV. It needs an <strong>ID</strong> column and one column per candidate,
+    headed with the candidate's name exactly as above. Cells with <em>yes</em>, <em>maybe</em> or <em>no</em> are copied in
+    (and replace what the portal has for that voter and candidate); empty cells are left alone.</p>
+  <label>Sheet <input type="file" name="sheet" accept=".xlsx,.xlsm,.csv" required></label>
+  <button class="primary">Import</button>
+</form>
+{% endblock %}

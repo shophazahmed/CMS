@@ -142,6 +142,21 @@ zoomed in on the house with a red ring; **Open the full map** zooms and scrolls,
 - Everyone who can open a house sees its map (agents only their own houses); only admins upload or set
   spots. The map is stored in the data folder and served only to signed-in users.
 
+## Pledge sheet (admins)
+
+**Pledges** (top bar) is the candidates' pledge sheet: the voter list with one column per candidate
+(set up under **Candidates & import**: add, rename, colour, reorder, hide). Tap a cell to cycle
+**Yes → Maybe → No → blank**; it saves straight away. Totals per candidate follow the filters (search,
+box, house, sex, age, "pledged Yes / Maybe / No / not marked" for a candidate). CSV / Excel export in the
+sheet's layout; the 100% confirmed column is shown only to accounts with access to that list, and
+exported only by the owner. **Import** an existing Excel / CSV sheet: an "ID" column plus columns headed
+with the candidates' names (yes / maybe / no cells; empty cells are left alone).
+
+**Distribution** shows how the vote splits: Yes pledges per candidate (share of voters and of pledges,
+maybes), not pledged yet, solid base (pledged to only one candidate), shared supporters (pledged to
+both), by box, by age group and sex, and new pledges per week. A setting says whether voters can vote
+for several of the candidates or only one; with "only one", double pledges are flagged.
+
 ## Colours
 
 - **Settings → Portal colour** sets the main colour for everyone: MDP yellow, teal, blue, green,

@@ -1,0 +1,51 @@
+<form class="card filters pledge-filters" method="get">
+  <label>Search
+    <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone">
+  </label>
+  <label>Box
+    <select name="loc">
+      <option value="">All boxes</option>
+      {% for b in box_list_options %}<option value="{{ b }}" {{ 'selected' if f.loc == b }}>{{ b }}</option>{% endfor %}
+      <option value="(none)" {{ 'selected' if f.loc == '(none)' }}>No box recorded</option>
+    </select>
+  </label>
+  <label>House
+    <input name="house" value="{{ f.house }}" placeholder="House name">
+  </label>
+  <label>Sex
+    <select name="sex">
+      <option value="">Any</option>
+      <option value="M" {{ 'selected' if f.sex == 'M' }}>Male</option>
+      <option value="F" {{ 'selected' if f.sex == 'F' }}>Female</option>
+    </select>
+  </label>
+  <label>Age
+    <span class="range">
+      <input type="number" inputmode="numeric" name="age_min" min="0" max="130" value="{{ f.age_min if f.age_min is not none }}" placeholder="from" aria-label="Age from">
+      <span class="muted">–</span>
+      <input type="number" inputmode="numeric" name="age_max" min="0" max="130" value="{{ f.age_max if f.age_max is not none }}" placeholder="to" aria-label="Age to">
+    </span>
+  </label>
+  {% if with_pledge_filter %}
+  <label>Pledge
+    <span class="range">
+      <select name="pc" aria-label="Candidate">
+        <option value="">Any candidate</option>
+        <option value="any" {{ 'selected' if pc == 'any' }}>Any of them</option>
+        {% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if pc == c.id|string }}>{{ c.name }}</option>{% endfor %}
+      </select>
+      <select name="pv" aria-label="Pledge">
+        <option value="">—</option>
+        <option value="yes" {{ 'selected' if pv == 'yes' }}>Yes</option>
+        <option value="maybe" {{ 'selected' if pv == 'maybe' }}>Maybe</option>
+        <option value="no" {{ 'selected' if pv == 'no' }}>No</option>
+        <option value="none" {{ 'selected' if pv == 'none' }}>Not marked</option>
+      </select>
+    </span>
+  </label>
+  {% endif %}
+  <div class="actions">
+    <button class="primary">Apply</button>
+    {% if request.args %}<a class="button" href="{{ url_for(request.endpoint) }}">Clear</a>{% endif %}
+  </div>
+</form>
