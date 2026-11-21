@@ -961,3 +961,28 @@ a.kpi { color: inherit; text-decoration: none; }
 .pl-name { display: inline-flex; align-items: center; gap: .45rem; max-width: 100%; }
 .pl-name span { overflow: hidden; text-overflow: ellipsis; }
 .pledge-table .sticky { max-width: 13rem; }
+
+/* Pledge sheet: easier to read rows (clear lines, zebra stripes, hovered row, candidate columns) */
+.pledge-table { --row-line: color-mix(in srgb, var(--text) 16%, transparent);
+  --row-alt: color-mix(in srgb, var(--text) 4%, var(--surface));
+  --row-hover: color-mix(in srgb, var(--accent) 14%, var(--surface)); }
+.pledge-table td { border-bottom: 1px solid var(--row-line); vertical-align: middle; }
+.pledge-table tbody tr:last-child td { border-bottom: 0; }
+.pledge-table tbody tr td { background: var(--surface); }
+.pledge-table tbody tr:nth-child(even) td { background: var(--row-alt); }
+.pledge-table tbody tr:hover td, .pledge-table tbody tr:focus-within td { background: var(--row-hover); }
+.pledge-table thead th { border-bottom: 2px solid color-mix(in srgb, var(--text) 30%, transparent); padding-top: .55rem; padding-bottom: .55rem; }
+.pledge-table tbody td { padding-top: .45rem; padding-bottom: .45rem; }
+/* candidate columns: a light tint of the candidate's colour and a divider on each side */
+.pledge-table td.cand { background-image: linear-gradient(color-mix(in srgb, var(--cand) 9%, transparent), color-mix(in srgb, var(--cand) 9%, transparent));
+  border-left: 1px solid var(--row-line); }
+.pledge-table th.cand { border-left: 1px solid color-mix(in srgb, #fff 35%, transparent); }
+.pledge-table td.noshow-col, .pledge-table th.noshow-col { border-left: 2px solid var(--row-line); }
+/* the pinned name column keeps the row's colour and a clear edge */
+.pledge-table tbody .sticky { box-shadow: 2px 0 0 var(--row-line); }
+.pledge-table .pl-name { font-weight: 600; }
+.pledge-table td.num { color: var(--muted); font-variant-numeric: tabular-nums; }
+.pledge-table td.mono { font-variant-numeric: tabular-nums; }
+.pl-blank { color: color-mix(in srgb, var(--muted) 70%, transparent); border-style: dashed; }
+.pledge-table .pl-name { text-decoration: none; color: var(--text); }
+.pledge-table .pl-name:hover span, .pledge-table .pl-name:focus span { text-decoration: underline; color: var(--accent-ink); }
