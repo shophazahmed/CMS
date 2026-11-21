@@ -957,3 +957,7 @@ a.kpi { color: inherit; text-decoration: none; }
 .sort-arrow { font-size: .7rem; opacity: .6; }
 .pledge-table th.sortable.on .sort-arrow { opacity: 1; }
 .met-sort { margin: -.2rem 0 .3rem; color: var(--muted); display: flex; flex-wrap: wrap; gap: .2rem .35rem; }
+.avatar.xs { width: 28px; height: 28px; border-radius: 50%; font-size: .75rem; }
+.pl-name { display: inline-flex; align-items: center; gap: .45rem; max-width: 100%; }
+.pl-name span { overflow: hidden; text-overflow: ellipsis; }
+.pledge-table .sticky { max-width: 13rem; }

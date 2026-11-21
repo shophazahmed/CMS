@@ -243,7 +243,8 @@ def test_sort_by_name_and_house(app):
     a = app.test_client()
     login(a, "admin", OWNER_PW)
     setup(a, ("Shoppe",))
-    names = lambda q: _re.findall(r'<td class="sticky"><a [^>]+>([^<]+)</a>', a.get("/pledges" + q).get_data(as_text=True))  # noqa: E731
+    names = lambda q: _re.findall(r'<td class="sticky"><a [^>]+>.*?<span>([^<]+)</span></a>',  # noqa: E731
+                                  a.get("/pledges" + q).get_data(as_text=True), _re.S)
     assert names("") == ["=HYPERLINK(1)", "Aminath Alpha", "Moosa Beta"]          # name, A to Z
     assert names("?sort=name&dir=desc") == ["Moosa Beta", "Aminath Alpha", "=HYPERLINK(1)"]
     assert names("?sort=house")[0] == "Moosa Beta"                                 # Blue Ge before Rose Villa
@@ -255,3 +256,16 @@ def test_sort_by_name_and_house(app):
     assert names("?sort=bogus") == names("")
     rows = list(csv.reader(io.StringIO(a.get("/pledges/export.csv?sort=name&dir=desc").get_data(as_text=True).lstrip("\ufeff"))))
     assert [r[2] for r in rows[1:]] == ["Moosa Beta", "Aminath Alpha", "'=HYPERLINK(1)"]   # export follows the sort
+
+
+def test_sheet_shows_photos(app):
+    add_owner(app)
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET photo_path = 'A200001.jpg' WHERE national_id = 'A200001'")
+    conn.commit()
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    setup(a, ("Shoppe",))
+    page = a.get("/pledges").get_data(as_text=True)
+    assert 'class="avatar xs" src="/photos/A200001"' in page                       # photo
+    assert page.count('class="avatar xs initials"') == 2                          # initials for the others
