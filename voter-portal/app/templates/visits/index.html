@@ -54,7 +54,15 @@
 </form>
 
 
-<p class="muted small-text">{{ total }} house{{ 's' if total != 1 }}</p>
+<div class="resultbar">
+  <p class="muted small-text">{{ total }} house{{ 's' if total != 1 }}</p>
+  {% if is_admin and total %}
+  <div class="export">
+    <a class="button small" href="{{ url_for('visits.export_houses', fmt='csv', **query_args) }}">{{ icon('download', 16) }} CSV</a>
+    <a class="button small" href="{{ url_for('visits.export_houses', fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
+  </div>
+  {% endif %}
+</div>
 {% if rows %}
 <ul class="house-list visit-list">
   {% for r in rows %}
@@ -87,5 +95,5 @@
 {% else %}
 <div class="empty card"><p>No houses here.</p></div>
 {% endif %}
-{% if is_admin %}<p class="small-text"><a href="{{ url_for('visits.export') }}">{{ icon('download', 14) }} Download all visits (CSV)</a></p>{% endif %}
+{% if is_admin %}<p class="small-text"><a href="{{ url_for('visits.export') }}">{{ icon('download', 14) }} Download every visit, one row per visit (CSV)</a></p>{% endif %}
 {% endblock %}

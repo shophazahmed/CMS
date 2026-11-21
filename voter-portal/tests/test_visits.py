@@ -194,3 +194,48 @@ def test_my_dashboard_box_filter(app):
     houses = re.findall(r'class="house-name">(?:✓ )?([^<]+)<', page)
     assert BLUE in houses and ROSE not in houses
     assert "loc=ViliMale" in page                                             # links keep the box
+
+
+def test_export_house_list(app):
+    import csv as _csv
+    import io as _io
+
+    from openpyxl import load_workbook
+
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Gdh. Gadhdhoo' WHERE house_name = ?", (ROSE,))
+    conn.execute("UPDATE voters SET location = ? WHERE house_name = ?", ("GDH. Atoll, Male (Male' hub)", BLUE))
+    conn.commit()
+    a = app.test_client()
+    login(a, "boss", ADMIN_PW)
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    visit(a, ROSE, "met", ["A200001"], next_visit_on=tomorrow, transport="1")
+    page = a.get("/visits").get_data(as_text=True)
+    assert "/visits/houses.csv" in page and "/visits/houses.xlsx" in page
+
+    rows = list(_csv.reader(_io.StringIO(a.get("/visits/houses.csv?sort=name").get_data(as_text=True).lstrip("﻿"))))
+    assert rows[0][:5] == ["#", "House", "Box", "Other boxes", "Voters"]
+    by_house = {r[1]: r for r in rows[1:]}
+    assert set(by_house) == {ROSE, BLUE}
+    rose = dict(zip(rows[0], by_house[ROSE]))
+    assert (rose["Box"], rose["Voters"], rose["Reached"], rose["Visits"], rose["Last outcome"]) == \
+        ("Gdh. Gadhdhoo", "2", "1", "1", "Met family")
+    assert rose["Next visit"] == tomorrow and rose["Needs transport"] == "yes" and rose["Last visit by"] == "boss"
+    assert dict(zip(rows[0], by_house[BLUE]))["Due"] == "Never visited"
+    assert dict(zip(rows[0], by_house[BLUE]))["Box"] == "GDH. Atoll, Male (Male' hub)"
+
+    # follows the filters on the page
+    only = list(_csv.reader(_io.StringIO(a.get("/visits/houses.csv?f=never").get_data(as_text=True).lstrip("﻿"))))
+    assert [r[1] for r in only[1:]] == [BLUE]
+    boxed = a.get("/visits/houses.csv", query_string={"box": "Gdh. Gadhdhoo"}).get_data(as_text=True)
+    assert ROSE in boxed and BLUE not in boxed
+    ws = load_workbook(_io.BytesIO(a.get("/visits/houses.xlsx").data)).active
+    assert ws["B1"].value == "House" and ws.max_row == 3
+    assert a.get("/visits/houses.pdf").status_code == 404
+    assert "visits_houses_export" in a.get("/admin/audit").get_data(as_text=True)
+
+    # admins only
+    u = app.test_client()
+    login(u, "viewer", USER_PW)
+    assert u.get("/visits/houses.csv").status_code == 403
+    assert "/visits/houses.csv" not in u.get("/visits").get_data(as_text=True)

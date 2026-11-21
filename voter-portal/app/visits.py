@@ -204,9 +204,8 @@ def filtered_houses(key="", q="", agent="", sort="plan", box=""):
     return out, counts, now
 
 
-@bp.route("/visits")
-@login_required
-def index():
+def _list_args():
+    """The Visits list's filters from the query string: (show, search, agent, sort, box)."""
     key = request.args.get("f", "")
     key = key if key in FILTERS else ""
     q = clean_text(request.args.get("q", ""))[:100]
@@ -214,6 +213,13 @@ def index():
     sort = request.args.get("sort", "plan")
     sort = sort if sort in SORTS else "plan"
     box = clean_text(request.args.get("box", ""))[:200]
+    return key, q, agent, sort, box
+
+
+@bp.route("/visits")
+@login_required
+def index():
+    key, q, agent, sort, box = _list_args()
     rows, counts, now = filtered_houses(key, q, agent, sort, box)
     try:
         page = max(1, int(request.args.get("page", 1)))
@@ -429,6 +435,68 @@ def next_houses(limit=5, box=""):
     """Your next houses to visit (My dashboard): overdue and due, then never visited."""
     rows, _, now = filtered_houses("todo", box=box)
     return rows[:limit], now
+
+
+HOUSE_EXPORT_HEADERS = ["#", "House", "Box", "Other boxes", "Voters", "Reached", "Agent", "Visits", "Last visit",
+                        "Last outcome", "Last visit by", "Next visit", "Due", "Needs transport", "Needs senior visit"]
+
+
+@bp.route("/visits/houses.<fmt>")
+@admin_required
+def export_houses(fmt):
+    """The Visits list as a spreadsheet, with the same filters, box and sort as the page."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    from .voters import _safe_cell
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    key, q, agent, sort, box = _list_args()
+    rows, _, now = filtered_houses(key, q, agent, sort, box)
+    local = lambda s: (datetime.fromisoformat(s) + LOCAL_OFFSET).strftime("%Y-%m-%d %H:%M") if s else ""  # noqa: E731
+
+    def due(r):
+        if r["next_on"] and r["next_on"] < now:
+            return "Overdue"
+        if r["next_on"] == now:
+            return "Today"
+        return "Never visited" if not r["visits"] else ""
+
+    table = []
+    for n, r in enumerate(rows, 1):
+        others = [b for b in house_boxes(r) if b != r["box"]]
+        table.append([n, _safe_cell(r["house"]), _safe_cell(r["box"] or ""), _safe_cell(", ".join(others)),
+                      r["total"], r["reached"] or 0, _safe_cell(r["agent"] or ""), r["visits"], local(r["last_at"]),
+                      OUTCOMES.get(r["last_outcome"], "") if r["last_outcome"] else "", _safe_cell(r["last_by"] or ""),
+                      r["next_on"] or "", due(r), "yes" if r["transport"] else "", "yes" if r["senior"] else ""])
+    audit.log("visits_houses_export", target=fmt,
+              detail={"rows": len(table), "show": key, "box": box, "agent": agent, "search": q, "sort": sort})
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    name = f"house-visits-houses-{stamp}.{fmt}"
+    if fmt == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(HOUSE_EXPORT_HEADERS)
+        writer.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "House visits"
+    ws.append(HOUSE_EXPORT_HEADERS)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in table:
+        ws.append(row)
+    ws.freeze_panes = "A2"
+    ws.auto_filter.ref = ws.dimensions
+    for col, width in zip("ABCDEFGHIJKLMNO", (5, 26, 28, 22, 8, 9, 14, 8, 17, 16, 14, 12, 14, 10, 12)):
+        ws.column_dimensions[col].width = width
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @bp.route("/visits/export.csv")
