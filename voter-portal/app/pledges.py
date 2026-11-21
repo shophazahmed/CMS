@@ -43,6 +43,17 @@ CREATE TABLE IF NOT EXISTS pledges (
 );
 CREATE INDEX IF NOT EXISTS ix_pledges_candidate ON pledges (candidate_id, value);
 -- Voters who won't be able to vote (abroad, sick, ...): their pledges are kept but not expected.
+-- Every mark anyone makes, kept apart from the pledges themselves (which only hold the latest mark):
+-- who did what and when, for the "Pledge sheet users" panel. value: yes/maybe/no/'' (cleared)/noshow/noshow_off.
+CREATE TABLE IF NOT EXISTS pledge_log (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    national_id  TEXT NOT NULL,
+    candidate_id INTEGER,
+    value        TEXT NOT NULL,
+    at           TEXT NOT NULL,
+    by_user      INTEGER
+);
+CREATE INDEX IF NOT EXISTS ix_pledge_log_user ON pledge_log (by_user, at);
 CREATE TABLE IF NOT EXISTS pledge_noshow (
     national_id TEXT PRIMARY KEY,
     at          TEXT NOT NULL,
@@ -60,7 +71,13 @@ DEFAULT_MAX_VOTES = 2  # how many of these candidates one voter can vote for (0 
 
 
 def init_schema(conn):
+    fresh = not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'pledge_log'").fetchone()
     conn.executescript(SCHEMA)
+    if fresh:  # start the log from the marks made before it existed
+        conn.execute("INSERT INTO pledge_log (national_id, candidate_id, value, at, by_user)"
+                     " SELECT national_id, candidate_id, value, at, by_user FROM pledges")
+        conn.execute("INSERT INTO pledge_log (national_id, candidate_id, value, at, by_user)"
+                     " SELECT national_id, NULL, 'noshow', at, by_user FROM pledge_noshow")
     conn.commit()
 
 
@@ -120,6 +137,15 @@ def _filters():
                 else "national_id NOT IN (SELECT national_id FROM pledge_noshow)")
         where = f"{where} AND {cond}" if where else f" WHERE {cond}"
     f["ns"] = ns if ns in ("1", "0") else ""
+    pb = request.args.get("pb", "")
+    f["pb"], f["pb_name"] = "", ""
+    if pb.isdigit() and g.user["role"] == "admin":
+        row = get_db().execute("SELECT username FROM users WHERE id = ?", (int(pb),)).fetchone()
+        if row:
+            cond = "national_id IN (SELECT national_id FROM pledge_log WHERE by_user = ?)"
+            where = f"{where} AND {cond}" if where else f" WHERE {cond}"
+            params = list(params) + [int(pb)]
+            f["pb"], f["pb_name"] = pb, row[0]
     return f, where, params, cands, pc, pv
 
 
@@ -201,6 +227,49 @@ def _scoped_where(sql="", params=()):
     return scoped(sql, params)
 
 
+def _log(nid, cid, value):
+    get_db().execute("INSERT INTO pledge_log (national_id, candidate_id, value, at, by_user) VALUES (?, ?, ?, ?, ?)",
+                     (nid, cid, value, now_iso(), g.user["id"]))
+
+
+def user_activity(rng):
+    """The pledge-sheet-only accounts and what each marked (in the date range when one is given)."""
+    db = get_db()
+    users = db.execute("SELECT id, username, is_active, last_login_at, created_at FROM users"
+                       " WHERE pledge_only = 1 AND deleted_at IS NULL ORDER BY username COLLATE NOCASE").fetchall()
+    if not users:
+        return []
+    cond, params = ["by_user IN (%s)" % ",".join("?" * len(users))], [u["id"] for u in users]
+    if rng.get("start_utc"):
+        cond.append("at >= ?")
+        params.append(rng["start_utc"])
+    if rng.get("end_utc"):
+        cond.append("at < ?")
+        params.append(rng["end_utc"])
+    w = " WHERE " + " AND ".join(cond)
+    sums = {r["by_user"]: r for r in db.execute(
+        "SELECT by_user, COUNT(*) AS marks, COUNT(DISTINCT national_id) AS voters, SUM(value = 'yes') AS yes,"
+        " SUM(value = 'maybe') AS maybe, SUM(value = 'no') AS no, SUM(value = '') AS cleared,"
+        f" SUM(value = 'noshow') AS noshow, MAX(at) AS last_at FROM pledge_log{w} GROUP BY by_user", params)}
+    per_cand = {}
+    for r in db.execute(f"SELECT by_user, candidate_id, COUNT(DISTINCT national_id) FROM pledge_log{w}"
+                        " AND value = 'yes' GROUP BY by_user, candidate_id", params):
+        per_cand.setdefault(r[0], {})[r[1]] = r[2]
+    # Yes marks that are still theirs now (nobody changed them since)
+    held = dict(db.execute("SELECT by_user, COUNT(*) FROM pledges WHERE value = 'yes' AND by_user IN (%s)"
+                           " GROUP BY by_user" % ",".join("?" * len(users)), [u["id"] for u in users]).fetchall())
+    out = []
+    for u in users:
+        s = sums.get(u["id"])
+        out.append({"id": u["id"], "username": u["username"], "active": u["is_active"], "last_login": u["last_login_at"],
+                    "marks": s["marks"] if s else 0, "voters": s["voters"] if s else 0,
+                    "yes": (s["yes"] or 0) if s else 0, "maybe": (s["maybe"] or 0) if s else 0,
+                    "no": (s["no"] or 0) if s else 0, "cleared": (s["cleared"] or 0) if s else 0,
+                    "noshow": (s["noshow"] or 0) if s else 0, "last_at": s["last_at"] if s else None,
+                    "cands": per_cand.get(u["id"], {}), "held": held.get(u["id"], 0)})
+    return out
+
+
 @bp.post("/pledges/set")
 @pledge_marker_required
 def set_pledge():
@@ -236,6 +305,7 @@ def set_pledge():
                        " by_user = excluded.by_user", (nid, cid, value, now_iso(), g.user["id"]))
         else:
             db.execute("DELETE FROM pledges WHERE national_id = ? AND candidate_id = ?", (nid, cid))
+        _log(nid, cid, value)
         audit.log("pledge", target=nid, detail={"candidate": cid, "from": old, "to": value}, commit=False)
         db.commit()
     if request.headers.get("X-Requested-With") == "fetch":
@@ -261,6 +331,7 @@ def set_noshow():
     elif wanted == "0" and was:
         db.execute("DELETE FROM pledge_noshow WHERE national_id = ?", (nid,))
     if (wanted == "1") != was:
+        _log(nid, None, "noshow" if wanted == "1" else "noshow_off")
         audit.log("pledge_noshow", target=nid, detail={"noshow": wanted == "1"}, commit=False)
         db.commit()
     if request.headers.get("X-Requested-With") == "fetch":

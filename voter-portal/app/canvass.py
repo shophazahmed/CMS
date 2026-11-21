@@ -193,6 +193,7 @@ def dashboard():
         party=party, agent=agent, sort=sort, sorts=SORTS, no_house=no_house,
         leaders=activity(None, rng)["leaders"], vn=visits.dashboard_numbers(box), wings=wings,
         pn=pledges.dashboard_numbers(box, party) if can_view_pledges() else None,
+        pledge_users=pledges.user_activity(rng) if can_view_pledges() else [],
         box=box, boxes=boxes, no_box=visits.NO_BOX,
     )
 

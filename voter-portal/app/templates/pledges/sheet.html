@@ -20,6 +20,8 @@
       {% if owner %}<a class="button small" href="{{ url_for('pledges.manage') }}">Candidates &amp; import</a>{% endif %}
     </span>
   </div>
+  {% if f.pb %}<p class="flash flash-info">Voters marked by <strong>{{ f.pb_name }}</strong> ·
+    <a href="{{ url_for('pledges.sheet', **dict(query_args, pb=None)) }}">Show everyone</a></p>{% endif %}
   <p class="muted">{% if can_mark %}Tap a cell to mark it: Yes → Maybe → No → blank. It saves straight away.
     A voter can vote for {{ max_votes if max_votes else 'any number of' }} candidate{{ 's' if max_votes != 1 }}.{% else %}You can view the sheet; ask the owner for “view and mark” to change it.{% endif %}</p>
 </div>

@@ -995,3 +995,5 @@ a.kpi { color: inherit; text-decoration: none; }
 .by-box .sub-sort a.on { color: var(--accent-ink); font-weight: 600; }
 .by-box td.sorted { font-weight: 700; }
 #by-box { scroll-margin-top: 5rem; }
+.pu-table th a { font-weight: 600; }
+.pu-table tr.muted td, .pu-table tr.muted th { opacity: .6; }

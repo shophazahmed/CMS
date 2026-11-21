@@ -355,3 +355,47 @@ def test_distribution_sort_by_box(app):
     assert order("?bs=bogus&bd=sideways") == ["Box B", "Box A"]    # bad values fall back
     page = a.get("/pledges/distribution?bs=box&sex=F").get_data(as_text=True)
     assert 'name="bs" value="box"' in page                         # the filters keep the sort
+
+
+def test_pledge_users_on_the_dashboard(app):
+    add_owner(app)
+    o = app.test_client()
+    login(o, "admin", OWNER_PW)
+    token, ids = setup(o, ("Shoppe", "Rayya"))
+    o.post("/admin/users", data={"csrf_token": token, "username": "pledger", "role": "pledge",
+                                 "password": "pledger-pass-123"})
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE users SET must_change_password = 0 WHERE username = 'pledger'")
+    conn.commit()
+    uid = conn.execute("SELECT id FROM users WHERE username = 'pledger'").fetchone()[0]
+    dash = o.get("/dashboard").get_data(as_text=True)
+    assert "Pledge sheet users" in dash and "Never" in dash                          # not signed in yet
+    p = app.test_client()
+    login(p, "pledger", "pledger-pass-123")
+    pt = csrf(p, "/pledges")
+    mark(p, pt, "A200001", ids["Shoppe"], "yes")
+    mark(p, pt, "A200002", ids["Rayya"], "yes")
+    mark(p, pt, "A200002", ids["Rayya"], "maybe")
+    p.post("/pledges/noshow", data={"csrf_token": pt, "national_id": "A200003", "value": "1"},
+           headers={"X-Requested-With": "fetch"})
+    mark(o, token, "A200001", ids["Shoppe"], "no")                                   # the owner changes one
+    logged = conn.execute("SELECT COUNT(*) FROM pledge_log WHERE by_user = ?", (uid,)).fetchone()[0]
+    assert logged == 4                                                               # kept apart from the pledges
+    dash = " ".join(o.get("/dashboard").get_data(as_text=True).split())
+    part = dash.split('aria-label="Pledge sheet users"')[1].split("</section>")[0]
+    assert ">pledger</a>" in part
+    cells = part.split(">pledger</a>")[1].split("</tr>")[0]
+    # voters 3 · Shoppe 1 · Rayya 1 · maybe 1 · no 0 · no-show 1 · yes now 0 (Rayya became maybe, owner changed Shoppe)
+    assert [c.split("<")[0] for c in cells.split("<td")[1:7]] == ['>3', '>1', '>1', '>1', '>0', '>1']
+    assert "<strong>0</strong>" in cells and "Never" not in cells
+    # tap the name: the voters they marked
+    sheet = o.get(f"/pledges?pb={uid}").get_data(as_text=True)
+    assert "Voters marked by <strong>pledger</strong>" in sheet and sheet.count("Aminath Alpha") >= 1
+    # a date range in the future: nothing
+    future = " ".join(o.get("/dashboard?from=2099-01-01&to=2099-01-02").get_data(as_text=True).split())
+    cells = future.split(">pledger</a>")[1].split("</tr>")[0]
+    assert cells.split("<td")[1].startswith(">0")
+    # a plain admin who can't see pledges doesn't see the panel
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert "Pledge sheet users" not in b.get("/dashboard").get_data(as_text=True)

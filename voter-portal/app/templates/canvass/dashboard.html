@@ -45,6 +45,35 @@
 </section>
 {% endif %}
 
+{% if pledge_users %}
+<section class="card pledge-users" aria-label="Pledge sheet users">
+  <div class="list-head">
+    <h2>{{ icon('users', 18) }} Pledge sheet users{% if rng.label %} · {{ rng.label }}{% endif %}</h2>
+    <a href="{{ url_for('admin.users') }}">Manage users ›</a>
+  </div>
+  <p class="muted small-text">What each pledge-sheet-only account marked. "Yes now" counts the Yes marks still theirs (nobody changed them since). Tap a name to see the voters they marked.</p>
+  <div class="table-wrap">
+  <table class="overlap pu-table">
+    <thead><tr><th>User</th><th>Voters</th>
+      {% for c in (pn.cands if pn else []) %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}
+      <th>Maybe</th><th>No</th><th>No-show</th><th>Yes now</th><th>Last mark</th><th>Last sign-in</th></tr></thead>
+    <tbody>
+    {% for u in pledge_users %}
+    <tr class="{{ 'muted' if not u.active }}">
+      <th><a href="{{ url_for('pledges.sheet', pb=u.id) }}">{{ u.username }}</a>{% if not u.active %} <span class="tag">off</span>{% endif %}</th>
+      <td>{{ u.voters }}</td>
+      {% for c in (pn.cands if pn else []) %}<td>{{ u.cands.get(c.id, 0) }}</td>{% endfor %}
+      <td>{{ u.maybe }}</td><td>{{ u.no }}</td><td>{{ u.noshow }}</td><td><strong>{{ u.held }}</strong></td>
+      <td class="small-text">{{ u.last_at|local if u.last_at else '—' }}</td>
+      <td class="small-text">{{ u.last_login|local if u.last_login else 'Never' }}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+{% endif %}
+
 <section class="kpis visit-kpis" aria-label="House visits">
   <a class="kpi link-kpi" href="{{ url_for('visits.index', box=box or None) }}"><span class="kpi-label">{{ icon('home', 14) }} Houses visited</span>
     <strong>{{ vn.pct }}%</strong><span class="muted">{{ vn.visited }} of {{ vn.houses }}</span></a>
