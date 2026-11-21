@@ -943,3 +943,11 @@ a.kpi { color: inherit; text-decoration: none; }
 .dash-pledges { margin-bottom: 1rem; }
 .dash-pledges h2 { display: inline-flex; align-items: center; gap: .35rem; }
 .dash-pledges .pledge-totals { margin: .5rem 0 0; }
+.page.wide { max-width: none; }
+.pledge-table th, .pledge-table td { padding: .3rem .4rem; }
+.pledge-table td.trunc { max-width: 11rem; overflow: hidden; text-overflow: ellipsis; }
+.pledge-table .sticky { max-width: 10rem; box-shadow: 1px 0 0 var(--border); }
+.pl { min-width: 3.4rem; }
+.pledge-table th.noshow-col { background: #6b7280; color: #fff; }
+.pl-ns { background: #6b7280; border-color: #6b7280; color: #fff; }
+.noshow-total { --cand: #6b7280; }

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
 from . import audit, campaign
-from .auth import (can_mark_pledges, can_view_confirmed, is_owner, pledge_marker_required, pledge_owner_required,
+from .auth import (can_mark_pledges, is_owner, pledge_marker_required, pledge_owner_required,
                    pledge_viewer_required)
 from .db import get_db, now_iso
 from .normalize import clean_text
@@ -42,6 +42,12 @@ CREATE TABLE IF NOT EXISTS pledges (
     PRIMARY KEY (national_id, candidate_id)
 );
 CREATE INDEX IF NOT EXISTS ix_pledges_candidate ON pledges (candidate_id, value);
+-- Voters who won't be able to vote (abroad, sick, ...): their pledges are kept but not expected.
+CREATE TABLE IF NOT EXISTS pledge_noshow (
+    national_id TEXT PRIMARY KEY,
+    at          TEXT NOT NULL,
+    by_user     INTEGER
+);
 """
 
 VALUES = {"yes": "Yes", "maybe": "Maybe", "no": "No"}
@@ -50,8 +56,7 @@ COLORS = ["#2a78d6", "#1baf7a", "#eb6834", "#7c3aed", "#c0398a", "#e0a212", "#0f
 PAGE_SIZES = (25, 50, 100, 200)
 AGE_GROUPS = [("18–30", 0, 30), ("31–45", 31, 45), ("46–60", 46, 60), ("61+", 61, 200)]
 MAX_IMPORT_BYTES = 20 * 1024 * 1024
-MODES = {"several": "Voters can vote for several of these candidates",
-         "one": "Voters can vote for only one of these candidates"}
+DEFAULT_MAX_VOTES = 2  # how many of these candidates one voter can vote for (0 = no limit)
 
 
 def init_schema(conn):
@@ -64,9 +69,22 @@ def candidates(active_only=True):
     return get_db().execute(f"SELECT * FROM candidates{cond} ORDER BY position, name COLLATE NOCASE").fetchall()
 
 
-def mode():
-    value = campaign.get_setting("pledge_mode", "several")
-    return value if value in MODES else "several"
+def max_votes():
+    """How many candidates one voter can vote for (0 = no limit)."""
+    value = campaign.get_setting("pledge_max")
+    if value is None:  # the earlier one / several setting
+        old = campaign.get_setting("pledge_mode")
+        return 1 if old == "one" else DEFAULT_MAX_VOTES
+    return int(value) if str(value).isdigit() else DEFAULT_MAX_VOTES
+
+
+def noshow_ids(ids):
+    out = set()
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        out |= {r[0] for r in get_db().execute(
+            f"SELECT national_id FROM pledge_noshow WHERE national_id IN ({','.join('?' * len(chunk))})", chunk)}
+    return out
 
 
 # --- the sheet ----------------------------------------------------------------------------
@@ -96,6 +114,12 @@ def _filters():
                            [int(pc), pv])
         where = f"{where} AND {cond}" if where else f" WHERE {cond}"
         params = list(params) + extra
+    ns = request.args.get("ns", "")
+    if ns in ("1", "0"):
+        cond = ("national_id IN (SELECT national_id FROM pledge_noshow)" if ns == "1"
+                else "national_id NOT IN (SELECT national_id FROM pledge_noshow)")
+        where = f"{where} AND {cond}" if where else f" WHERE {cond}"
+    f["ns"] = ns if ns in ("1", "0") else ""
     return f, where, params, cands, pc, pv
 
 
@@ -124,7 +148,6 @@ def _totals(where, params, cands):
 @bp.route("/pledges")
 @pledge_viewer_required
 def sheet():
-    from .confirmed import CONFIRMED_COLUMN
     from .voters import SORTS
 
     f, where, params, cands, pc, pv = _filters()
@@ -137,8 +160,7 @@ def sheet():
         page = min(max(1, int(request.args.get("page", 1))), pages)
     except ValueError:
         page = 1
-    cf = f", {CONFIRMED_COLUMN}" if can_view_confirmed() else ""
-    rows = db.execute(f"SELECT *{cf} FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
+    rows = db.execute(f"SELECT * FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
                       params + [size, (page - 1) * size]).fetchall()
     w, p = _scoped_where(" WHERE location != ''")
     boxes = [r[0] for r in db.execute(f"SELECT DISTINCT location FROM voters{w} ORDER BY location COLLATE NOCASE", p)]
@@ -146,7 +168,10 @@ def sheet():
     return render_template("pledges/sheet.html", rows=rows, pledges=_pledge_map([r["national_id"] for r in rows]),
                            cands=cands, totals=_totals(where, params, cands), total=total, page=page, pages=pages,
                            size=size, sizes=PAGE_SIZES, f=f, pc=pc, pv=pv, values=VALUES, boxes=boxes,
-                           show_cf=can_view_confirmed(), can_mark=can_mark_pledges(), owner=is_owner(),
+                           can_mark=can_mark_pledges(), owner=is_owner(), max_votes=max_votes(),
+                           noshow=noshow_ids([r["national_id"] for r in rows]),
+                           noshows=db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN"
+                                              f" (SELECT national_id FROM voters{where})", params).fetchone()[0],
                            query_args=query_args, first=(page - 1) * size)
 
 
@@ -172,6 +197,18 @@ def set_pledge():
     db = get_db()
     old = db.execute("SELECT value FROM pledges WHERE national_id = ? AND candidate_id = ?", (nid, cid)).fetchone()
     old = old[0] if old else ""
+    limit = max_votes()
+    if value == "yes" and old != "yes" and limit:
+        others = db.execute("SELECT COUNT(*) FROM pledges WHERE national_id = ? AND value = 'yes' AND candidate_id != ?",
+                            (nid, cid)).fetchone()[0]
+        if others >= limit:
+            msg = (f"A voter can vote for {limit} candidate{'s' if limit != 1 else ''}: this voter already has "
+                   f"{others} Yes. Change one of them first.")
+            if request.headers.get("X-Requested-With") == "fetch":
+                return {"ok": False, "error": msg, "value": old, "label": VALUES.get(old, "")}, 409
+            flash(msg, "error")
+            return redirect(request.form.get("back") if (request.form.get("back") or "").startswith("/")
+                            else url_for("pledges.sheet"))
     if value != old:
         if value:
             db.execute("INSERT INTO pledges (national_id, candidate_id, value, at, by_user) VALUES (?, ?, ?, ?, ?)"
@@ -183,6 +220,31 @@ def set_pledge():
         db.commit()
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True, "value": value, "label": VALUES.get(value, "")}
+    return redirect(request.form.get("back") if (request.form.get("back") or "").startswith("/") else url_for("pledges.sheet"))
+
+
+@bp.post("/pledges/noshow")
+@pledge_marker_required
+def set_noshow():
+    """Mark (1) or unmark (0) a voter who won't be able to vote."""
+    from .voters import get_voter_or_404
+
+    nid = request.form.get("national_id", "")
+    get_voter_or_404(nid)
+    wanted = request.form.get("value", "")
+    if wanted not in ("0", "1"):
+        abort(400)
+    db = get_db()
+    was = db.execute("SELECT 1 FROM pledge_noshow WHERE national_id = ?", (nid,)).fetchone() is not None
+    if wanted == "1" and not was:
+        db.execute("INSERT INTO pledge_noshow (national_id, at, by_user) VALUES (?, ?, ?)", (nid, now_iso(), g.user["id"]))
+    elif wanted == "0" and was:
+        db.execute("DELETE FROM pledge_noshow WHERE national_id = ?", (nid,))
+    if (wanted == "1") != was:
+        audit.log("pledge_noshow", target=nid, detail={"noshow": wanted == "1"}, commit=False)
+        db.commit()
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"ok": True, "noshow": wanted == "1"}
     return redirect(request.form.get("back") if (request.form.get("back") or "").startswith("/") else url_for("pledges.sheet"))
 
 
@@ -239,19 +301,22 @@ def manage():
                 audit.log(f"candidate_{action}", target=cand["name"], commit=False)
                 flash(f"{cand['name']} {'is back on the sheet' if action == 'restore' else 'hidden from the sheet (pledges kept)'}.",
                       "success")
-        elif action == "mode":
-            value = request.form.get("mode", "")
-            if value in MODES:
-                campaign.put_setting("pledge_mode", value)
-                audit.log("pledge_mode", detail={"mode": value}, commit=False)
-                flash(MODES[value] + ".", "success")
+        elif action == "max_votes":
+            value = request.form.get("max_votes", "")
+            if value.isdigit() and 0 <= int(value) <= 20:
+                campaign.put_setting("pledge_max", value)
+                audit.log("pledge_max_votes", detail={"max": int(value)}, commit=False)
+                flash("No limit on how many candidates a voter can vote for." if value == "0"
+                      else f"A voter can vote for {value} candidate{'s' if value != '1' else ''}.", "success")
+            else:
+                abort(400)
         else:
             abort(400)
         db.commit()
         return redirect(url_for("pledges.manage"))
     counts = dict(db.execute("SELECT candidate_id, COUNT(*) FROM pledges WHERE value = 'yes' GROUP BY candidate_id").fetchall())
     return render_template("pledges/candidates.html", cands=candidates(active_only=False), counts=counts,
-                           mode=mode(), modes=MODES)
+                           max_votes=max_votes())
 
 
 # --- export / import -----------------------------------------------------------------------
@@ -260,26 +325,24 @@ def manage():
 @pledge_owner_required
 def export(fmt):
     """The sheet in the campaign's Excel layout, with the same filters."""
-    from .confirmed import CONFIRMED_COLUMN
     from .voters import SORTS, _safe_cell
 
     if fmt not in ("csv", "xlsx"):
         abort(404)
     f, where, params, cands, pc, pv = _filters()
-    owner = is_owner()  # the confirmed list is only ever downloaded by the owner
-    cf = f", {CONFIRMED_COLUMN}" if owner else ""
-    rows = get_db().execute(f"SELECT *{cf} FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
+    rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
     marks = _pledge_map([r["national_id"] for r in rows])
-    headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box"]
-               + (["100% confirmed"] if owner else []) + [c["name"] for c in cands])
+    away = noshow_ids([r["national_id"] for r in rows])
+    headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "No-show"]
+               + [c["name"] for c in cands])
     table = []
     for n, r in enumerate(rows, 1):
         mine = marks.get(r["national_id"], {})
         table.append([n, r["national_id"], _safe_cell(r["full_name"]), r["sex"], r["age"], _safe_cell(r["house_name"]),
-                      _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"])]
-                     + (["yes" if r["confirmed"] else ""] if owner else [])
+                      _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"]),
+                      "yes" if r["national_id"] in away else ""]
                      + [VALUES.get(mine.get(c["id"]), "").lower() for c in cands])
-    audit.log("confirmed_export" if owner else "pledges_export", target=fmt, detail={"rows": len(table)})
+    audit.log("pledges_export", target=fmt, detail={"rows": len(table)})
     name = f"pledge-sheet-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
     if fmt == "csv":
         buf = io.StringIO()
@@ -357,24 +420,25 @@ def import_sheet():
         flash(str(e), "error")
         return redirect(url_for("pledges.manage"))
     cands = {c["name"].casefold(): c for c in candidates(active_only=False)}
-    header_at, id_col, cols = None, None, {}
+    header_at, id_col, cols, noshow_col = None, None, {}, None
     for i, row in enumerate(rows[:15]):  # the header can be below a title row
         keys = [re.sub(r"\s+", " ", c).strip().casefold() for c in row]
         if any(k in ("id", "id card", "national id", "id no", "id number") for k in keys):
             header_at = i
             id_col = next(j for j, k in enumerate(keys) if k in ("id", "id card", "national id", "id no", "id number"))
             cols = {j: cands[k] for j, k in enumerate(keys) if k in cands}
+            noshow_col = next((j for j, k in enumerate(keys) if k.replace("-", "").replace(" ", "") == "noshow"), None)
             break
     if header_at is None:
         flash("No “ID” column found in the first rows of the sheet.", "error")
         return redirect(url_for("pledges.manage"))
-    if not cols:
+    if not cols and noshow_col is None:
         flash("No column is named after a candidate on the list. Add the candidates first, with the same names "
               "as the sheet's column headings.", "error")
         return redirect(url_for("pledges.manage"))
     db = get_db()
     known = {r[0] for r in db.execute("SELECT national_id FROM voters")}
-    stamp, set_n, unknown, skipped = now_iso(), 0, 0, 0
+    stamp, set_n, unknown, skipped, away_n = now_iso(), 0, 0, 0, 0
     for row in rows[header_at + 1:]:
         if id_col >= len(row) or not row[id_col]:
             continue
@@ -382,6 +446,10 @@ def import_sheet():
         if not nid or nid not in known:
             unknown += 1
             continue
+        if noshow_col is not None and noshow_col < len(row) and _cell_value(row[noshow_col]) == "yes":
+            db.execute("INSERT OR IGNORE INTO pledge_noshow (national_id, at, by_user) VALUES (?, ?, ?)",
+                       (nid, stamp, g.user["id"]))
+            away_n += 1
         for j, cand in cols.items():
             value = _cell_value(row[j]) if j < len(row) else None
             if value is None:
@@ -391,10 +459,12 @@ def import_sheet():
                        " ON CONFLICT(national_id, candidate_id) DO UPDATE SET value = excluded.value, at = excluded.at,"
                        " by_user = excluded.by_user", (nid, cand["id"], value, stamp, g.user["id"]))
             set_n += 1
-    audit.log("pledges_import", detail={"marks": set_n, "unknown_ids": unknown, "unreadable": skipped,
+    audit.log("pledges_import", detail={"marks": set_n, "noshows": away_n, "unknown_ids": unknown, "unreadable": skipped,
                                         "candidates": [c["name"] for c in cols.values()]}, commit=False)
     db.commit()
-    msg = f"Imported {set_n} pledge mark{'s' if set_n != 1 else ''} for {', '.join(c['name'] for c in cols.values())}."
+    msg = f"Imported {set_n} pledge mark{'s' if set_n != 1 else ''} for {', '.join(c['name'] for c in cols.values()) or 'no candidate'}."
+    if away_n:
+        msg += f" {away_n} no-show{'s' if away_n != 1 else ''}."
     if unknown:
         msg += f" {unknown} row{'s' if unknown != 1 else ''} had an ID that isn't in the portal."
     if skipped:
@@ -420,7 +490,9 @@ def dashboard_numbers(box="", party=""):
     anyone = db.execute(f"SELECT COUNT(DISTINCT national_id) FROM pledges WHERE value = 'yes' AND national_id IN"
                         f" (SELECT national_id FROM voters{w})", p).fetchone()[0]
     cands = candidates()
-    return {"total": total, "not_pledged": total - anyone,
+    away = db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN (SELECT national_id FROM voters{w})",
+                      p).fetchone()[0]
+    return {"total": total, "not_pledged": total - anyone, "noshows": away,
             "cands": [{"id": c["id"], "name": c["name"], "yes": rows.get(c["id"], 0),
                        "pct": round(100 * rows.get(c["id"], 0) / total, 1) if total else 0} for c in cands]}
 
@@ -457,6 +529,14 @@ def distribution():
                 overlap[a][b] += 1
     pledged_total = sum(yes_count.values())
     multi = sum(1 for s in by_voter.values() if len(s) > 1)
+    limit = max_votes()
+    over = sum(1 for s in by_voter.values() if limit and len(s) > limit)
+    away = {r[0] for r in db.execute(f"SELECT national_id FROM pledge_noshow WHERE national_id IN ({sub})", params)}
+    expected = {c: 0 for c in ids}  # Yes from voters who are expected to vote
+    for nid, chosen in by_voter.items():
+        if nid not in away:
+            for c in chosen:
+                expected[c] += 1
 
     # by box: yes per candidate per box
     box_rows = db.execute(
@@ -503,6 +583,7 @@ def distribution():
     return render_template(
         "pledges/distribution.html", cands=cands, total=total, yes=yes_count, maybe=dict(maybe), exclusive=exclusive,
         overlap=overlap, pledged_total=pledged_total, pledged_voters=len(by_voter), any_mark=any_mark,
-        not_pledged=total - len(by_voter), multi=multi, mode=mode(), boxes=boxes, box_total=box_total,
+        not_pledged=total - len(by_voter), multi=multi, max_votes=limit, over=over, noshows=len(away),
+        expected=expected, boxes=boxes, box_total=box_total,
         box_list=box_list, group_rows=group_rows, trend=trend, trend_max=trend_max, f=f, box_options=box_options,
         query_args={k: v for k, v in request.args.items()})

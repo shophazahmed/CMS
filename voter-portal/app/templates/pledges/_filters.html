@@ -44,6 +44,13 @@
     </span>
   </label>
   {% endif %}
+  <label>No-show
+    <select name="ns">
+      <option value="">Everyone</option>
+      <option value="0" {{ 'selected' if f.ns == '0' }}>Hide no-shows</option>
+      <option value="1" {{ 'selected' if f.ns == '1' }}>Only no-shows</option>
+    </select>
+  </label>
   <div class="actions">
     <button class="primary">Apply</button>
     {% if request.args %}<a class="button" href="{{ url_for(request.endpoint) }}">Clear</a>{% endif %}

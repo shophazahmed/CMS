@@ -37,19 +37,23 @@
 
 <form class="card form" method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-  <h2>How many can a voter vote for?</h2>
-  {% for key, label in modes.items() %}
-  <label class="check"><input type="radio" name="mode" value="{{ key }}" {{ 'checked' if mode == key }}> {{ label }}</label>
-  {% endfor %}
-  <p class="muted small-text">With “only one”, voters pledged Yes to two or more candidates are flagged on the distribution page.</p>
-  <button class="primary" name="action" value="mode">Save</button>
+  <h2>How many candidates can one voter vote for?</h2>
+  <label>Candidates per voter
+    <select name="max_votes">
+      {% for n in range(1, (cands|length if cands|length > 2 else 2) + 1) %}<option value="{{ n }}" {{ 'selected' if max_votes == n }}>{{ n }}</option>{% endfor %}
+      <option value="0" {{ 'selected' if max_votes == 0 }}>No limit</option>
+    </select>
+  </label>
+  <p class="muted small-text">A further Yes for a voter who already has this many is refused on the sheet; voters
+    over the limit (e.g. from an import) are flagged on the distribution page.</p>
+  <button class="primary" name="action" value="max_votes">Save</button>
 </form>
 
 <form class="card form" method="post" action="{{ url_for('pledges.import_sheet') }}" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <h2>Import an existing pledge sheet</h2>
   <p class="muted small-text">Excel (.xlsx) or CSV. It needs an <strong>ID</strong> column and one column per candidate,
-    headed with the candidate's name exactly as above. Cells with <em>yes</em>, <em>maybe</em> or <em>no</em> are copied in
+    headed with the candidate's name exactly as above, and optionally a <strong>No-show</strong> column. Cells with <em>yes</em>, <em>maybe</em> or <em>no</em> are copied in
     (and replace what the portal has for that voter and candidate); empty cells are left alone.</p>
   <label>Sheet <input type="file" name="sheet" accept=".xlsx,.xlsm,.csv" required></label>
   <button class="primary">Import</button>

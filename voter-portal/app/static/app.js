@@ -398,11 +398,40 @@ document.addEventListener("submit", async (event) => {
       method: "POST", body: new FormData(form),
       headers: { "X-Requested-With": "fetch" }, credentials: "same-origin",
     });
+    if (response.status === 409) {  // over the vote limit: nothing saved
+      const refused = await response.json();
+      toast(refused.error);
+      return;
+    }
     if (!response.ok) throw new Error(response.status);
     const data = await response.json();
     button.className = "pl pl-" + (data.value || "blank");
     button.textContent = data.label || "·";
     input.value = next[data.value];
+  } catch (err) {
+    form.submit();
+  } finally {
+    button.disabled = false;
+  }
+});
+
+// No-show cells on the pledge sheet: tap to mark / unmark, saved in the background.
+document.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-noshow-form]");
+  if (!form) return;
+  event.preventDefault();
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    const response = await fetch(form.action, {
+      method: "POST", body: new FormData(form),
+      headers: { "X-Requested-With": "fetch" }, credentials: "same-origin",
+    });
+    if (!response.ok) throw new Error(response.status);
+    const data = await response.json();
+    button.className = "pl " + (data.noshow ? "pl-ns" : "pl-blank");
+    button.textContent = data.noshow ? "No-show" : "·";
+    form.elements.value.value = data.noshow ? "0" : "1";
   } catch (err) {
     form.submit();
   } finally {

@@ -76,10 +76,11 @@ def test_distribution(app):
     assert "1 to more than one" in page
     assert "33.3% of voters have no Yes for anyone" in page
     assert "Gdh. Gadhdhoo" in page and "Women" in page
+    assert "A voter can vote for 2 candidates" in page                     # the default limit
     # only one allowed: the double pledge is flagged
-    a.post("/pledges/candidates", data={"csrf_token": token, "action": "mode", "mode": "one"})
-    assert "pledged Yes to more than one candidate, but voters can vote for only one" in \
-        a.get("/pledges/distribution").get_data(as_text=True)
+    a.post("/pledges/candidates", data={"csrf_token": token, "action": "max_votes", "max_votes": "1"})
+    flagged = " ".join(a.get("/pledges/distribution").get_data(as_text=True).split())
+    assert "pledged Yes to more than 1 candidate, but a voter can vote for only 1" in flagged
     # filters narrow it down
     women = a.get("/pledges/distribution?sex=F").get_data(as_text=True)
     assert "Yes pledges among 1 voter" in women
@@ -114,7 +115,7 @@ def test_export_and_import(app):
     assert marks[("A200002", ids["Thalaal"])] == "maybe"
 
     rows = list(csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("﻿"))))
-    assert rows[0][-4:] == ["Shoppe", "Rayya", "Jade", "Thalaal"] and "100% confirmed" in rows[0]   # the owner
+    assert rows[0][-5:] == ["No-show", "Shoppe", "Rayya", "Jade", "Thalaal"] and "100% confirmed" not in rows[0]
     alpha = dict(zip(rows[0], next(r for r in rows[1:] if r[1] == "A200001")))
     assert (alpha["Shoppe"], alpha["Jade"], alpha["Rayya"]) == ("yes", "yes", "")
     ws = load_workbook(io.BytesIO(a.get("/pledges/export.xlsx").data)).active
@@ -189,3 +190,47 @@ def test_dashboard_shows_candidates(app):
     b = app.test_client()
     login(b, "boss", ADMIN_PW)
     assert "How the vote splits" not in b.get("/dashboard").get_data(as_text=True)
+
+
+def test_two_candidates_per_voter_and_no_shows(app):
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    token, ids = setup(a)
+    assert ">100% confirmed</th>" not in a.get("/pledges").get_data(as_text=True)    # column removed
+    assert mark(a, token, "A200001", ids["Shoppe"], "yes").status_code == 200
+    assert mark(a, token, "A200001", ids["Rayya"], "yes").status_code == 200
+    r = mark(a, token, "A200001", ids["Jade"], "yes")                                # a third Yes is refused
+    assert r.status_code == 409 and "can vote for 2 candidates" in r.json["error"]
+    assert mark(a, token, "A200001", ids["Jade"], "maybe").status_code == 200        # a Maybe is fine
+    assert mark(a, token, "A200001", ids["Shoppe"], "yes").status_code == 200        # re-saving an existing Yes too
+    a.post("/pledges/candidates", data={"csrf_token": token, "action": "max_votes", "max_votes": "0"})
+    assert mark(a, token, "A200001", ids["Jade"], "yes").status_code == 200          # no limit
+
+    # no-show: mark, filter, totals, distribution, export
+    r = a.post("/pledges/noshow", data={"csrf_token": token, "national_id": "A200001", "value": "1"},
+               headers={"X-Requested-With": "fetch"})
+    assert r.json == {"ok": True, "noshow": True}
+    page = a.get("/pledges").get_data(as_text=True)
+    assert "No-show" in page and 'class="pl pl-ns"' in page
+    assert "Aminath Alpha" in a.get("/pledges?ns=1").get_data(as_text=True)
+    assert "Aminath Alpha</a>" not in a.get("/pledges?ns=0").get_data(as_text=True)
+    dist = a.get("/pledges/distribution").get_data(as_text=True)
+    assert "1 no-show (can" in dist and "<strong>0</strong> expected to vote" in dist   # her pledges aren't expected
+    rows = list(csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
+    assert dict(zip(rows[0], next(r for r in rows[1:] if r[1] == "A200001")))["No-show"] == "yes"
+    assert "No-show" in a.get("/dashboard").get_data(as_text=True)
+    a.post("/pledges/noshow", data={"csrf_token": token, "national_id": "A200001", "value": "0"})
+    assert connect(app.config["DATABASE"]).execute("SELECT COUNT(*) FROM pledge_noshow").fetchone()[0] == 0
+    # import a No-show column
+    sheet = "ID,Shoppe,No-show\nA200002,yes,yes\n"
+    a.post("/pledges/import", data={"csrf_token": token, "sheet": (io.BytesIO(sheet.encode()), "s.csv")},
+           content_type="multipart/form-data")
+    assert [r[0] for r in connect(app.config["DATABASE"]).execute("SELECT national_id FROM pledge_noshow")] == ["A200002"]
+    # viewers can't mark no-shows
+    boss = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'boss'").fetchone()[0]
+    a.post(f"/admin/users/{boss}", data={"csrf_token": token, "action": "set_pledge_access", "level": "view"})
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert b.post("/pledges/noshow", data={"csrf_token": csrf(b, "/"), "national_id": "A200001", "value": "1"}).status_code == 403
+    assert "data-noshow-form" not in b.get("/pledges").get_data(as_text=True)

@@ -2,6 +2,7 @@
 {% from "_macros.html" import icon, pager %}
 {% block title %}Pledge sheet{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
+{% block main_class %}page wide{% endblock %}
 {% block content %}
 <div class="page-head">
   <div class="house-title">
@@ -11,7 +12,8 @@
       {% if owner %}<a class="button small" href="{{ url_for('pledges.manage') }}">Candidates &amp; import</a>{% endif %}
     </span>
   </div>
-  <p class="muted">{% if can_mark %}Tap a cell to mark it: Yes → Maybe → No → blank. It saves straight away.{% else %}You can view the sheet; ask the owner for “view and mark” to change it.{% endif %}</p>
+  <p class="muted">{% if can_mark %}Tap a cell to mark it: Yes → Maybe → No → blank. It saves straight away.
+    A voter can vote for {{ max_votes if max_votes else 'any number of' }} candidate{{ 's' if max_votes != 1 }}.{% else %}You can view the sheet; ask the owner for “view and mark” to change it.{% endif %}</p>
 </div>
 
 {% if not cands %}
@@ -31,6 +33,10 @@
     <span class="muted small-text">{% if t.maybe %}{{ t.maybe }} maybe · {% endif %}{{ ((100 * t.yes / total)|round(1)) if total else 0 }}%</span>
   </a>
   {% endfor %}
+  <a class="pledge-total noshow-total" href="{{ url_for('pledges.sheet', **dict(query_args, ns='1')) }}">
+    <span class="pt-name">No-show</span><strong>{{ noshows }}</strong>
+    <span class="muted small-text">can't vote</span>
+  </a>
 </section>
 
 <div class="resultbar">
@@ -45,8 +51,8 @@
 <table class="pledge-table">
   <thead><tr>
     <th class="num">#</th><th class="sticky">Name</th><th>ID</th><th>Sex</th><th>Age</th><th>House</th><th>Phone</th><th>Box</th>
-    {% if show_cf %}<th class="cf-col">100% confirmed</th>{% endif %}
     {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}
+    <th class="cand noshow-col">No-show</th>
   </tr></thead>
   <tbody>
   {% for v in rows %}{% set mine = pledges.get(v.national_id, {}) %}
@@ -54,8 +60,8 @@
     <td class="num muted">{{ first + loop.index }}</td>
     <td class="sticky"><a href="{{ url_for('voters.detail', national_id=v.national_id, back=request.full_path.rstrip('?')) }}">{{ v.full_name or '(no name)' }}</a></td>
     <td class="mono">{{ v.national_id }}</td><td>{{ v.sex }}</td><td>{{ v.age if v.age is not none }}</td>
-    <td>{{ v.house_name }}</td><td class="mono">{{ v.phone }}</td><td class="small-text">{{ v.location }}</td>
-    {% if show_cf %}<td class="cf-col">{{ 'yes' if v.confirmed }}</td>{% endif %}
+    <td class="trunc" title="{{ v.house_name }}">{{ v.house_name }}</td><td class="mono">{{ v.phone }}</td>
+    <td class="small-text trunc" title="{{ v.location }}">{{ v.location }}</td>
     {% for c in cands %}{% set val = mine.get(c.id, '') %}
     <td class="cand cand-{{ c.id }}">
       {% if not can_mark %}<span class="pl pl-{{ val or 'blank' }}">{{ values.get(val, '·') }}</span>{% else %}
@@ -69,6 +75,17 @@
       </form>{% endif %}
     </td>
     {% endfor %}
+    {% set away = v.national_id in noshow %}
+    <td class="cand noshow-col">
+      {% if not can_mark %}<span class="pl {{ 'pl-ns' if away else 'pl-blank' }}">{{ 'No-show' if away else '·' }}</span>{% else %}
+      <form method="post" action="{{ url_for('pledges.set_noshow') }}" data-noshow-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+        <input type="hidden" name="value" value="{{ '0' if away else '1' }}">
+        <button class="pl {{ 'pl-ns' if away else 'pl-blank' }}" aria-label="No-show for {{ v.full_name }}: {{ 'yes' if away else 'no' }}">{{ 'No-show' if away else '·' }}</button>
+      </form>{% endif %}
+    </td>
   </tr>
   {% endfor %}
   </tbody>

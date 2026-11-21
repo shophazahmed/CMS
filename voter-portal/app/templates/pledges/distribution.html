@@ -13,7 +13,8 @@
 <div class="page-head">
   <h1>How the vote splits</h1>
   <p class="muted">Yes pledges among {{ total }} voter{{ 's' if total != 1 }}{{ ' (filtered)' if query_args }}.
-    {{ 'Voters can vote for several of these candidates.' if mode == 'several' else 'Voters can vote for only one of these candidates.' }}</p>
+    {{ 'A voter can vote for ' ~ max_votes ~ ' candidate' ~ ('s' if max_votes != 1 else '') ~ '.' if max_votes else 'No limit on how many candidates a voter can vote for.' }}
+    {%- if noshows %} {{ noshows }} no-show{{ 's' if noshows != 1 }} (can't vote).{% endif %}</p>
 </div>
 
 {% if not cands %}
@@ -35,7 +36,8 @@
       <span class="dist-num"><strong>{{ yes[c.id] }}</strong>
         <span class="muted small-text">{{ ((100 * yes[c.id] / total)|round(1)) if total else 0 }}% of voters
           · {{ ((100 * yes[c.id] / pledged_total)|round(1)) if pledged_total else 0 }}% of pledges
-          {%- if maybe.get(c.id) %} · {{ maybe[c.id] }} maybe{% endif %}</span></span>
+          {%- if maybe.get(c.id) %} · {{ maybe[c.id] }} maybe{% endif %}
+          {%- if noshows %} · <strong>{{ expected[c.id] }}</strong> expected to vote{% endif %}</span></span>
     </li>
     {% endfor %}
     <li class="dist-none">
@@ -47,9 +49,9 @@
   </ul>
   <p class="muted small-text">{{ pledged_voters }} voter{{ 's' if pledged_voters != 1 }} pledged Yes to at least one candidate
     {%- if multi %} · {{ multi }} to more than one{% endif %}.</p>
-  {% if mode == 'one' and multi %}
-  <p class="flash flash-error">{{ multi }} voter{{ 's' if multi != 1 }} pledged Yes to more than one candidate, but voters can vote for only one.
-    Check them on the <a href="{{ url_for('pledges.sheet', **query_args) }}">pledge sheet</a>.</p>
+  {% if over %}
+  <p class="flash flash-error">{{ over }} voter{{ 's' if over != 1 }} pledged Yes to more than {{ max_votes }} candidate{{ 's' if max_votes != 1 }},
+    but a voter can vote for only {{ max_votes }}. Check them on the <a href="{{ url_for('pledges.sheet', **query_args) }}">pledge sheet</a>.</p>
   {% endif %}
 </section>
 

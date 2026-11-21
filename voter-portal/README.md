@@ -148,7 +148,8 @@ zoomed in on the house with a red ring; **Open the full map** zooms and scrolls,
 (set up under **Candidates & import**: add, rename, colour, reorder, hide). Tap a cell to cycle
 **Yes → Maybe → No → blank**; it saves straight away. Totals per candidate follow the filters (search,
 box, house, sex, age, "pledged Yes / Maybe / No / not marked" for a candidate). CSV / Excel export in the
-sheet's layout; the 100% confirmed column is shown only to accounts with access to that list.
+sheet's layout. A **No-show** column marks voters who won't be able to vote: they're counted
+separately, and the distribution shows each candidate's pledges "expected to vote" without them.
 **Access works like the 100% confirmed list:** the owner gives each person "View" or "View and mark"
 on the Users page (column "Pledge sheet"); everyone else, other admins included, has no access. Only the
 owner manages candidates, imports and downloads. The admin Dashboard shows a tile per candidate (Yes
@@ -157,8 +158,9 @@ with the candidates' names (yes / maybe / no cells; empty cells are left alone).
 
 **Distribution** shows how the vote splits: Yes pledges per candidate (share of voters and of pledges,
 maybes), not pledged yet, solid base (pledged to only one candidate), shared supporters (pledged to
-both), by box, by age group and sex, and new pledges per week. A setting says whether voters can vote
-for several of the candidates or only one; with "only one", double pledges are flagged.
+both), by box, by age group and sex, and new pledges per week. **Candidates per voter** (default 2,
+set under Candidates & import): a further Yes for a voter who already has that many is refused, and
+voters over the limit (e.g. from an import) are flagged.
 
 ## Colours
 
