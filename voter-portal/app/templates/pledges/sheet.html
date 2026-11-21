@@ -3,6 +3,14 @@
 {% block title %}Pledge sheet{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
 {% block main_class %}page wide{% endblock %}
+{% macro sort_th(key, label, cls='') -%}
+{%- set on = sort_key == key %}{% set next_dir = 'desc' if on and sort_dir == 'asc' else 'asc' %}
+<th class="{{ cls }} sortable {{ 'on' if on }}" aria-sort="{{ ('ascending' if sort_dir == 'asc' else 'descending') if on else 'none' }}">
+  <a href="{{ url_for('pledges.sheet', **dict(query_args, sort=key, dir=next_dir)) }}"
+     title="Sort by {{ label|lower }}{{ ' (Z to A)' if next_dir == 'desc' else ' (A to Z)' }}">{{ label }}
+    <span class="sort-arrow" aria-hidden="true">{{ ('▲' if sort_dir == 'asc' else '▼') if on else '↕' }}</span></a>
+</th>
+{%- endmacro %}
 {% block content %}
 <div class="page-head">
   <div class="house-title">
@@ -50,7 +58,8 @@
 <div class="pledge-wrap">
 <table class="pledge-table">
   <thead><tr>
-    <th class="num">#</th><th class="sticky">Name</th><th>ID</th><th>Sex</th><th>Age</th><th>House</th><th>Phone</th><th>Box</th>
+    <th class="num">#</th>{{ sort_th('name', 'Name', 'sticky') }}{{ sort_th('id', 'ID') }}<th>Sex</th>{{ sort_th('age', 'Age') }}
+    {{ sort_th('house', 'House') }}<th>Phone</th>{{ sort_th('box', 'Box') }}
     {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}
     <th class="cand noshow-col">No-show</th>
   </tr></thead>

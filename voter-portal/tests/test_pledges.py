@@ -234,3 +234,24 @@ def test_two_candidates_per_voter_and_no_shows(app):
     login(b, "boss", ADMIN_PW)
     assert b.post("/pledges/noshow", data={"csrf_token": csrf(b, "/"), "national_id": "A200001", "value": "1"}).status_code == 403
     assert "data-noshow-form" not in b.get("/pledges").get_data(as_text=True)
+
+
+def test_sort_by_name_and_house(app):
+    import re as _re
+
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    setup(a, ("Shoppe",))
+    names = lambda q: _re.findall(r'<td class="sticky"><a [^>]+>([^<]+)</a>', a.get("/pledges" + q).get_data(as_text=True))  # noqa: E731
+    assert names("") == ["=HYPERLINK(1)", "Aminath Alpha", "Moosa Beta"]          # name, A to Z
+    assert names("?sort=name&dir=desc") == ["Moosa Beta", "Aminath Alpha", "=HYPERLINK(1)"]
+    assert names("?sort=house")[0] == "Moosa Beta"                                 # Blue Ge before Rose Villa
+    assert names("?sort=house&dir=desc")[-1] == "Moosa Beta"
+    assert names("?sort=age&dir=desc")[0] == "=HYPERLINK(1)"                       # 70 years old
+    page = a.get("/pledges?sort=house").get_data(as_text=True)
+    assert 'aria-sort="ascending"' in page and "sort=house&amp;dir=desc" in page    # tap again for Z to A
+    assert 'name="sort" value="house"' in page                                     # filters keep the sort
+    assert names("?sort=bogus") == names("")
+    rows = list(csv.reader(io.StringIO(a.get("/pledges/export.csv?sort=name&dir=desc").get_data(as_text=True).lstrip("\ufeff"))))
+    assert [r[2] for r in rows[1:]] == ["Moosa Beta", "Aminath Alpha", "'=HYPERLINK(1)"]   # export follows the sort

@@ -123,6 +123,26 @@ def _filters():
     return f, where, params, cands, pc, pv
 
 
+# Sortable columns on the sheet: (A to Z, Z to A); empty values always go last
+SHEET_SORTS = {
+    "name": ("full_name COLLATE NOCASE, national_id", "full_name COLLATE NOCASE DESC, national_id"),
+    "house": ("house_name = '', house_name COLLATE NOCASE, full_name COLLATE NOCASE",
+              "house_name = '', house_name COLLATE NOCASE DESC, full_name COLLATE NOCASE"),
+    "box": ("location = '', location COLLATE NOCASE, house_name COLLATE NOCASE, full_name COLLATE NOCASE",
+            "location = '', location COLLATE NOCASE DESC, house_name COLLATE NOCASE, full_name COLLATE NOCASE"),
+    "age": ("age IS NULL, age, full_name COLLATE NOCASE", "age IS NULL, age DESC, full_name COLLATE NOCASE"),
+    "id": ("national_id", "national_id DESC"),
+}
+
+
+def sheet_order():
+    """(key, direction, ORDER BY) from ?sort=name|house|box|age|id&dir=asc|desc (default: name, A to Z)."""
+    key = request.args.get("sort", "name")
+    key = key if key in SHEET_SORTS else "name"
+    direction = "desc" if request.args.get("dir") == "desc" else "asc"
+    return key, direction, SHEET_SORTS[key][1 if direction == "desc" else 0]
+
+
 def _pledge_map(ids):
     out = {}
     for i in range(0, len(ids), 500):
@@ -148,9 +168,8 @@ def _totals(where, params, cands):
 @bp.route("/pledges")
 @pledge_viewer_required
 def sheet():
-    from .voters import SORTS
-
     f, where, params, cands, pc, pv = _filters()
+    sort_key, sort_dir, order = sheet_order()
     db = get_db()
     size = request.args.get("n", type=int)
     size = size if size in PAGE_SIZES else 50
@@ -160,7 +179,7 @@ def sheet():
         page = min(max(1, int(request.args.get("page", 1))), pages)
     except ValueError:
         page = 1
-    rows = db.execute(f"SELECT * FROM voters{where} ORDER BY {SORTS[f['sort']]} LIMIT ? OFFSET ?",
+    rows = db.execute(f"SELECT * FROM voters{where} ORDER BY {order} LIMIT ? OFFSET ?",
                       params + [size, (page - 1) * size]).fetchall()
     w, p = _scoped_where(" WHERE location != ''")
     boxes = [r[0] for r in db.execute(f"SELECT DISTINCT location FROM voters{w} ORDER BY location COLLATE NOCASE", p)]
@@ -169,6 +188,7 @@ def sheet():
                            cands=cands, totals=_totals(where, params, cands), total=total, page=page, pages=pages,
                            size=size, sizes=PAGE_SIZES, f=f, pc=pc, pv=pv, values=VALUES, boxes=boxes,
                            can_mark=can_mark_pledges(), owner=is_owner(), max_votes=max_votes(),
+                           sort_key=sort_key, sort_dir=sort_dir,
                            noshow=noshow_ids([r["national_id"] for r in rows]),
                            noshows=db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN"
                                               f" (SELECT national_id FROM voters{where})", params).fetchone()[0],
@@ -325,12 +345,12 @@ def manage():
 @pledge_owner_required
 def export(fmt):
     """The sheet in the campaign's Excel layout, with the same filters."""
-    from .voters import SORTS, _safe_cell
+    from .voters import _safe_cell
 
     if fmt not in ("csv", "xlsx"):
         abort(404)
     f, where, params, cands, pc, pv = _filters()
-    rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {SORTS[f['sort']]}", params).fetchall()
+    rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {sheet_order()[2]}", params).fetchall()
     marks = _pledge_map([r["national_id"] for r in rows])
     away = noshow_ids([r["national_id"] for r in rows])
     headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "No-show"]
