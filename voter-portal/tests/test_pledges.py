@@ -183,7 +183,7 @@ def test_dashboard_shows_candidates(app):
     mark(o, token, "A200002", ids["Rayya"], "yes")
     dash = o.get("/dashboard").get_data(as_text=True)
     assert "How the vote splits" in dash and "Shoppe" in dash and "33.3% of 3 voters" in dash
-    assert "Not pledged yet" in dash
+    assert "Leaning" in dash and "Undecided" in dash
     boxed = o.get("/dashboard", query_string={"box": "ViliMale, Ehenihen"}).get_data(as_text=True)
     assert "100.0% of 1 voters" in boxed                                        # Rayya at that box
     # an admin without pledge access sees no pledge tiles

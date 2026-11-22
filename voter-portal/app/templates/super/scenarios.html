@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Voting scenarios{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
+{% macro bar(n, of) -%}
+<svg class="dbar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+  <rect class="dbar-track" x="0" y="0" width="100" height="8"/>
+  {% if of %}<rect class="dbar-fill" x="0" y="0" width="{{ (100 * n / of)|round(2) }}" height="8"/>{% endif %}
+</svg>
+{%- endmacro %}
+{% macro nth(n) -%}{{ {1: '1st', 2: '2nd', 3: '3rd'}.get(n, n ~ 'th') }}{%- endmacro %}
+{% macro verdict_text(v) -%}
+{%- if not v %}—{% elif v.wins %}Wins · {{ v.margin }} ahead of {{ v.vs }}{% else %}Loses · needs {{ v.margin }} more to pass {{ v.vs }}{% endif -%}
+{%- endmacro %}
+{% block content %}
+<a class="backlink" href="{{ url_for('superpledge.sheet') }}">{{ icon('back', 18) }} Super pledge voters</a>
+<div class="page-head">
+  <h1>Voting scenarios</h1>
+  <p class="muted">Top {{ n_seats }} win. Each voter has {{ limit if limit else 'unlimited' }} vote{{ 's' if limit != 1 }}.
+    {% if ours %}Seen from {{ label((cands|selectattr('id', 'equalto', ours)|first)) }}'s side.{% else %}
+    {% if is_owner %}<a href="{{ url_for('pledges.manage') }}">Choose our candidate</a>{% else %}Our candidate isn't set{% endif %} to see wins and margins.{% endif %}
+    {{ supers }} super voter{{ 's' if supers != 1 }}, {{ decided }} with a decision.</p>
+</div>
+
+{% if not cands %}
+<div class="empty card"><p>No candidates yet.</p></div>
+{% else %}
+
+<section class="card">
+  <h2>Compare scenarios{% if loc %} · {{ 'no box' if loc == '(none)' else loc }}{% endif %}</h2>
+  <div class="table-wrap">
+  <table class="overlap scen-table">
+    <thead><tr><th>Scenario</th>{% for c in cands %}<th class="cand cand-{{ c.id }}">{{ label(c) }}</th>{% endfor %}{% if ours %}<th>Result for us</th>{% endif %}</tr></thead>
+    <tbody>
+    {% for s in compare %}
+    <tr class="{{ 'on' if s.key == active }}">
+      <th><a href="{{ url_for('superpledge.scenarios', loc=loc or None, **s.args) }}">{{ s.title }}</a>
+        <span class="muted small-text scen-about">{{ s.about }}</span></th>
+      {% for c in cands %}{% set r = s.p.result|selectattr('c.id', 'equalto', c.id)|first %}
+      <td class="{{ 'win' if r.wins }} {{ 'ours' if c.id == ours }}">{{ r.votes }}<span class="muted small-text"> · {{ nth(r.place) }}</span></td>
+      {% endfor %}
+      {% if ours %}<td class="small-text {{ 'verdict-win' if s.p.verdict and s.p.verdict.wins else 'verdict-lose' }}">{{ verdict_text(s.p.verdict) }}</td>{% endif %}
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small-text">Bold = in the top {{ n_seats }}. Tap a scenario to open it below and change it.</p>
+</section>
+
+<form class="card form scen-form" method="get">
+  <h2>Build a scenario</h2>
+  <label>Box
+    <select name="loc">
+      <option value="">All boxes</option>
+      {% for b in boxes %}<option value="{{ b }}" {{ 'selected' if loc == b }}>{{ b }}</option>{% endfor %}
+      <option value="(none)" {{ 'selected' if loc == '(none)' }}>No box recorded</option>
+    </select>
+  </label>
+  <label>Super voters
+    <select name="sv">
+      <option value="decision" {{ 'selected' if opts.sv == 'decision' }}>Vote as we decided</option>
+      <option value="pledge" {{ 'selected' if opts.sv == 'pledge' }}>Vote as they pledged</option>
+    </select>
+  </label>
+  <fieldset class="checks">
+    <legend>These candidates' supporters cast only one vote</legend>
+    {% for c in cands %}<label class="check"><input type="checkbox" name="b" value="{{ c.id }}" {{ 'checked' if c.id in opts.b }}> {{ label(c) }}</label>{% endfor %}
+  </fieldset>
+  <label>Maybe pledges count as
+    <select name="mw">
+      {% for k, t in ((0, 'Nothing'), (50, 'Half a vote'), (100, 'A full vote')) %}<option value="{{ k }}" {{ 'selected' if opts.mw == k }}>{{ t }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>Undecided voters (no mark)
+    <select name="und">
+      <option value="none" {{ 'selected' if opts.und == 'none' }}>Leave them out</option>
+      <option value="split" {{ 'selected' if opts.und == 'split' }}>Split like the pledged voters</option>
+      {% if ours %}<option value="ours" {{ 'selected' if opts.und == 'ours' }}>A share votes for us, the rest split</option>{% endif %}
+    </select>
+  </label>
+  {% if ours %}<label>Share of undecided voting for us (%) <input type="number" name="uo" min="0" max="100" value="{{ opts.uo }}"></label>{% endif %}
+  <label>Turnout (%) <input type="number" name="to" min="1" max="100" value="{{ opts.to }}"></label>
+  <label class="check"><input type="checkbox" name="nsx" value="0" {{ 'checked' if not opts.nsx }}> Count no-shows as voting</label>
+  <button class="primary">Show</button>
+</form>
+
+<section class="card scen-result">
+  <h2>Projected result</h2>
+  {% if p.verdict %}
+  <p class="scen-verdict {{ 'win' if p.verdict.wins else 'lose' }}">{{ verdict_text(p.verdict) }}</p>
+  {% endif %}
+  <ul class="dist-list">
+    {% for r in p.result %}
+    <li class="cand-{{ r.c.id }} {{ 'win' if r.wins }}">
+      <span class="dist-name"><span class="muted">{{ nth(r.place) }}</span> {{ label(r.c) }}{% if r.c.id == ours %} <span class="tag ours-tag">ours</span>{% endif %}</span>
+      {{ bar(r.votes, p.top) }}
+      <span class="dist-num"><strong>{{ r.votes }}</strong> <span class="muted small-text">{{ 'wins a seat' if r.wins else '' }}</span></span>
+    </li>
+    {% if loop.index == n_seats and not loop.last %}<li class="cut-line" aria-hidden="true"><span>winning line</span></li>{% endif %}
+    {% endfor %}
+  </ul>
+  <p class="muted small-text">{{ p.voting }} voter{{ 's' if p.voting != 1 }} voting{% if p.from_super %} · {{ p.from_super }} vote as we decided{% endif %}
+    {%- if p.undecided %} · {{ p.undecided }} undecided{{ ' (left out)' if opts.und == 'none' }}{% endif %}.
+    Estimates from the pledges; rounded.</p>
+</section>
+{% endif %}
+{% endblock %}

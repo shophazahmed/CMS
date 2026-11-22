@@ -29,6 +29,8 @@
       {% if pledge_only %}
       <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep == 'pledges.sheet' }}>Pledge sheet</a>
       <a href="{{ url_for('pledges.distribution') }}" {{ 'aria-current=page' if ep == 'pledges.distribution' }}>Distribution</a>
+      {% if can_view_super %}<a href="{{ url_for('superpledge.sheet') }}" {{ 'aria-current=page' if ep == 'superpledge.sheet' }}>Super pledge</a>
+      <a href="{{ url_for('superpledge.scenarios') }}" {{ 'aria-current=page' if ep == 'superpledge.scenarios' }}>Scenarios</a>{% endif %}
       {% else %}
       {% if role == 'agent' %}
       <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>My dashboard</a>
@@ -47,7 +49,7 @@
       <a href="{{ url_for('campaign.settings') }}" {{ 'aria-current=page' if ep == 'campaign.settings' }}>Settings</a>
       {% endif %}
       {% if can_view_pledges %}
-      <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep.startswith('pledges.') }}>Pledges</a>
+      <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep.startswith('pledges.') or ep.startswith('superpledge.') }}>Pledges</a>
       {% endif %}
       {% if can_view_cf %}
       <a href="{{ url_for('confirmed.overview') }}" {{ 'aria-current=page' if ep == 'confirmed.overview' }}>Confirmed</a>
@@ -73,6 +75,8 @@
         {% if can_view_cf %}<a href="{{ url_for('confirmed.overview') }}">100% confirmed voters</a>{% endif %}
         {% if can_view_pledges %}<a href="{{ url_for('pledges.sheet') }}">Pledge sheet</a>
         <a href="{{ url_for('pledges.distribution') }}">Pledge distribution</a>{% endif %}
+        {% if can_view_super %}<a href="{{ url_for('superpledge.sheet') }}">Super pledge voters</a>
+        <a href="{{ url_for('superpledge.scenarios') }}">Voting scenarios</a>{% endif %}
         {% endif %}
         <form class="appearance" method="post" action="{{ url_for('theme.set_appearance') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -135,6 +139,7 @@
     {% if pledge_only %}
     <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep == 'pledges.sheet' }}>{{ icon('check') }}<span>Pledge sheet</span></a>
     <a href="{{ url_for('pledges.distribution') }}" {{ 'aria-current=page' if ep == 'pledges.distribution' }}>{{ icon('chart') }}<span>Distribution</span></a>
+    {% if can_view_super %}<a href="{{ url_for('superpledge.scenarios') }}" {{ 'aria-current=page' if ep.startswith('superpledge.') }}>{{ icon('users') }}<span>Super</span></a>{% endif %}
     {% else %}
     {% if role == 'agent' %}
     <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>{{ icon('home') }}<span>My dashboard</span></a>

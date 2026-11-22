@@ -8,7 +8,7 @@ from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from . import (admin, agentlink, announce, auth, campaign, canvass, confirmed, fonts, imports, islandmap, personal, pledges,
-               share, visits, voters)
+               share, superpledge, visits, voters)
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -75,6 +75,7 @@ def create_app(test_config=None):
     app.register_blueprint(visits.bp)
     app.register_blueprint(islandmap.bp)
     app.register_blueprint(pledges.bp)
+    app.register_blueprint(superpledge.bp)
     app.jinja_env.globals["dhivehi_font"] = fonts.font_file
     app.jinja_env.globals["dhivehi_font_name"] = fonts.font_name
     app.jinja_env.globals["share_people"] = share.people
@@ -96,7 +97,8 @@ def create_app(test_config=None):
     def inject():
         return {"csrf_token": auth.csrf_token, "current_user": g.get("user"), "is_admin": auth.is_admin(), "is_owner": auth.is_owner(),
                 "can_view_cf": auth.can_view_confirmed(), "can_mark_cf": auth.can_mark_confirmed(),
-                "can_view_pledges": auth.can_view_pledges(), "pledge_only": auth.is_pledge_only(),
+                "can_view_pledges": auth.can_view_pledges(),
+                "can_view_super": auth.can_view_super() and auth.can_view_pledges(), "pledge_only": auth.is_pledge_only(),
                 "confirmed_metrics": confirmed.metrics,
                 "campaign_banner": campaign.banner, "whatsapp_url": campaign.whatsapp_url,
                 "sms_url": campaign.sms_url, "viber_url": campaign.viber_url, "campaign_message": campaign.message,
@@ -142,6 +144,7 @@ def create_app(test_config=None):
         visits.init_schema(conn)
         islandmap.init_schema(conn)
         pledges.init_schema(conn)
+        superpledge.init_schema(conn)
         bootstrap_admin(conn)
         conn.close()
     return app

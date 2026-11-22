@@ -15,7 +15,9 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <input type="hidden" name="id" value="{{ c.id }}">
         <input type="color" name="color" value="{{ c.color }}" aria-label="Colour for {{ c.name }}">
+        <input class="ballot-no" name="ballot_no" value="{{ c.ballot_no or '' }}" inputmode="numeric" maxlength="2" placeholder="No." aria-label="Ballot number for {{ c.name }}">
         <input name="name" value="{{ c.name }}" maxlength="60" aria-label="Name">
+        {% if c.id == ours %}<span class="tag ours-tag">Our candidate</span>{% endif %}
         <span class="muted small-text">{{ counts.get(c.id, 0) }} yes</span>
         <button name="action" value="rename" class="small">Save</button>
         <button name="action" value="up" class="small" aria-label="Move up" {{ 'disabled' if loop.first }}>↑</button>
@@ -34,6 +36,19 @@
     <button class="primary" name="action" value="add">Add</button>
   </form>
 </section>
+
+<form class="card form" method="post">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <h2>Our candidate</h2>
+  <p class="muted small-text">Whose portal this is. The voting scenarios measure everything from this candidate's side.</p>
+  <label>Our candidate
+    <select name="ours">
+      <option value="">—</option>
+      {% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if c.id == ours }}>{{ c.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <button class="primary" name="action" value="ours">Save</button>
+</form>
 
 <form class="card form" method="post">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

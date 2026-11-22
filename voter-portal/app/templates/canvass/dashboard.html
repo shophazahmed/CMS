@@ -33,9 +33,13 @@
       <span class="muted small-text">{{ c.pct }}% of {{ pn.total }} voters</span>
     </a>
     {% endfor %}
-    <a class="pledge-total dist-none" href="{{ url_for('pledges.sheet', pc='any', pv='none', loc=box or None, party=party or None) }}">
-      <span class="pt-name">Not pledged yet</span><strong>{{ pn.not_pledged }}</strong>
-      <span class="muted small-text">no Yes for anyone</span>
+    <a class="pledge-total leaning-total" href="{{ url_for('pledges.sheet', pv='leaning', loc=box or None, party=party or None) }}">
+      <span class="pt-name">Leaning</span><strong>{{ pn.leaning }}</strong>
+      <span class="muted small-text">a Maybe, no Yes yet</span>
+    </a>
+    <a class="pledge-total dist-none" href="{{ url_for('pledges.sheet', pv='undecided', loc=box or None, party=party or None) }}">
+      <span class="pt-name">Undecided</span><strong>{{ pn.undecided }}</strong>
+      <span class="muted small-text">no mark at all</span>
     </a>
     <a class="pledge-total noshow-total" href="{{ url_for('pledges.sheet', ns='1', loc=box or None, party=party or None) }}">
       <span class="pt-name">No-show</span><strong>{{ pn.noshows }}</strong>

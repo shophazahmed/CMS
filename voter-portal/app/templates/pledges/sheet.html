@@ -17,6 +17,8 @@
     <h1>Pledge sheet</h1>
     <span class="list-links">
       <a class="button small" href="{{ url_for('pledges.distribution', **query_args) }}">{{ icon('chart', 16) }} Distribution</a>
+      {% if supers is not none %}<a class="button small" href="{{ url_for('superpledge.sheet') }}">★ Super pledge</a>
+      <a class="button small" href="{{ url_for('superpledge.scenarios') }}">Scenarios</a>{% endif %}
       {% if owner %}<a class="button small" href="{{ url_for('pledges.manage') }}">Candidates &amp; import</a>{% endif %}
     </span>
   </div>
@@ -43,6 +45,14 @@
     <span class="muted small-text">{% if t.maybe %}{{ t.maybe }} maybe · {% endif %}{{ ((100 * t.yes / total)|round(1)) if total else 0 }}%</span>
   </a>
   {% endfor %}
+  <a class="pledge-total leaning-total" href="{{ url_for('pledges.sheet', **dict(query_args, pc=None, pv='leaning')) }}">
+    <span class="pt-name">Leaning</span><strong>{{ undecided[0] }}</strong>
+    <span class="muted small-text">a Maybe, no Yes yet</span>
+  </a>
+  <a class="pledge-total dist-none" href="{{ url_for('pledges.sheet', **dict(query_args, pc=None, pv='undecided')) }}">
+    <span class="pt-name">Undecided</span><strong>{{ undecided[1] }}</strong>
+    <span class="muted small-text">no mark at all</span>
+  </a>
   <a class="pledge-total noshow-total" href="{{ url_for('pledges.sheet', **dict(query_args, ns='1')) }}">
     <span class="pt-name">No-show</span><strong>{{ noshows }}</strong>
     <span class="muted small-text">can't vote</span>
@@ -64,6 +74,7 @@
     {{ sort_th('house', 'House') }}<th>Phone</th>{{ sort_th('box', 'Box') }}
     {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}
     <th class="cand noshow-col">No-show</th>
+    {% if supers is not none %}<th class="cand super-col" title="Super pledge: votes the way we decide">★ Super</th>{% endif %}
   </tr></thead>
   <tbody>
   {% for v in rows %}{% set mine = pledges.get(v.national_id, {}) %}
@@ -97,6 +108,17 @@
         <button class="pl {{ 'pl-ns' if away else 'pl-blank' }}" aria-label="No-show for {{ v.full_name }}: {{ 'yes' if away else 'no' }}">{{ 'No-show' if away else '·' }}</button>
       </form>{% endif %}
     </td>
+    {% if supers is not none %}{% set sup = v.national_id in supers %}
+    <td class="cand super-col">
+      {% if not can_mark_super %}<span class="pl {{ 'pl-super' if sup else 'pl-blank' }}">{{ '★' if sup else '·' }}</span>{% else %}
+      <form method="post" action="{{ url_for('superpledge.toggle') }}" data-toggle-form data-on="★" data-off="·" data-on-class="pl pl-super">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+        <input type="hidden" name="value" value="{{ '0' if sup else '1' }}">
+        <button class="pl {{ 'pl-super' if sup else 'pl-blank' }}" aria-label="Super pledge for {{ v.full_name }}: {{ 'yes' if sup else 'no' }}">{{ '★' if sup else '·' }}</button>
+      </form>{% endif %}
+    </td>{% endif %}
   </tr>
   {% endfor %}
   </tbody>

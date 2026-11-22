@@ -100,7 +100,7 @@
   <h2>Sign-in accounts</h2>
   <div class="table-wrap">
   <table class="stack">
-    <thead><tr><th>Username</th><th>Role</th>{% if is_owner %}<th>Confirmed list</th><th>Pledge sheet</th>{% endif %}<th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>
+    <thead><tr><th>Username</th><th>Role</th>{% if is_owner %}<th>Confirmed list</th><th>Pledge sheet</th><th>Super pledge &amp; scenarios</th>{% endif %}<th>Status</th><th>Last sign-in</th><th>Actions</th></tr></thead>
     <tbody>
     {% for u in users %}
     {% set locked_owner = u.id == owner_id and u.id != current_user.id %}
@@ -152,6 +152,19 @@
           <noscript><button>Save</button></noscript>
         </form>
         {% endif %}
+        {% else %}<span class="muted small-text">Owner</span>{% endif %}
+      </td>
+      <td data-label="Super pledge &amp; scenarios">
+        {% if u.id != owner_id %}
+        <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline cf-access">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="set_super_access">
+          <select name="level" data-autosubmit aria-label="Super pledge and scenarios access for {{ u.username }}">
+            {% for k, label in cf_access.items() %}<option value="{{ k }}" {{ 'selected' if (u.super_access or '') == k }}>{{ label }}</option>{% endfor %}
+          </select>
+          <noscript><button>Save</button></noscript>
+        </form>
+        {% if u.super_access and not u.pledge_access %}<p class="small-text muted">Needs pledge sheet access too</p>{% endif %}
         {% else %}<span class="muted small-text">Owner</span>{% endif %}
       </td>{% endif %}
       <td data-label="Status">

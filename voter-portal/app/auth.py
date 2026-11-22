@@ -224,6 +224,8 @@ PLEDGE_ONLY_ENDPOINTS = {
     "pledges.sheet", "pledges.distribution", "pledges.set_pledge", "pledges.set_noshow", "pledges.colors_css",
     "voters.photo", "theme.theme_css", "theme.set_appearance", "fonts.stylesheet", "fonts.serve",
     "auth.login", "auth.logout", "auth.change_password", "static",
+    # given separately by the owner; the pages check that access themselves
+    "superpledge.sheet", "superpledge.toggle", "superpledge.vote", "superpledge.scenarios",
 }
 
 
@@ -243,6 +245,27 @@ def pledge_only_guard():
     abort(403)
 
 
+def super_access(user=None):
+    """'owner', 'mark', 'view' or '' for the super pledge voters and the voting scenarios, given by the owner
+    like the pledge sheet."""
+    user = user if user is not None else g.get("user")
+    if user is None:
+        return ""
+    if is_owner(user):
+        return "owner"
+    if not user["can_login"] or user["deleted_at"] or not user["is_active"]:
+        return ""
+    return user["super_access"] if user["super_access"] in ("view", "mark") else ""
+
+
+def can_view_super(user=None):
+    return super_access(user) in ("owner", "view", "mark")
+
+
+def can_mark_super(user=None):
+    return super_access(user) in ("owner", "mark")
+
+
 def can_view_pledges(user=None):
     return pledge_access(user) in ("owner", "view", "mark")
 
@@ -256,6 +279,8 @@ pledge_viewer_required = _confirmed_gate(can_view_pledges)
 pledge_marker_required = _confirmed_gate(can_mark_pledges)
 pledge_owner_required = _confirmed_gate(is_owner)
 confirmed_marker_required = _confirmed_gate(can_mark_confirmed)
+super_viewer_required = _confirmed_gate(lambda: can_view_super() and can_view_pledges())
+super_marker_required = _confirmed_gate(lambda: can_mark_super() and can_view_pledges())
 
 
 def can_manage_confirmed_voters(view):

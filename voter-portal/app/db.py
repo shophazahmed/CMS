@@ -26,7 +26,8 @@ CREATE TABLE IF NOT EXISTS users (
     is_owner             INTEGER NOT NULL DEFAULT 0,  -- the candidate's account (100% confirmed list); survives renames
     confirmed_access     TEXT NOT NULL DEFAULT '',    -- given by the owner: '' none, 'view', 'mark' (never downloads)
     pledge_access        TEXT NOT NULL DEFAULT '',    -- the pledge sheet, the same way
-    pledge_only          INTEGER NOT NULL DEFAULT 0   -- 1: this account sees only the pledge sheet and distribution
+    pledge_only          INTEGER NOT NULL DEFAULT 0,  -- 1: this account sees only the pledge sheet and distribution
+    super_access         TEXT NOT NULL DEFAULT ''     -- super pledge voters and voting scenarios, given like pledge_access
 );
 
 CREATE TABLE IF NOT EXISTS voters (
@@ -176,6 +177,7 @@ def _add_user_columns(conn):
         ("confirmed_access", "confirmed_access TEXT NOT NULL DEFAULT ''"),
         ("pledge_access", "pledge_access TEXT NOT NULL DEFAULT ''"),
         ("pledge_only", "pledge_only INTEGER NOT NULL DEFAULT 0"),
+        ("super_access", "super_access TEXT NOT NULL DEFAULT ''"),
     ):
         if name in columns:
             continue

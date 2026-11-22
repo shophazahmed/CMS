@@ -73,6 +73,12 @@ DEFAULT_MAX_VOTES = 2  # how many of these candidates one voter can vote for (0 
 def init_schema(conn):
     fresh = not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'pledge_log'").fetchone()
     conn.executescript(SCHEMA)
+    if "ballot_no" not in {r[1] for r in conn.execute("PRAGMA table_info(candidates)")}:
+        try:
+            conn.execute("ALTER TABLE candidates ADD COLUMN ballot_no INTEGER")  # the number on the ballot paper
+        except Exception as exc:  # another worker added it first
+            if "duplicate column" not in str(exc):
+                raise
     if fresh:  # start the log from the marks made before it existed
         conn.execute("INSERT INTO pledge_log (national_id, candidate_id, value, at, by_user)"
                      " SELECT national_id, candidate_id, value, at, by_user FROM pledges")
@@ -84,6 +90,30 @@ def init_schema(conn):
 def candidates(active_only=True):
     cond = " WHERE active = 1" if active_only else ""
     return get_db().execute(f"SELECT * FROM candidates{cond} ORDER BY position, name COLLATE NOCASE").fetchall()
+
+
+def undecided_counts(where, params):
+    """(leaning, undecided) among the voters of a WHERE clause, no-shows left out: leaning = a Maybe for
+    someone but no Yes; undecided = no mark at all."""
+    row = get_db().execute(
+        "SELECT SUM(m.nid IS NOT NULL AND y.nid IS NULL), SUM(a.nid IS NULL) FROM voters v"
+        " LEFT JOIN (SELECT DISTINCT national_id AS nid FROM pledges WHERE value = 'maybe') m ON m.nid = v.national_id"
+        " LEFT JOIN (SELECT DISTINCT national_id AS nid FROM pledges WHERE value = 'yes') y ON y.nid = v.national_id"
+        " LEFT JOIN (SELECT DISTINCT national_id AS nid FROM pledges) a ON a.nid = v.national_id"
+        f" WHERE v.national_id IN (SELECT national_id FROM voters{where})"
+        " AND v.national_id NOT IN (SELECT national_id FROM pledge_noshow)", params).fetchone()
+    return (row[0] or 0, row[1] or 0)
+
+
+def our_candidate():
+    """The campaign's own candidate (this is their portal), as a candidate id, or None."""
+    value = campaign.get_setting("our_candidate")
+    return int(value) if value and str(value).isdigit() else None
+
+
+def label(c):
+    """'#2 Sofhaz' when the ballot number is set."""
+    return f"#{c['ballot_no']} {c['name']}" if c["ballot_no"] else c["name"]
 
 
 def max_votes():
@@ -117,8 +147,15 @@ def _filters():
     pc = request.args.get("pc", "")
     pc = pc if pc in ids or pc == "any" else ""
     pv = request.args.get("pv", "")
-    pv = pv if pv in ("yes", "maybe", "no", "none") else ""
-    if pc and pv:
+    pv = pv if pv in ("yes", "maybe", "no", "none", "leaning", "undecided") else ""
+    if pv in ("leaning", "undecided"):
+        pc = "any"
+        cond = ("national_id NOT IN (SELECT national_id FROM pledge_noshow) AND national_id NOT IN"
+                " (SELECT national_id FROM pledges WHERE value = 'yes') AND national_id")
+        cond += (" IN (SELECT national_id FROM pledges WHERE value = 'maybe')" if pv == "leaning"
+                 else " NOT IN (SELECT national_id FROM pledges)")
+        where = f"{where} AND {cond}" if where else f" WHERE {cond}"
+    elif pc and pv:
         if pc == "any":
             # "not pledged" = no Yes for anyone (a Maybe or a No doesn't count as a pledge)
             cond = ("national_id NOT IN (SELECT national_id FROM pledges WHERE value = 'yes')" if pv == "none" else
@@ -191,6 +228,15 @@ def _totals(where, params, cands):
     return t
 
 
+def _super_info(rows):
+    from . import superpledge
+    from .auth import can_mark_super, can_view_super
+
+    if not can_view_super():
+        return {"supers": None, "can_mark_super": False}
+    return {"supers": superpledge.super_ids([r["national_id"] for r in rows]), "can_mark_super": can_mark_super()}
+
+
 @bp.route("/pledges")
 @pledge_viewer_required
 def sheet():
@@ -216,6 +262,7 @@ def sheet():
                            can_mark=can_mark_pledges(), owner=is_owner(), max_votes=max_votes(),
                            sort_key=sort_key, sort_dir=sort_dir,
                            noshow=noshow_ids([r["national_id"] for r in rows]),
+                           undecided=undecided_counts(where, params), **_super_info(rows),
                            noshows=db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN"
                                               f" (SELECT national_id FROM voters{where})", params).fetchone()[0],
                            query_args=query_args, first=(page - 1) * size)
@@ -374,8 +421,10 @@ def manage():
                 name = clean_text(request.form.get("name", ""))[:60]
                 color = request.form.get("color", cand["color"])
                 color = color if re.fullmatch(r"#[0-9a-fA-F]{6}", color or "") else cand["color"]
+                ballot = request.form.get("ballot_no", "").strip()
+                ballot = int(ballot) if ballot.isdigit() and 0 < int(ballot) < 100 else None
                 if name and not db.execute("SELECT 1 FROM candidates WHERE name = ? AND id != ?", (name, cid)).fetchone():
-                    db.execute("UPDATE candidates SET name = ?, color = ? WHERE id = ?", (name, color, cid))
+                    db.execute("UPDATE candidates SET name = ?, color = ?, ballot_no = ? WHERE id = ?", (name, color, ballot, cid))
                     audit.log("candidate_rename", target=name, detail={"from": cand["name"]}, commit=False)
                     flash("Saved.", "success")
                 else:
@@ -392,6 +441,12 @@ def manage():
                 audit.log(f"candidate_{action}", target=cand["name"], commit=False)
                 flash(f"{cand['name']} {'is back on the sheet' if action == 'restore' else 'hidden from the sheet (pledges kept)'}.",
                       "success")
+        elif action == "ours":
+            value = request.form.get("ours", "")
+            if value == "" or db.execute("SELECT 1 FROM candidates WHERE id = ?", (value,)).fetchone():
+                campaign.put_setting("our_candidate", value)
+                audit.log("our_candidate", detail={"candidate": value}, commit=False)
+                flash("Saved: our candidate.", "success")
         elif action == "max_votes":
             value = request.form.get("max_votes", "")
             if value.isdigit() and 0 <= int(value) <= 20:
@@ -407,7 +462,7 @@ def manage():
         return redirect(url_for("pledges.manage"))
     counts = dict(db.execute("SELECT candidate_id, COUNT(*) FROM pledges WHERE value = 'yes' GROUP BY candidate_id").fetchall())
     return render_template("pledges/candidates.html", cands=candidates(active_only=False), counts=counts,
-                           max_votes=max_votes())
+                           max_votes=max_votes(), ours=our_candidate())
 
 
 # --- export / import -----------------------------------------------------------------------
@@ -583,7 +638,8 @@ def dashboard_numbers(box="", party=""):
     cands = candidates()
     away = db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN (SELECT national_id FROM voters{w})",
                       p).fetchone()[0]
-    return {"total": total, "not_pledged": total - anyone, "noshows": away,
+    leaning, undecided = undecided_counts(w, p)
+    return {"total": total, "not_pledged": total - anyone, "noshows": away, "leaning": leaning, "undecided": undecided,
             "cands": [{"id": c["id"], "name": c["name"], "yes": rows.get(c["id"], 0),
                        "pct": round(100 * rows.get(c["id"], 0) / total, 1) if total else 0} for c in cands]}
 

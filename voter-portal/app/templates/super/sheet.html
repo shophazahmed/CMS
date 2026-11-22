@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}Super pledge voters{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
+{% block main_class %}page wide{% endblock %}
+{% block content %}
+<a class="backlink" href="{{ url_for('pledges.sheet') }}">{{ icon('back', 18) }} Pledge sheet</a>
+<div class="page-head">
+  <div class="house-title">
+    <h1>Super pledge voters</h1>
+    <span class="list-links">
+      <a class="button small primary" href="{{ url_for('superpledge.scenarios') }}">{{ icon('chart', 16) }} Scenarios</a>
+    </span>
+  </div>
+  <p class="muted">Voters who vote the way the campaign decides. {% if can_mark %}Tick the candidates each one will vote for
+    (up to {{ max_votes if max_votes else 'any number' }}). It saves straight away.{% else %}You can view this list; ask the owner for “view and mark” to change it.{% endif %}</p>
+</div>
+
+{% if can_mark %}
+<form class="card form super-add" method="post" action="{{ url_for('superpledge.toggle') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <input type="hidden" name="value" value="1"><input type="hidden" name="from" value="add">
+  <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+  <label>Add a voter by ID card number <input name="national_id" required maxlength="20" autocomplete="off" placeholder="A123456"></label>
+  <button class="primary">Add</button>
+  <p class="muted small-text">Or tap ★ next to a voter on the pledge sheet.</p>
+</form>
+{% endif %}
+
+<section class="pledge-totals" aria-label="Super voters' decision">
+  <div class="pledge-total super-total"><span class="pt-name">Super voters</span><strong>{{ rows|length }}</strong>
+    <span class="muted small-text">{{ undecided }} not decided yet</span></div>
+  {% for c in cands %}
+  <div class="pledge-total cand-{{ c.id }}"><span class="pt-name">{{ label(c) }}{% if c.id == ours %} · ours{% endif %}</span>
+    <strong>{{ per_cand[c.id] }}</strong><span class="muted small-text">votes decided</span></div>
+  {% endfor %}
+</section>
+
+<details class="filter-panel card" {{ 'open' if request.args }}>
+  <summary>{{ icon('filter') }} Filters</summary>
+  {% set box_list_options = boxes %}{% set with_pledge_filter = False %}
+  {% include "pledges/_filters.html" %}
+</details>
+
+{% if rows %}
+<div class="pledge-wrap">
+<table class="pledge-table super-table">
+  <thead><tr>
+    <th class="num">#</th><th class="sticky">Name</th><th>ID</th><th>House</th><th>Box</th><th>Pledged Yes</th>
+    {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ label(c) }}</th>{% endfor %}
+    {% if can_mark %}<th></th>{% endif %}
+  </tr></thead>
+  <tbody>
+  {% for v in rows %}{% set mine = votes.get(v.national_id, []) %}{% set pl = pledged.get(v.national_id, {}) %}
+  <tr>
+    <td class="num muted">{{ loop.index }}</td>
+    <td class="sticky">{% if pledge_only %}<span class="pl-name">{{ avatar(v, 'xs') }}<span>{{ v.full_name or '(no name)' }}</span></span>{% else %}<a class="pl-name" href="{{ url_for('voters.detail', national_id=v.national_id, back=request.full_path.rstrip('?')) }}">{{ avatar(v, 'xs') }}<span>{{ v.full_name or '(no name)' }}</span></a>{% endif %}</td>
+    <td class="mono">{{ v.national_id }}</td>
+    <td class="trunc" title="{{ v.house_name }}">{{ v.house_name }}</td>
+    <td class="small-text trunc" title="{{ v.location }}">{{ v.location }}</td>
+    <td class="small-text">{% for c in cands if pl.get(c.id) == 'yes' %}{{ c.name }}{{ ', ' if not loop.last }}{% else %}<span class="muted">—</span>{% endfor %}</td>
+    {% for c in cands %}{% set on = c.id in mine %}
+    <td class="cand cand-{{ c.id }}">
+      {% if not can_mark %}<span class="pl {{ 'pl-yes' if on else 'pl-blank' }}">{{ 'Vote' if on else '·' }}</span>{% else %}
+      <form method="post" action="{{ url_for('superpledge.vote') }}" data-toggle-form data-on="Vote" data-off="·" data-on-class="pl pl-yes">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="candidate_id" value="{{ c.id }}">
+        <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+        <input type="hidden" name="value" value="{{ '0' if on else '1' }}">
+        <button class="pl {{ 'pl-yes' if on else 'pl-blank' }}" aria-label="{{ v.full_name }} votes for {{ c.name }}: {{ 'yes' if on else 'no' }}">{{ 'Vote' if on else '·' }}</button>
+      </form>{% endif %}
+    </td>
+    {% endfor %}
+    {% if can_mark %}<td>
+      <form method="post" action="{{ url_for('superpledge.toggle') }}" data-confirm="Take {{ v.full_name }} off the super pledge list? Their decision goes too.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="national_id" value="{{ v.national_id }}"><input type="hidden" name="value" value="0">
+        <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+        <button class="link small-text">Remove</button>
+      </form>
+    </td>{% endif %}
+  </tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="empty card"><p>No super pledge voters {{ 'here' if request.args else 'yet' }}.</p></div>
+{% endif %}
+{% endblock %}
