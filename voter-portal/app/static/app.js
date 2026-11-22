@@ -548,7 +548,7 @@ document.addEventListener("submit", async (event) => {
     const fields = Object.fromEntries(new FormData(form));
     const item = form.closest(".war-item, li");
     if (fields.value === "1") gone(fields.national_id); else if (item) item.remove();
-    queue(form.action, fields);
+    queue(form.getAttribute("action"), fields);
   });
 
   // Call outcomes (tier 3)
@@ -561,7 +561,7 @@ document.addEventListener("submit", async (event) => {
     const tag = item && item.querySelector("[data-oc]");
     if (tag) { tag.hidden = false; tag.textContent = form.querySelector("button").textContent; }
     if (item) item.className = item.className.replace(/\boc-\w+/g, "").trim() + " oc-" + fields.outcome;
-    queue(form.action, fields);
+    queue(form.getAttribute("action"), fields);
   });
 
   // Tier 1 lookup: one voter by number or ID, check the face, tap Voted
@@ -652,4 +652,39 @@ document.addEventListener("submit", async (event) => {
   status();
   flush();
   setInterval(poll, page.dataset.mode === "stats" ? 15000 : 10000);
+})();
+
+// War Room transport buttons: save, then show the fresh list; any page with a transport list
+// reloads when the queue changes (unless the user is typing).
+(() => {
+  document.addEventListener("submit", async (event) => {
+    const form = event.target.closest("[data-war-transport]");
+    if (!form) return;
+    event.preventDefault();
+    const button = form.querySelector("button");
+    button.disabled = true;
+    try {
+      const r = await fetch(form.getAttribute("action"), { method: "POST", body: new FormData(form), credentials: "same-origin",
+        headers: { "X-Requested-With": "fetch" } });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) toast(data.error || "Couldn't save (" + r.status + ").");
+      location.reload();
+    } catch (e) {
+      toast("No signal. Try again in a moment.");
+      button.disabled = false;
+    }
+  });
+  const page = document.querySelector("[data-trev]");
+  if (page) {
+    const url = page.dataset.url;
+    setInterval(async () => {
+      if (document.activeElement && document.activeElement.matches("input, textarea, select")) return;
+      try {
+        const r = await fetch(url + (url.includes("?") ? "&" : "?") + "since=" + (page.dataset.since || 0), { credentials: "same-origin" });
+        const data = await r.json();
+        if (data.trev && data.trev !== page.dataset.trev) location.reload();
+      } catch (e) { /* no signal: try again later */ }
+    }, 15000);
+  }
+  document.querySelectorAll("[data-print]").forEach((b) => b.addEventListener("click", () => window.print()));
 })();

@@ -63,6 +63,24 @@
   </form>
 </section>
 
+<section class="card form">
+  <h2>Transport</h2>
+  <p class="muted small-text">Callers' "Needs transport" and runners' requests go to the transport queue on their own. You can also add
+    our supporters from houses whose latest visit said "needs transport".</p>
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button name="action" value="transport_from_visits">Add from house visits</button>
+    <a class="button" href="{{ url_for('warroom.transport') }}">Open the transport queue</a></form>
+</section>
+
+<section class="card form">
+  <h2>Allocation sheets</h2>
+  <p class="muted small-text">The paper backup for each agent: tier 1 their box's list by number, tier 2 their supporters, tier 3
+    their call list. Each page carries the agent's name. Make the call lists first.</p>
+  <p><a class="button primary" href="{{ url_for('warroom.sheets') }}">Print all sheets</a>
+    <a class="button" href="{{ url_for('warroom.sheets_xlsx') }}">{{ icon('download', 16) }} Excel</a></p>
+  <ul class="war-sheet-links">{% for u in users if u.war_tier in ('t1', 't2', 't3') %}<li><a href="{{ url_for('warroom.sheets', u=u.id) }}">{{ u.username }}</a></li>{% endfor %}</ul>
+</section>
+
 <form class="card form" method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <h2>Official list numbers</h2>

@@ -91,7 +91,8 @@ def test_marking_clears_the_call_list(app):
     assert t3.post("/war/call", data={"csrf_token": csrf(t3, "/war/calls"), "national_id": "A200002", "outcome": "transport"},
                    headers={"X-Requested-With": "fetch"}).json["label"] == "Needs transport"
     dash = " ".join(o.get("/war").get_data(as_text=True).split())
-    assert "Turnout" in dash and "waiting for transport" in dash
+    assert "Turnout" in dash and "Seats: live projection" in dash
+    assert tuple(conn.execute("SELECT status, source FROM war_transport WHERE national_id = 'A200002'").fetchone()) == ("waiting", "call")
     # undo: their own mark, soon after
     assert t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "0"}).json["voted"] is False
     assert "Aminath Alpha" in t3.get("/war/calls").get_data(as_text=True)
@@ -129,3 +130,51 @@ def test_only_the_owner_sets_it_up(app):
     o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": uid, "tier": "room"})
     assert b.get("/war").status_code == 200 and b.get("/war/team").status_code == 403
     assert "War Room" in b.get("/").get_data(as_text=True)       # admins keep the whole portal
+
+
+
+def test_transport_queue(app):
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    t2, runner = make(app, o, token, "runner", "t2")
+    other, _ = make(app, o, token, "runner2", "t2")
+    conn = connect(app.config["DATABASE"])
+    house = conn.execute("SELECT house_name FROM voters WHERE national_id = 'A200001'").fetchone()[0]
+    conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES (?, ?, '2026-01-01')", (house, runner))
+    conn.commit()
+    tok = csrf(t2, "/war/field")
+    act = lambda c, nid, a: c.post("/war/transport", data={"csrf_token": csrf(c, "/war/transport"), "national_id": nid,  # noqa: E731
+                                                          "action": a}, headers={"X-Requested-With": "fetch"})
+    assert act(t2, "A200002", "request").status_code == 403             # not in their houses
+    assert act(t2, "A200001", "request").json["ok"]
+    assert "Aminath Alpha" in other.get("/war/transport").get_data(as_text=True)   # every runner sees the queue
+    assert act(t2, "A200001", "take").json["ok"]
+    assert act(other, "A200001", "done").status_code == 409             # someone else's ride
+    assert act(other, "A200001", "take").status_code == 409             # already taken
+    page = o.get("/war").get_data(as_text=True)
+    assert 'data-k="t_onway">1<' in page
+    # once they vote they leave the queue
+    t2.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "1"})
+    assert "Aminath Alpha" not in t2.get("/war/transport").get_data(as_text=True)
+    assert 'data-k="t_done">1<' in o.get("/war").get_data(as_text=True)
+    # tier 1 and tier 3 can't use the queue
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    assert t1.get("/war/transport").status_code in (302, 403)
+
+
+def test_sheets(app):
+    from openpyxl import load_workbook
+
+    o, token, ids = setup(app)
+    make(app, o, token, "boxagent", "t1", "Box A")
+    caller, _ = make(app, o, token, "caller", "t3")
+    o.post("/war/team", data={"csrf_token": token, "action": "allocate"})
+    page = o.get("/war/sheets").get_data(as_text=True)
+    assert "boxagent" in page and "Confidential: for caller only" in page and "Aminath Alpha" in page
+    wb = load_workbook(io.BytesIO(o.get("/war/sheets.xlsx").data))
+    assert wb.sheetnames == ["boxagent", "caller"]
+    assert wb["caller"].max_row == 2 + 3                                   # header lines + 3 supporters
+    assert caller.get("/war/sheets").status_code in (302, 403)            # owner only
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert b.get("/war/sheets.xlsx").status_code == 403

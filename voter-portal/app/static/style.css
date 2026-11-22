@@ -1122,3 +1122,31 @@ a.kpi { color: inherit; text-decoration: none; }
 .war-page .dbar-fill { fill: var(--accent, #0f766e); }
 .war-kpis { grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); }
 .war-kpis .kpi.hero { grid-row: auto; grid-column: auto; }
+/* War Room phase 2 */
+.war-left { color: #b42318; }
+.war-field-acts { display: flex; gap: .5rem; align-items: center; justify-content: flex-end; margin-top: .6rem; flex-wrap: wrap; }
+.war-field-acts form { margin: 0; }
+.tr-tag.tr-waiting { background: #fde9df; color: #9a3412; } .tr-tag.tr-onway { background: #e0ecfb; color: #1d4ed8; }
+.war-item.tr-late { border-left-color: #b42318; background: color-mix(in srgb, #b42318 7%, var(--card, #fff)); }
+.war-item.tr-onway { border-left-color: #2a78d6; }
+.war-item.tr-waiting { border-left-color: #eb6834; }
+.war-projection h3 { font-size: 1rem; margin: .25rem 0; }
+.war-projection .dist-list li.win .dist-name { font-weight: 700; }
+.war-projection .cut-line { border-top: 2px dashed var(--muted); margin: .25rem 0; display: block; }
+.war-projection .cut-line span { font-size: .75rem; color: var(--muted); background: var(--card, #fff); padding: 0 .4rem; position: relative; top: -.7rem; }
+.war-sheet-links { display: flex; flex-wrap: wrap; gap: .25rem 1rem; padding: 0; list-style: none; margin: .5rem 0 0; }
+.war-sheet { margin: 0 0 2rem; }
+.war-sheet-head h2 { margin: 0; }
+.war-sheet-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.war-sheet-table th, .war-sheet-table td { border: 1px solid #c9cfd4; padding: .3rem .45rem; text-align: left; }
+.war-sheet-table .tick { width: 6.5rem; }
+@media print {
+  .topbar, .tabbar, .no-print, .flash { display: none !important; }
+  body { background: #fff !important; color: #000 !important; }
+  .war-print { padding: 0 !important; max-width: none !important; }
+  .war-sheet { break-after: page; margin: 0; }
+  .war-sheet:last-of-type { break-after: auto; }
+  .war-sheet-head { border-bottom: 2px solid #000; margin-bottom: .5rem; }
+  .war-sheet-table th { background: #eee !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+  .war-sheet-table tr { break-inside: avoid; }
+}

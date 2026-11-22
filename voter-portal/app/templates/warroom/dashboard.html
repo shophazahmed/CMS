@@ -14,6 +14,7 @@
   <div>
     <h1>War Room</h1>
     <p class="muted">Election day, live. <span data-k="now">{{ s.now }}</span> · polls close {{ s.close }}
+      {% if s.left %}· <strong class="war-left">closes in <span data-k="left">{{ s.left }}</span></strong>{% endif %}
       {% if not is_open %}· <strong class="war-closed-tag">closed: field agents can't work yet</strong>{% endif %}</p>
   </div>
   {% include "warroom/_sync.html" %}
@@ -22,6 +23,7 @@
   <a class="button small" href="{{ url_for('warroom.box') }}">Box agent view</a>
   <a class="button small" href="{{ url_for('warroom.calls') }}">Call lists</a>
   <a class="button small" href="{{ url_for('warroom.field') }}">Field runners</a>
+  <a class="button small" href="{{ url_for('warroom.transport') }}">Transport</a>
   {% if is_owner %}<a class="button small primary" href="{{ url_for('warroom.team') }}">Team &amp; setup</a>{% endif %}
 </p>
 {% if not s.ours %}<p class="flash flash-error">Choose our candidate (Pledges → Candidates &amp; import) so the War Room knows who our supporters are.</p>{% endif %}
@@ -33,14 +35,39 @@
     <span class="muted"><span data-k="sup_voted">{{ s.sup_voted }}</span> of {{ s.sup_total }}</span></div>
   <div class="kpi war-pending"><span class="kpi-label">Our supporters still to vote</span><strong data-k="sup_pending">{{ s.sup_pending }}</strong>
     <span class="muted">call and fetch them</span></div>
-  <div class="kpi"><span class="kpi-label">Waiting for transport</span><strong data-k="o_transport">{{ s.outcomes.get('transport', 0) }}</strong>
-    <span class="muted">from the call centre</span></div>
+  <a class="kpi link-kpi war-transport-kpi" href="{{ url_for('warroom.transport') }}"><span class="kpi-label">Transport</span>
+    <strong data-k="t_waiting">{{ s.transport.waiting }}</strong>
+    <span class="muted">waiting · <span data-k="t_onway">{{ s.transport.onway }}</span> on the way · <span data-k="t_done">{{ s.transport.done }}</span> done</span></a>
 </section>
 
 {% if s.alerts %}
 <section class="card war-alerts" aria-label="Alerts">
   <h2>{{ icon('megaphone', 18) }} Alerts</h2>
   <ul>{% for a in s.alerts %}<li>{{ a }}</li>{% endfor %}</ul>
+</section>
+{% endif %}
+
+{% set pj = s.projection %}
+{% if pj %}
+<section class="card war-projection">
+  <h2>Seats: live projection</h2>
+  <div class="war-grid">
+  {% for key, title, note in (('now', 'So far', 'from the pledges of the voters marked voted'), ('final', 'If every pledged voter votes', 'super voters as marked; no-shows out')) %}
+  {% set p = pj[key] %}
+  <div>
+    <h3>{{ title }}</h3>
+    {% if p.verdict %}<p class="scen-verdict {{ 'win' if p.verdict.wins else 'lose' }}">{% if p.verdict.wins %}Wins · {{ p.verdict.margin }} ahead of {{ p.verdict.vs }}{% else %}Loses · needs {{ p.verdict.margin }} more to pass {{ p.verdict.vs }}{% endif %}</p>{% endif %}
+    <ul class="dist-list">
+      {% for r in p.result %}
+      <li class="cand-{{ r.c.id }} {{ 'win' if r.wins }}"><span class="dist-name">{{ r.place }}. {{ pj.label(r.c) }}{% if r.c.id == pj.ours %} <span class="tag ours-tag">ours</span>{% endif %}</span>
+        {{ bar(r.votes, p.top) }}<span class="dist-num"><strong>{{ r.votes }}</strong></span></li>
+      {% if loop.index == pj.seats and not loop.last %}<li class="cut-line" aria-hidden="true"><span>winning line</span></li>{% endif %}
+      {% endfor %}
+    </ul>
+    <p class="muted small-text">{{ note }}. Estimates; refresh for the latest.</p>
+  </div>
+  {% endfor %}
+  </div>
 </section>
 {% endif %}
 

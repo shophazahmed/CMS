@@ -2,13 +2,13 @@
 {% from "_macros.html" import icon, avatar %}
 {% block title %}My supporters{% endblock %}
 {% block content %}
-<div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes') }}" data-mode="list">
+<div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes') }}" data-mode="list" data-trev="{{ trev }}">
 {% if t != 't2' %}<a class="backlink" href="{{ url_for('warroom.home') }}">{{ icon('back', 18) }} War Room</a>{% endif %}
 <div class="page-head war-head">
   <div>
     <h1>{{ 'My supporters' if t == 't2' else 'Field runners' }}</h1>
     <p class="muted"><strong data-war-left>{{ rows|length }}</strong> of our supporters in {{ 'your' if t == 't2' else 'these' }} houses haven't voted yet.
-      Needs-transport first.</p>
+      Needs-transport first. <a href="{{ url_for('warroom.transport') }}">Transport queue ›</a></p>
   </div>
   {% include "warroom/_sync.html" %}
 </div>
@@ -29,9 +29,16 @@
       </div>
       {% if v.phone %}<a class="button war-call-btn" href="tel:{{ v.phone }}">{{ icon('phone', 18) }} Call</a>{% endif %}
     </div>
+    <div class="war-field-acts">
+    {% set ride = rides.get(v.national_id) %}
+    {% if ride %}<a class="tag tr-tag tr-{{ ride }}" href="{{ url_for('warroom.transport') }}">{{ transport_labels[ride] }}</a>
+    {% else %}<form method="post" action="{{ url_for('warroom.transport_action') }}" data-war-transport data-confirm="Ask for a ride for {{ v.full_name }}?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+      <input type="hidden" name="action" value="request"><button class="small">Needs transport</button></form>{% endif %}
     <form method="post" action="{{ url_for('warroom.mark') }}" data-war-mark data-confirm="Mark {{ v.full_name }} as voted?">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
-      <input type="hidden" name="value" value="1"><button class="primary wide">{{ icon('check', 16) }} Voted</button></form>
+      <input type="hidden" name="value" value="1"><button class="primary">{{ icon('check', 16) }} Voted</button></form>
+    </div>
   </li>
   {% endfor %}
 </ul>

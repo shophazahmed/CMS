@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}Transport{% endblock %}
+{% macro act(nid, action, label, cls='') %}<form method="post" action="{{ url_for('warroom.transport_action') }}" data-war-transport>
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ nid }}">
+  <input type="hidden" name="action" value="{{ action }}"><button class="small {{ cls }}">{{ label }}</button></form>{% endmacro %}
+{% block content %}
+<div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes') }}" data-mode="list" data-trev="{{ trev }}">
+{% if t != 't2' %}<a class="backlink" href="{{ url_for('warroom.home') }}">{{ icon('back', 18) }} War Room</a>{% endif %}
+<div class="page-head war-head">
+  <div>
+    <h1>Transport</h1>
+    <p class="muted"><strong data-war-left>{{ rows|length }}</strong> supporter{{ 's' if rows|length != 1 }} need a ride to their box.
+      Tap <em>I'll go</em> so nobody else goes too. They drop off once they've voted.</p>
+  </div>
+  {% include "warroom/_sync.html" %}
+</div>
+{% if rows %}
+<ul class="war-list">
+  {% for r in rows %}{% set mine = r.runner_id == me %}
+  <li class="war-item card tr-{{ r.status }} {{ 'tr-late' if r.status == 'waiting' and ages[r.national_id] >= late }}" data-nid="{{ r.national_id }}">
+    <div class="war-item-main">
+      {{ avatar(r, 'sm') }}
+      <div><strong>{{ r.full_name }}</strong>
+        <span class="muted small-text">{{ r.house_name }} → {{ r.location or 'box?' }}</span>
+        <span class="small-text"><span class="tag tr-tag">{{ labels[r.status] }}{% if r.status == 'onway' %} · {{ r.runner }}{% endif %}</span>
+          <span class="muted">asked {{ ages[r.national_id] }} min ago{% if r.requester %} by {{ r.requester }}{% endif %}</span></span>
+      </div>
+      {% if r.phone %}<a class="button war-call-btn" href="tel:{{ r.phone }}">{{ icon('phone', 18) }} Call</a>{% endif %}
+    </div>
+    <div class="war-outcomes">
+      {% if r.status == 'waiting' %}{{ act(r.national_id, 'take', "I'll go", 'primary') }}{% endif %}
+      {% if r.status == 'onway' and (mine or t != 't2') %}{{ act(r.national_id, 'done', 'Dropped at the box', 'primary') }}{{ act(r.national_id, 'release', "Can't go") }}{% endif %}
+      {% if t != 't2' or mine or r.status == 'waiting' %}{{ act(r.national_id, 'cancel', 'Not needed') }}{% endif %}
+    </div>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty card"><p>Nobody waiting for a ride.</p></div>
+{% endif %}
+</div>
+{% endblock %}

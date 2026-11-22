@@ -13,6 +13,7 @@ pages and only their own voters: no search, no lists of everyone, no downloads; 
 number and rate-limited. The owner gives each account its tier, opens and closes the War Room, and
 can import the official list numbers.
 """
+import io
 import re
 from datetime import datetime, timedelta, timezone
 
@@ -62,6 +63,18 @@ CREATE TABLE IF NOT EXISTS war_calls (
     attempts    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS ix_war_calls_user ON war_calls (user_id, priority);
+-- Transport: supporters who need a ride to their box. waiting -> onway (a runner took it) -> done.
+CREATE TABLE IF NOT EXISTS war_transport (
+    national_id  TEXT PRIMARY KEY,
+    status       TEXT NOT NULL DEFAULT 'waiting' CHECK (status IN ('waiting', 'onway', 'done', 'cancelled')),
+    source       TEXT NOT NULL DEFAULT '',
+    requested_at TEXT NOT NULL,
+    requested_by INTEGER,
+    runner_id    INTEGER,
+    updated_at   TEXT NOT NULL,
+    note         TEXT NOT NULL DEFAULT ''
+);
+CREATE INDEX IF NOT EXISTS ix_war_transport ON war_transport (status, requested_at);
 -- Lookups by field phones, for the rate limit and the alerts.
 CREATE TABLE IF NOT EXISTS war_hits (
     user_id INTEGER NOT NULL,
@@ -76,6 +89,8 @@ FIELD_TIERS = ("t1", "t2", "t3")
 PRIORITY = {1: "Super voter", 2: "Solid base", 3: "Shared supporter", 4: "Leaning"}
 OUTCOMES = {"coming": "Coming", "transport": "Needs transport", "noanswer": "No answer", "later": "Call later",
             "refused": "Refused", "wrong": "Wrong number"}
+TRANSPORT = {"waiting": "Waiting", "onway": "On the way", "done": "Dropped at the box", "cancelled": "Cancelled"}
+TRANSPORT_LATE = 20         # minutes a request may wait before the War Room is alerted
 UNDO_MINUTES = 10
 LOOKUP_LIMIT = 120          # lookups per 5 minutes per field account
 STALE_MINUTES = 30
@@ -84,7 +99,7 @@ LOCAL = timedelta(hours=5)  # Maldives time
 # What a field account (tiers 1-3) may open.
 FIELD_ENDPOINTS = {
     "warroom.home", "warroom.box", "warroom.lookup", "warroom.mark", "warroom.calls", "warroom.call",
-    "warroom.field", "warroom.changes", "voters.photo", "theme.theme_css", "theme.set_appearance",
+    "warroom.field", "warroom.changes", "warroom.transport", "warroom.transport_action", "voters.photo", "theme.theme_css", "theme.set_appearance",
     "fonts.stylesheet", "fonts.serve", "auth.login", "auth.logout", "auth.change_password", "static",
 }
 
@@ -354,6 +369,8 @@ def changes():
     for r in rows:
         (out["voted"] if r["action"] == "voted" else out["undone"]).append(r["national_id"])
     out["open"] = is_open()
+    if t in ("t2", "owner", "room"):
+        out["trev"] = _transport_rev()
     if t in ("owner", "room") and request.args.get("stats"):
         out["stats"] = _flat(stats())
     return jsonify(out)
@@ -403,6 +420,8 @@ def call():
         abort(403)
     db.execute("UPDATE war_calls SET outcome = ?, outcome_at = ?, attempts = attempts + 1 WHERE national_id = ?",
                (outcome, now_iso(), nid))
+    if outcome == "transport":
+        request_transport(nid, "call")
     audit.log("war_call", target=nid, detail={"outcome": outcome}, commit=False)
     db.commit()
     if request.headers.get("X-Requested-With") == "fetch":
@@ -436,8 +455,10 @@ def field():
             " AND v.national_id NOT IN (SELECT national_id FROM war_voted)"
             " ORDER BY c.outcome = 'transport' DESC, s.priority, v.house_name COLLATE NOCASE, v.full_name",
             sp + params).fetchall()
+    rides = dict(db.execute("SELECT national_id, status FROM war_transport WHERE status IN ('waiting', 'onway')").fetchall())
     return render_template("warroom/field.html", rows=rows, priority=PRIORITY, outcomes=OUTCOMES, t=t,
-                           runners=runners if t != "t2" else [], who=who, cursor=_cursor())
+                           runners=runners if t != "t2" else [], who=who, cursor=_cursor(), rides=rides,
+                           transport_labels=TRANSPORT, trev=_transport_rev())
 
 
 # --- the dashboard ----------------------------------------------------------------------------------
@@ -461,6 +482,8 @@ def stats():
             b = by_box.setdefault(r[1] or "", {"sup": 0, "sup_voted": 0})
             b["sup"] += 1
             b["sup_voted"] += r[2]
+    box_last = dict(db.execute("SELECT v.location, MAX(w.at) FROM war_voted w JOIN voters v ON v.national_id = w.national_id"
+                               " GROUP BY v.location").fetchall())
     boxes = []
     for r in db.execute(f"SELECT location, COUNT(*), SUM(national_id IN (SELECT national_id FROM war_voted))"
                         f" FROM voters WHERE deceased = 0{scope} GROUP BY location ORDER BY COUNT(*) DESC", extra):
@@ -507,20 +530,42 @@ def stats():
             alerts.append(f"{a['username']} ({TIERS[a['tier']].split(' · ')[0]}): nothing for {STALE_MINUTES}+ minutes.")
         if a["hot"]:
             alerts.append(f"{a['username']}: very many lookups in 5 minutes. Check the phone.")
-    if outcomes.get("transport"):
-        alerts.append(f"{outcomes['transport']} supporter{'s' if outcomes['transport'] != 1 else ''} waiting for transport.")
+    # transport
+    tr = transport_counts()
+    if tr["late"]:
+        alerts.append(f"{tr['late']} transport request{'s' if tr['late'] != 1 else ''} waiting more than"
+                      f" {TRANSPORT_LATE} minutes (oldest {tr['oldest']} min). Send a runner.")
+    # boxes gone quiet
+    if is_open():
+        for b in boxes:
+            last = box_last.get(b["box"])
+            if b["voted"] and last and datetime.fromisoformat(last) < now - timedelta(minutes=STALE_MINUTES):
+                alerts.append(f"{b['box'] or 'No box'}: no vote marked for {STALE_MINUTES}+ minutes. Is the box agent there?")
+    # countdown to the polls closing
     close = campaign.get_setting("war_close") or "16:00"
+    local_now = now + LOCAL
+    try:
+        hh, mm = (int(x) for x in close.split(":"))
+        closes = local_now.replace(hour=hh, minute=mm, second=0, microsecond=0)
+        left = int((closes - local_now).total_seconds() // 60)
+    except ValueError:
+        left = None
+    if left is not None and 0 < left <= 60 and sup_total - sup_voted:
+        alerts.insert(0, f"{left} minutes to close: {sup_total - sup_voted} of our supporters still to vote.")
     return {"total": total, "voted": voted, "pct": round(100 * turnout, 1), "sup_total": sup_total,
             "sup_voted": sup_voted, "sup_pending": sup_total - sup_voted,
             "sup_pct": round(100 * sup_voted / sup_total, 1) if sup_total else 0, "groups": groups, "boxes": boxes,
             "hourly": hourly, "hour_max": max([n for _, n in hourly] or [0]), "agents": agents, "outcomes": outcomes,
             "called": called, "alerts": alerts, "close": close, "ours": pledges.our_candidate(),
-            "now": (now + LOCAL).strftime("%H:%M")}
+            "now": local_now.strftime("%H:%M"), "transport": tr,
+            "left": ("closed" if left is not None and left <= 0 else f"{left // 60}h {left % 60:02d}m" if left is not None else ""),
+            "projection": projection(scope, extra)}
 
 
 def _flat(s):
     """The numbers the dashboard updates in place, keyed like its data-k attributes."""
-    out = {k: s[k] for k in ("total", "voted", "pct", "sup_total", "sup_voted", "sup_pending", "sup_pct", "now")}
+    out = {k: s[k] for k in ("total", "voted", "pct", "sup_total", "sup_voted", "sup_pending", "sup_pct", "now", "left")}
+    out["t_waiting"], out["t_onway"], out["t_done"] = (s["transport"][k] for k in ("waiting", "onway", "done"))
     for k, x in s["groups"].items():
         out[f"g{k}v"], out[f"g{k}p"] = x["voted"], x["total"] - x["voted"]
     for i, b in enumerate(s["boxes"]):
@@ -574,6 +619,10 @@ def team():
                                    " (SELECT national_id FROM war_voted)", (b, a)).rowcount
                 audit.log("war_move", detail={"from": a, "to": b, "n": moved}, commit=False)
                 flash(f"Moved {moved} call{'s' if moved != 1 else ''}.", "success")
+        elif action == "transport_from_visits":
+            n = transport_from_visits()
+            flash(f"{n} supporter{'s' if n != 1 else ''} from houses flagged 'needs transport' added to the transport queue.",
+                  "success")
         elif action == "import":
             try:
                 n, missing = import_numbers(request.files.get("sheet"))
@@ -655,3 +704,220 @@ def import_numbers(upload):
     audit.log("war_import_numbers", detail={"n": n, "missing": missing}, commit=False)
     return n, missing
 
+
+
+# --- transport ------------------------------------------------------------------------------------
+
+def request_transport(nid, source):
+    """Put a supporter in the transport queue (again, if an earlier request was cancelled)."""
+    db = get_db()
+    if db.execute("SELECT 1 FROM war_voted WHERE national_id = ?", (nid,)).fetchone():
+        return False
+    row = db.execute("SELECT status FROM war_transport WHERE national_id = ?", (nid,)).fetchone()
+    if row and row["status"] in ("waiting", "onway"):
+        return False
+    db.execute("INSERT INTO war_transport (national_id, status, source, requested_at, requested_by, updated_at)"
+               " VALUES (?, 'waiting', ?, ?, ?, ?) ON CONFLICT(national_id) DO UPDATE SET status = 'waiting',"
+               " source = excluded.source, requested_at = excluded.requested_at, requested_by = excluded.requested_by,"
+               " runner_id = NULL, updated_at = excluded.updated_at",
+               (nid, source, now_iso(), g.user["id"], now_iso()))
+    return True
+
+
+def _transport_rev():
+    row = get_db().execute("SELECT COUNT(*), COALESCE(MAX(updated_at), '') FROM war_transport").fetchone()
+    voted = get_db().execute("SELECT COUNT(*) FROM war_transport t JOIN war_voted w ON w.national_id = t.national_id"
+                             " WHERE t.status IN ('waiting', 'onway')").fetchone()[0]
+    return f"{row[0]}-{row[1]}-{voted}"
+
+
+def transport_counts():
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    out = {"waiting": 0, "onway": 0, "done": 0, "late": 0, "oldest": 0}
+    for st, at, voted in db.execute("SELECT status, requested_at, national_id IN (SELECT national_id FROM war_voted)"
+                                    " FROM war_transport WHERE status != 'cancelled'"):
+        if st == "done" or voted:
+            out["done"] += 1
+            continue
+        out[st] += 1
+        if st == "waiting":
+            age = int((now - datetime.fromisoformat(at)).total_seconds() // 60)
+            out["oldest"] = max(out["oldest"], age)
+            out["late"] += age >= TRANSPORT_LATE
+    return out
+
+
+def transport_from_visits():
+    """Our supporters in houses whose latest visit said 'needs transport'."""
+    db = get_db()
+    sql, sp = supporters_sql()
+    if not sql:
+        return 0
+    rows = db.execute(
+        f"SELECT s.national_id FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id WHERE v.house_name IN"
+        " (SELECT house_name FROM house_visits hv WHERE needs_transport = 1 AND visited_at ="
+        "  (SELECT MAX(visited_at) FROM house_visits x WHERE x.house_name = hv.house_name))", sp).fetchall()
+    n = sum(1 for (nid,) in rows if request_transport(nid, "visit"))
+    audit.log("war_transport_visits", detail={"n": n}, commit=False)
+    return n
+
+
+@bp.route("/war/transport")
+@login_required
+def transport():
+    """Tier 2 and the War Room: who needs a ride, who is on the way."""
+    t = tier()
+    if t not in ("t2", "owner", "room"):
+        abort(403)
+    if t == "t2" and not is_open():
+        return _closed()
+    db = get_db()
+    rows = db.execute(
+        "SELECT t.*, v.full_name, v.house_name, v.location, v.phone, v.photo_path, v.national_id AS nid,"
+        " u.username AS runner, r.username AS requester FROM war_transport t JOIN voters v ON v.national_id = t.national_id"
+        " LEFT JOIN users u ON u.id = t.runner_id LEFT JOIN users r ON r.id = t.requested_by"
+        " WHERE t.status IN ('waiting', 'onway') AND t.national_id NOT IN (SELECT national_id FROM war_voted)"
+        " ORDER BY t.status = 'onway', t.requested_at").fetchall()
+    now = datetime.now(timezone.utc)
+    ages = {r["national_id"]: int((now - datetime.fromisoformat(r["requested_at"])).total_seconds() // 60) for r in rows}
+    return render_template("warroom/transport.html", rows=rows, ages=ages, t=t, me=g.user["id"], labels=TRANSPORT,
+                           late=TRANSPORT_LATE, cursor=_cursor(), trev=_transport_rev(), hm=_hm)
+
+
+@bp.post("/war/transport")
+@login_required
+def transport_action():
+    t = _need("t2")
+    db = get_db()
+    nid = request.form.get("national_id", "")
+    action = request.form.get("action", "")
+    if action == "request":
+        if t == "t2":
+            cond, params = _scope_sql("t2", g.user["id"], "")
+            if not db.execute(f"SELECT 1 FROM voters WHERE national_id = ? AND {cond}", [nid] + params).fetchone():
+                abort(403)
+        elif not db.execute("SELECT 1 FROM voters WHERE national_id = ?", (nid,)).fetchone():
+            abort(404)
+        request_transport(nid, "field" if t == "t2" else "room")
+    else:
+        row = db.execute("SELECT * FROM war_transport WHERE national_id = ?", (nid,)).fetchone() or abort(404)
+        if action == "take" and row["status"] == "waiting":
+            db.execute("UPDATE war_transport SET status = 'onway', runner_id = ?, updated_at = ? WHERE national_id = ?",
+                       (g.user["id"], now_iso(), nid))
+        elif action in ("release", "done", "cancel") and row["status"] in ("waiting", "onway"):
+            if t == "t2" and row["runner_id"] not in (None, g.user["id"]):
+                return jsonify({"ok": False, "error": "Another runner has this one."}), 409
+            status = {"release": "waiting", "done": "done", "cancel": "cancelled"}[action]
+            db.execute("UPDATE war_transport SET status = ?, runner_id = ?, updated_at = ? WHERE national_id = ?",
+                       (status, None if action == "release" else row["runner_id"], now_iso(), nid))
+        else:
+            return jsonify({"ok": False, "error": "Someone else changed this already. Pull to refresh."}), 409
+    audit.log("war_transport", target=nid, detail={"action": action}, commit=False)
+    db.commit()
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify({"ok": True})
+    return redirect(request.referrer or url_for("warroom.transport"))
+
+
+# --- allocation sheets (owner) -------------------------------------------------------------------
+
+def sheet_rows(user):
+    """What one agent works with on the day, for the paper backup."""
+    db = get_db()
+    t = user["war_tier"]
+    if t == "t1":
+        return db.execute(
+            "SELECT l.list_no AS no, v.full_name AS name, v.national_id AS id, v.house_name AS house, '' AS phone,"
+            " '' AS kind FROM voters v LEFT JOIN war_list l ON l.national_id = v.national_id"
+            " WHERE v.location = ? AND v.deceased = 0 ORDER BY l.list_no IS NULL, l.list_no, v.full_name",
+            (user["war_box"],)).fetchall()
+    sql, sp = supporters_sql()
+    if not sql:
+        return []
+    if t == "t2":
+        cond, params = _scope_sql("t2", user["id"], "")
+        where, extra = f"v.national_id IN (SELECT national_id FROM voters WHERE {cond})", params
+    elif t == "t3":
+        where, extra = "v.national_id IN (SELECT national_id FROM war_calls WHERE user_id = ?)", [user["id"]]
+    else:
+        return []
+    rows = db.execute(f"SELECT NULL AS no, v.full_name AS name, v.national_id AS id, v.house_name AS house, v.phone,"
+                      f" s.priority AS kind, v.location AS box FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id"
+                      f" WHERE {where} ORDER BY s.priority, v.house_name COLLATE NOCASE, v.full_name", sp + extra).fetchall()
+    return rows
+
+
+@bp.route("/war/sheets")
+@login_required
+def sheets():
+    """Printable sheets, one per agent (or ?u=<id> for one), watermarked with the agent's name."""
+    if not is_owner():
+        abort(403)
+    db = get_db()
+    uid = request.args.get("u", type=int)
+    users = db.execute("SELECT * FROM users WHERE war_tier IN ('t1', 't2', 't3') AND deleted_at IS NULL"
+                       + (" AND id = ?" if uid else "") + " ORDER BY war_tier, username COLLATE NOCASE",
+                       ((uid,) if uid else ())).fetchall()
+    packs = [{"u": u, "rows": sheet_rows(u)} for u in users]
+    audit.log("war_sheets_print", detail={"agents": len(packs)})
+    return render_template("warroom/sheets.html", packs=packs, tiers=TIERS, priority=PRIORITY,
+                           printed=(datetime.now(timezone.utc) + LOCAL).strftime("%-d %b %Y %H:%M"),
+                           by=g.user["username"])
+
+
+@bp.route("/war/sheets.xlsx")
+@login_required
+def sheets_xlsx():
+    if not is_owner():
+        abort(403)
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    from flask import Response
+
+    from .voters import _safe_cell
+
+    db = get_db()
+    wb = Workbook()
+    wb.remove(wb.active)
+    stamp = (datetime.now(timezone.utc) + LOCAL).strftime("%-d %b %Y %H:%M")
+    users = db.execute("SELECT * FROM users WHERE war_tier IN ('t1', 't2', 't3') AND deleted_at IS NULL"
+                       " ORDER BY war_tier, username COLLATE NOCASE").fetchall()
+    for u in users:
+        ws = wb.create_sheet(re.sub(r"[\\/*?:\[\]]", "", u["username"])[:31] or f"user{u['id']}")
+        ws.append([f"{TIERS[u['war_tier']]}{' · ' + u['war_box'] if u['war_box'] else ''} · for {u['username']}"
+                   f" · printed {stamp} · confidential, return after the election"])
+        ws["A1"].font = Font(bold=True)
+        ws.append(["No.", "Name", "ID", "House", "Phone", "Group", "Done"])
+        for c in ws[2]:
+            c.font = Font(bold=True)
+        for r in sheet_rows(u):
+            ws.append([r["no"], _safe_cell(r["name"]), r["id"], _safe_cell(r["house"]),
+                       "" if u["war_tier"] == "t1" else r["phone"], PRIORITY.get(r["kind"], "") if r["kind"] else "", ""])
+    if not users:
+        wb.create_sheet("No agents")
+    out = io.BytesIO()
+    wb.save(out)
+    audit.log("war_sheets_export", detail={"agents": len(users)})
+    return Response(out.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="war-room-sheets-{datetime.now().strftime("%Y%m%d-%H%M")}.xlsx"'})
+
+
+# --- live projection -----------------------------------------------------------------------------
+
+def projection(scope, extra):
+    """Seats now (from the pledges of who has voted so far) and if every pledged voter still votes."""
+    from . import superpledge
+
+    ours = pledges.our_candidate()
+    cands = superpledge._by_ballot(pledges.candidates())
+    if not cands:
+        return None
+    data = superpledge._data(f" WHERE deceased = 0{scope}", extra)
+    voted = {r[0] for r in get_db().execute("SELECT national_id FROM war_voted")}
+    so_far = dict(data, voters=[n for n in data["voters"] if n in voted])
+    limit, seats = pledges.max_votes(), superpledge.seats()
+    now = superpledge.project(so_far, {"sv": "decision", "nsr": 100}, cands, ours, limit, seats)
+    final = superpledge.project(data, {"sv": "decision"}, cands, ours, limit, seats)
+    return {"now": now, "final": final, "label": pledges.label, "ours": ours, "seats": seats}

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}War Room sheets{% endblock %}
+{% block main_class %}page wide war-print{% endblock %}
+{% block content %}
+<div class="no-print">
+  <a class="backlink" href="{{ url_for('warroom.team') }}">{{ icon('back', 18) }} War Room team</a>
+  <div class="page-head"><h1>Allocation sheets</h1>
+    <p class="muted">The paper backup for each agent, in case the network fails. Print with your browser (⌘P / Ctrl+P);
+      each agent starts on a new page. Every page carries the agent's name: hand them out, take them back after the election.</p>
+    <p><button class="primary" type="button" data-print>Print</button>
+      <a class="button" href="{{ url_for('warroom.sheets_xlsx') }}">{{ icon('download', 16) }} Excel (one tab per agent)</a></p></div>
+</div>
+{% for pk in packs %}{% set u = pk.u %}
+<section class="war-sheet">
+  <header class="war-sheet-head">
+    <h2>{{ u.username }} · {{ tiers[u.war_tier] }}{% if u.war_box %} · {{ u.war_box }}{% endif %}</h2>
+    <p class="small-text">Printed {{ printed }} by {{ by }} · {{ pk.rows|length }} voters · <strong>Confidential: for {{ u.username }} only, return after the election</strong></p>
+  </header>
+  {% if pk.rows %}
+  <table class="war-sheet-table">
+    <thead><tr>{% if u.war_tier == 't1' %}<th>No.</th>{% endif %}<th>Name</th><th>ID</th><th>House</th>
+      {% if u.war_tier != 't1' %}<th>Phone</th><th>Group</th>{% endif %}<th class="tick">{{ 'Voted' if u.war_tier != 't3' else 'Called / outcome' }}</th></tr></thead>
+    <tbody>
+    {% for r in pk.rows %}
+    <tr>{% if u.war_tier == 't1' %}<td class="mono">{{ r.no or '' }}</td>{% endif %}<td>{{ r.name }}</td><td class="mono">{{ r.id }}</td><td>{{ r.house }}</td>
+      {% if u.war_tier != 't1' %}<td class="mono">{{ r.phone }}</td><td class="small-text">{{ priority.get(r.kind, '') }}</td>{% endif %}<td class="tick"></td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}<p class="muted">Nothing on this sheet yet{{ ' (no box given)' if u.war_tier == 't1' and not u.war_box }}.</p>{% endif %}
+</section>
+{% else %}
+<div class="empty card"><p>No agents have a tier yet.</p></div>
+{% endfor %}
+{% endblock %}
