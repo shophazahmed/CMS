@@ -228,13 +228,10 @@ def _totals(where, params, cands):
     return t
 
 
-def _super_info(rows):
-    from . import superpledge
-    from .auth import can_mark_super, can_view_super
+def can_view_super_pages():
+    from .auth import can_view_super
 
-    if not can_view_super():
-        return {"supers": None, "can_mark_super": False}
-    return {"supers": superpledge.super_ids([r["national_id"] for r in rows]), "can_mark_super": can_mark_super()}
+    return can_view_super()
 
 
 @bp.route("/pledges")
@@ -262,7 +259,7 @@ def sheet():
                            can_mark=can_mark_pledges(), owner=is_owner(), max_votes=max_votes(),
                            sort_key=sort_key, sort_dir=sort_dir,
                            noshow=noshow_ids([r["national_id"] for r in rows]),
-                           undecided=undecided_counts(where, params), **_super_info(rows),
+                           undecided=undecided_counts(where, params), show_super=can_view_super_pages(),
                            noshows=db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN"
                                               f" (SELECT national_id FROM voters{where})", params).fetchone()[0],
                            query_args=query_args, first=(page - 1) * size)

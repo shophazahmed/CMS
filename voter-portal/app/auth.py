@@ -225,7 +225,7 @@ PLEDGE_ONLY_ENDPOINTS = {
     "voters.photo", "theme.theme_css", "theme.set_appearance", "fonts.stylesheet", "fonts.serve",
     "auth.login", "auth.logout", "auth.change_password", "static",
     # given separately by the owner; the pages check that access themselves
-    "superpledge.sheet", "superpledge.toggle", "superpledge.vote", "superpledge.scenarios",
+    "superpledge.sheet", "superpledge.vote", "superpledge.scenarios",
 }
 
 

@@ -1,7 +1,8 @@
 """Super pledge voters and voting scenarios.
 
-Super pledge voters vote the way the campaign decides: for each of them the owner (or someone given
-"view and mark") ticks which candidates they will vote for, like the pledge sheet. The scenarios page
+Super pledge voters vote the way a candidate decides. The super pledge sheet lists every voter, like the
+pledge sheet, with a cell per candidate: marking it makes the voter that candidate's super voter (up to the
+vote limit, e.g. 2 candidates). The scenarios page
 projects the result (top seats win) from the pledges, the super voters' decisions and a few what-ifs:
 some candidates' supporters cast only one vote, how Maybe and undecided voters go, and turnout.
 Access is given by the owner, like the pledge sheet, and needs pledge sheet access too.
@@ -20,7 +21,8 @@ CREATE TABLE IF NOT EXISTS super_voters (
     at          TEXT NOT NULL,
     by_user     INTEGER
 );
--- The decision: which candidates each super voter votes for.
+-- Which candidates' super voters each voter is (they vote as that candidate decides).
+-- super_voters is from the first version and no longer used.
 CREATE TABLE IF NOT EXISTS super_votes (
     national_id  TEXT NOT NULL,
     candidate_id INTEGER NOT NULL REFERENCES candidates(id) ON DELETE CASCADE,
@@ -42,18 +44,6 @@ def seats():
     return int(value) if value and str(value).isdigit() and int(value) > 0 else DEFAULT_SEATS
 
 
-def super_ids(ids=None):
-    db = get_db()
-    if ids is None:
-        return {r[0] for r in db.execute("SELECT national_id FROM super_voters")}
-    out = set()
-    for i in range(0, len(ids), 500):
-        chunk = ids[i:i + 500]
-        out |= {r[0] for r in db.execute(
-            f"SELECT national_id FROM super_voters WHERE national_id IN ({','.join('?' * len(chunk))})", chunk)}
-    return out
-
-
 def _back(default):
     back = request.form.get("back") or ""
     return redirect(back if back.startswith("/") and not back.startswith("//") else default)
@@ -63,72 +53,71 @@ def _by_ballot(cands):
     return sorted(cands, key=lambda c: (c["ballot_no"] is None, c["ballot_no"] or 0, c["position"]))
 
 
-# --- the super voter sheet ----------------------------------------------------------------------
+# --- the super pledge sheet ---------------------------------------------------------------------
 
-@bp.route("/super")
-@super_viewer_required
-def sheet():
-    f, where, params, cands, pc, pv = pledges._filters()
-    cond = "national_id IN (SELECT national_id FROM super_voters)"
-    where = f"{where} AND {cond}" if where else f" WHERE {cond}"
-    cands = _by_ballot(cands)
+def _super_map(ids):
+    out = {}
     db = get_db()
-    rows = db.execute(f"SELECT * FROM voters{where} ORDER BY location = '', location COLLATE NOCASE,"
-                      " house_name COLLATE NOCASE, full_name COLLATE NOCASE", params).fetchall()
-    ids = [r["national_id"] for r in rows]
-    votes = {}
     for i in range(0, len(ids), 500):
         chunk = ids[i:i + 500]
         for nid, cid in db.execute(f"SELECT national_id, candidate_id FROM super_votes WHERE national_id IN"
                                    f" ({','.join('?' * len(chunk))})", chunk):
-            votes.setdefault(nid, set()).add(cid)
-    per_cand = {c["id"]: sum(1 for v in votes.values() if c["id"] in v) for c in cands}
-    undecided = sum(1 for nid in ids if not votes.get(nid))
+            out.setdefault(nid, set()).add(cid)
+    return out
+
+
+@bp.route("/super")
+@super_viewer_required
+def sheet():
+    """Every voter, like the pledge sheet; a cell per candidate marks the voter as that candidate's super voter."""
+    f, where, params, cands, pc, pv = pledges._filters()
+    cands = _by_ballot(cands)
+    ids = {str(c["id"]) for c in cands}
+    sc = request.args.get("sc", "")
+    sc = sc if sc in ids or sc in ("any", "none") else ""
+    if sc:
+        cond = {"any": "national_id IN (SELECT national_id FROM super_votes)",
+                "none": "national_id NOT IN (SELECT national_id FROM super_votes)"}.get(
+            sc, "national_id IN (SELECT national_id FROM super_votes WHERE candidate_id = ?)")
+        where = f"{where} AND {cond}" if where else f" WHERE {cond}"
+        params = list(params) + ([int(sc)] if sc.isdigit() else [])
+    sort_key, sort_dir, order = pledges.sheet_order()
+    db = get_db()
+    size = request.args.get("n", type=int)
+    size = size if size in pledges.PAGE_SIZES else 50
+    total = db.execute(f"SELECT COUNT(*) FROM voters{where}", params).fetchone()[0]
+    pages = max(1, -(-total // size))
+    try:
+        page = min(max(1, int(request.args.get("page", 1))), pages)
+    except ValueError:
+        page = 1
+    rows = db.execute(f"SELECT * FROM voters{where} ORDER BY {order} LIMIT ? OFFSET ?",
+                      params + [size, (page - 1) * size]).fetchall()
+    sub = f"SELECT national_id FROM voters{where}"
+    per_cand = dict(db.execute(f"SELECT candidate_id, COUNT(*) FROM super_votes WHERE national_id IN ({sub})"
+                               " GROUP BY candidate_id", params).fetchall())
+    n_super = db.execute(f"SELECT COUNT(DISTINCT national_id) FROM super_votes WHERE national_id IN ({sub})",
+                         params).fetchone()[0]
     w, p = pledges._scoped_where(" WHERE location != ''")
     boxes = [r[0] for r in db.execute(f"SELECT DISTINCT location FROM voters{w} ORDER BY location COLLATE NOCASE", p)]
-    return render_template("super/sheet.html", rows=rows, votes=votes, cands=cands, per_cand=per_cand,
-                           undecided=undecided, f=f, pc=pc, pv=pv, boxes=boxes, can_mark=can_mark_super(),
-                           max_votes=pledges.max_votes(), ours=pledges.our_candidate(), label=pledges.label,
-                           query_args={k: v for k, v in request.args.items()},
-                           pledged=pledges._pledge_map(ids), values=pledges.VALUES)
-
-
-@bp.post("/super/toggle")
-@super_marker_required
-def toggle():
-    """Make a voter a super pledge voter (value=1) or take them off the list (0, their decision goes too)."""
-    from .voters import get_voter_or_404
-
-    nid = (request.form.get("national_id") or "").strip().upper()
-    get_voter_or_404(nid)
-    wanted = request.form.get("value", "")
-    if wanted not in ("0", "1"):
-        abort(400)
-    db = get_db()
-    was = db.execute("SELECT 1 FROM super_voters WHERE national_id = ?", (nid,)).fetchone() is not None
-    if wanted == "1" and not was:
-        db.execute("INSERT INTO super_voters (national_id, at, by_user) VALUES (?, ?, ?)", (nid, now_iso(), g.user["id"]))
-    elif wanted == "0" and was:
-        db.execute("DELETE FROM super_voters WHERE national_id = ?", (nid,))
-        db.execute("DELETE FROM super_votes WHERE national_id = ?", (nid,))
-    if (wanted == "1") != was:
-        audit.log("super_voter", target=nid, detail={"on": wanted == "1"}, commit=False)
-        db.commit()
-    if request.headers.get("X-Requested-With") == "fetch":
-        return {"ok": True, "on": wanted == "1"}
-    if wanted == "1" and not was and request.form.get("from") == "add":
-        flash(f"{nid} is now a super pledge voter.", "success")
-    return _back(url_for("superpledge.sheet"))
+    return render_template("super/sheet.html", rows=rows, votes=_super_map([r["national_id"] for r in rows]),
+                           cands=cands, per_cand=per_cand, n_super=n_super, total=total, page=page, pages=pages,
+                           size=size, sizes=pledges.PAGE_SIZES, f=f, pc=pc, pv=pv, sc=sc, boxes=boxes,
+                           can_mark=can_mark_super(), max_votes=pledges.max_votes(), ours=pledges.our_candidate(),
+                           label=pledges.label, sort_key=sort_key, sort_dir=sort_dir,
+                           query_args={k: v for k, v in request.args.items() if k != "page"},
+                           first=(page - 1) * size)
 
 
 @bp.post("/super/vote")
 @super_marker_required
 def vote():
-    """Tick (1) or untick (0) a candidate in a super voter's decision."""
+    """Mark (1) or unmark (0) a voter as a candidate's super voter: they vote as that candidate decides."""
+    from .voters import get_voter_or_404
+
     nid = request.form.get("national_id", "")
+    get_voter_or_404(nid)
     db = get_db()
-    if not db.execute("SELECT 1 FROM super_voters WHERE national_id = ?", (nid,)).fetchone():
-        abort(404)
     cid = request.form.get("candidate_id", type=int)
     if cid is None or not db.execute("SELECT 1 FROM candidates WHERE id = ?", (cid,)).fetchone():
         abort(400)
@@ -140,7 +129,7 @@ def vote():
     if wanted == "1" and not was and limit:
         n = db.execute("SELECT COUNT(*) FROM super_votes WHERE national_id = ?", (nid,)).fetchone()[0]
         if n >= limit:
-            msg = f"A voter can vote for {limit} candidate{'s' if limit != 1 else ''}. Untick one first."
+            msg = f"A voter can vote for {limit} candidate{'s' if limit != 1 else ''}. Unmark one first."
             if request.headers.get("X-Requested-With") == "fetch":
                 return {"ok": False, "error": msg, "on": False}, 409
             flash(msg, "error")
@@ -188,7 +177,7 @@ def _data(where, params):
     decided = {}
     for nid, cid in db.execute(f"SELECT national_id, candidate_id FROM super_votes WHERE national_id IN ({sub})", params):
         decided.setdefault(nid, []).append(cid)
-    supers = {r[0] for r in db.execute(f"SELECT national_id FROM super_voters WHERE national_id IN ({sub})", params)}
+    supers = set(decided)
     noshow = {r[0] for r in db.execute(f"SELECT national_id FROM pledge_noshow WHERE national_id IN ({sub})", params)}
     return {"voters": voters, "yes": yes, "maybe": maybe, "decided": decided, "supers": supers, "noshow": noshow}
 
@@ -257,8 +246,8 @@ def presets(cands, ours):
     first = by_no.get(1) or (cands[0] if cands else None)
     rivals = [c["id"] for c in cands if c["id"] != ours]
     out = [
-        ("now", "Pledges as they are", "Yes pledges only; super voters vote as they pledged.", {"sv": "pledge"}),
-        ("s1", "1 · Super voters' decision", "Super voters vote the way you decided on the super pledge sheet.",
+        ("now", "Pledges as they are", "Yes pledges only; super voters vote as they pledged too.", {"sv": "pledge"}),
+        ("s1", "1 · Super voters' decision", "Super voters vote for the candidates they are marked for on the super pledge sheet.",
          {"sv": "decision"}),
     ]
     if first and first["id"] != ours:
@@ -322,4 +311,4 @@ def scenarios():
     return render_template("super/scenarios.html", cands=cands, ours=ours, label=pledges.label, limit=limit,
                            n_seats=n_seats, opts=custom, p=project(data, custom, cands, ours, limit, n_seats),
                            compare=compare, active=active, boxes=boxes, f=f, loc=request.args.get("loc", ""),
-                           supers=len(data["supers"]), decided=sum(1 for n in data["supers"] if data["decided"].get(n)))
+                           supers=len(data["supers"]))

@@ -9,11 +9,6 @@ from tests.test_confirmed import OWNER_PW, add_owner  # noqa: E402
 from tests.test_pledges import mark, setup  # noqa: E402
 
 
-def toggle(c, token, nid, value):
-    return c.post("/super/toggle", data={"csrf_token": token, "national_id": nid, "value": value},
-                  headers={"X-Requested-With": "fetch"})
-
-
 def vote(c, token, nid, cid, value):
     return c.post("/super/vote", data={"csrf_token": token, "national_id": nid, "candidate_id": cid, "value": value},
                   headers={"X-Requested-With": "fetch"})
@@ -32,20 +27,21 @@ def owner(app):
     return o, token, ids
 
 
-def test_super_voters_and_their_decision(app):
+def test_super_pledge_sheet(app):
     o, token, ids = owner(app)
-    assert "#2 Sofhaz" in o.get("/super").get_data(as_text=True)
-    assert toggle(o, token, "A200001", "1").json == {"ok": True, "on": True}
-    assert "★" in o.get("/pledges").get_data(as_text=True)
-    assert vote(o, token, "A200001", ids["Sofhaz"], "1").json["on"] is True
-    assert vote(o, token, "A200001", ids["Jawid"], "1").status_code == 200
-    assert vote(o, token, "A200001", ids["Rayaan"], "1").status_code == 409            # only 2 votes
-    assert vote(o, token, "A200002", ids["Rayaan"], "1").status_code == 404            # not a super voter
     page = o.get("/super").get_data(as_text=True)
-    assert "Aminath Alpha" in page and "Moosa Beta" not in page
-    # taking them off drops the decision
-    toggle(o, token, "A200001", "0")
-    assert connect(app.config["DATABASE"]).execute("SELECT COUNT(*) FROM super_votes").fetchone()[0] == 0
+    assert "#2 Sofhaz" in page and "Aminath Alpha" in page and "Moosa Beta" in page     # every voter is listed
+    assert "★" not in o.get("/pledges").get_data(as_text=True).split("<table")[1]      # its own page, not a column
+    assert vote(o, token, "A200001", ids["Sofhaz"], "1").json == {"ok": True, "on": True}
+    assert vote(o, token, "A200001", ids["Jawid"], "1").status_code == 200
+    assert vote(o, token, "A200001", ids["Rayaan"], "1").status_code == 409            # only 2 candidates
+    assert vote(o, token, "A999999", ids["Rayaan"], "1").status_code == 404
+    only = o.get(f"/super?sc={ids['Sofhaz']}").get_data(as_text=True)
+    assert "Aminath Alpha" in only and "Moosa Beta" not in only
+    assert "Moosa Beta" in o.get("/super?sc=none").get_data(as_text=True)
+    assert "Aminath Alpha" in o.get("/super?sc=any&sort=age&dir=desc").get_data(as_text=True)
+    vote(o, token, "A200001", ids["Jawid"], "0")
+    assert connect(app.config["DATABASE"]).execute("SELECT COUNT(*) FROM super_votes").fetchone()[0] == 1
 
 
 def test_access_like_the_pledge_sheet(app):
@@ -59,9 +55,9 @@ def test_access_like_the_pledge_sheet(app):
     assert v.get("/super").status_code == 403                    # needs pledge sheet access as well
     o.post(f"/admin/users/{viewer}", data={"csrf_token": token, "action": "set_pledge_access", "level": "view"})
     assert v.get("/super").status_code == 200 and v.get("/super/scenarios").status_code == 200
-    assert toggle(v, csrf(v, "/super"), "A200001", "1").status_code == 403    # view only
+    assert vote(v, csrf(v, "/super"), "A200001", ids["Sofhaz"], "1").status_code == 403    # view only
     o.post(f"/admin/users/{viewer}", data={"csrf_token": token, "action": "set_super_access", "level": "mark"})
-    assert toggle(v, csrf(v, "/super"), "A200001", "1").status_code == 200
+    assert vote(v, csrf(v, "/super"), "A200001", ids["Sofhaz"], "1").status_code == 200
     # other admins can't hand it out
     b = app.test_client()
     login(b, "boss", ADMIN_PW)
@@ -93,7 +89,6 @@ def test_scenarios(app):
     mark(o, token, "A200001", j, "yes")            # Rayaan + Jawid
     mark(o, token, "A200002", r, "yes")
     mark(o, token, "A200002", s, "yes")            # Rayaan + Sofhaz
-    toggle(o, token, "A200003", "1")
     vote(o, token, "A200003", s, "1")
     vote(o, token, "A200003", j, "1")              # super voter: Sofhaz + Jawid
     with app.test_request_context():

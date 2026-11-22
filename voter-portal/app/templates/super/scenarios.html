@@ -13,13 +13,13 @@
 {%- if not v %}—{% elif v.wins %}Wins · {{ v.margin }} ahead of {{ v.vs }}{% else %}Loses · needs {{ v.margin }} more to pass {{ v.vs }}{% endif -%}
 {%- endmacro %}
 {% block content %}
-<a class="backlink" href="{{ url_for('superpledge.sheet') }}">{{ icon('back', 18) }} Super pledge voters</a>
+<a class="backlink" href="{{ url_for('superpledge.sheet') }}">{{ icon('back', 18) }} Super pledge</a>
 <div class="page-head">
   <h1>Voting scenarios</h1>
   <p class="muted">Top {{ n_seats }} win. Each voter has {{ limit if limit else 'unlimited' }} vote{{ 's' if limit != 1 }}.
     {% if ours %}Seen from {{ label((cands|selectattr('id', 'equalto', ours)|first)) }}'s side.{% else %}
     {% if is_owner %}<a href="{{ url_for('pledges.manage') }}">Choose our candidate</a>{% else %}Our candidate isn't set{% endif %} to see wins and margins.{% endif %}
-    {{ supers }} super voter{{ 's' if supers != 1 }}, {{ decided }} with a decision.</p>
+    {{ supers }} super voter{{ 's' if supers != 1 }}.</p>
 </div>
 
 {% if not cands %}
@@ -59,7 +59,7 @@
   </label>
   <label>Super voters
     <select name="sv">
-      <option value="decision" {{ 'selected' if opts.sv == 'decision' }}>Vote as we decided</option>
+      <option value="decision" {{ 'selected' if opts.sv == 'decision' }}>Vote for the candidates they're super voters of</option>
       <option value="pledge" {{ 'selected' if opts.sv == 'pledge' }}>Vote as they pledged</option>
     </select>
   </label>
@@ -100,7 +100,7 @@
     {% if loop.index == n_seats and not loop.last %}<li class="cut-line" aria-hidden="true"><span>winning line</span></li>{% endif %}
     {% endfor %}
   </ul>
-  <p class="muted small-text">{{ p.voting }} voter{{ 's' if p.voting != 1 }} voting{% if p.from_super %} · {{ p.from_super }} vote as we decided{% endif %}
+  <p class="muted small-text">{{ p.voting }} voter{{ 's' if p.voting != 1 }} voting{% if p.from_super %} · {{ p.from_super }} super voters{% endif %}
     {%- if p.undecided %} · {{ p.undecided }} undecided{{ ' (left out)' if opts.und == 'none' }}{% endif %}.
     Estimates from the pledges; rounded.</p>
 </section>
