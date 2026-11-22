@@ -93,6 +93,10 @@
       <span class="muted small-text">These candidates' supporters cast only one vote</span>
       {% for c in cands %}<label class="check"><input type="checkbox" name="b" value="{{ c.id }}" {{ 'checked' if c.id in opts.b }}> {{ label(c) }}</label>{% endfor %}
     </div>
+    <div class="checks scen-wide">
+      <span class="muted small-text">These candidates' super voters cast only one vote (for that candidate only)</span>
+      {% for c in cands %}<label class="check"><input type="checkbox" name="sb" value="{{ c.id }}" {{ 'checked' if c.id in opts.sb }}> {{ label(c) }}</label>{% endfor %}
+    </div>
     <label>Voters with only one Yes give their second vote
       <select name="sec">
         <option value="none" {{ 'selected' if opts.sec == 'none' }}>To nobody (as pledged)</option>

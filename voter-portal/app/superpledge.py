@@ -215,7 +215,7 @@ def vote():
 
 # --- scenarios ----------------------------------------------------------------------------------
 
-DEFAULTS = {"sv": "decision", "b": [], "mw": 0, "und": "none", "uo": 50, "to": 100, "svt": 100, "nsr": 0,
+DEFAULTS = {"sv": "decision", "b": [], "sb": [], "mw": 0, "und": "none", "uo": 50, "to": 100, "svt": 100, "nsr": 0,
             "st": {}, "sec": "none", "secp": 100, "swf": None, "swt": None, "swp": 0, "adj": {}}
 
 
@@ -245,6 +245,8 @@ def read_options(args, cands):
     return {
         "sv": args.get("sv") if args.get("sv") in ("decision", "pledge") else "decision",
         "b": [int(x) for x in args.getlist("b") if x.isdigit() and int(x) in ids],
+        # these candidates' super voters vote only for that candidate (their other votes are lost)
+        "sb": [int(x) for x in args.getlist("sb") if x.isdigit() and int(x) in ids],
         "mw": int(mw) if mw in ("0", "25", "50", "75", "100") else 0,
         "und": und if und in ("none", "split", "ours", "even") else "none",
         "uo": pct("uo", 50), "to": pct("to", 100) or 100, "svt": pct("svt", 100), "nsr": nsr,
@@ -286,6 +288,7 @@ def project(data, opts, cands, ours, limit, n_seats):
     votes = {c["id"]: 0.0 for c in cands}
     undecided = voting = from_super = 0.0
     bullet = set(opts["b"])
+    super_bullet = set(opts["sb"])
     single_yes = {}  # candidate -> weight of voters whose only vote is for them (and could give a second)
     swf, swt, swp = opts["swf"], opts["swt"], opts["swp"] / 100
     for nid in data["voters"]:
@@ -294,6 +297,13 @@ def project(data, opts, cands, ours, limit, n_seats):
             w = opts["nsr"] / 100
             if not w:
                 continue
+        one = [c for c in rank(data["decided"].get(nid, [])) if c in super_bullet]
+        if one:  # a super voter of a "one vote only" candidate: that vote and nothing else
+            w *= opts["svt"] / 100
+            votes[one[0]] += w
+            from_super += w
+            voting += w
+            continue
         if opts["sv"] == "decision" and data["decided"].get(nid):
             w *= opts["svt"] / 100
             for c in rank(data["decided"][nid])[:cap]:
@@ -383,9 +393,10 @@ def presets(cands, ours):
                     f"Voters with a Yes for {first['name']} give {first['name']} their only vote; their second vote is lost.",
                     {"sv": "decision", "b": [first["id"]]}))
     if ours:
-        out.append(("s3", "3 · Our voters cast only one vote",
-                    "Our supporters vote only for us, so rivals lose the second votes they would have had.",
-                    {"sv": "decision", "b": [ours]}))
+        out.append(("s3", "3 · Our super voters cast only one vote",
+                    "Our super voters vote only for us; the second vote they would have given another candidate is"
+                    " taken away. Everyone else votes as pledged.",
+                    {"sv": "pledge", "sb": [ours]}))
     out.append(("worst", "Worst case", "Every rival's supporters cast only one vote; Maybe counts for nothing.",
                 {"sv": "decision", "b": rivals}))
     out.append(("best", "Best case", "Maybe counts fully; undecided voters split like the pledged ones.",
@@ -401,6 +412,8 @@ def _opts_args(opts):
         out["sv"] = o["sv"]
     if o["b"]:
         out["b"] = list(o["b"])
+    if o["sb"]:
+        out["sb"] = list(o["sb"])
     for key in ("mw", "nsr"):
         if o[key]:
             out[key] = o[key]

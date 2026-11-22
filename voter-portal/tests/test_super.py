@@ -106,7 +106,7 @@ def test_scenarios(app):
         assert votes({"to": 50})["Rayaan"] == 1
     page = o.get("/super/scenarios").get_data(as_text=True)
     assert "Super voters&#39; decision" in page and "#1 Rayaan&#39;s voters cast only one vote" in page
-    assert "Our voters cast only one vote" in page and "Projected result" in page
+    assert "Our super voters cast only one vote" in page and "Projected result" in page
     assert o.get(f"/super/scenarios?b={r}&mw=50&und=split&to=80").status_code == 200
     assert o.get("/super/scenarios?und=ours&uo=70&loc=nowhere").status_code == 200
 
@@ -165,3 +165,24 @@ def test_more_scenario_options(app):
                  "&und=even&mw=25&sex=F&age_min=20").get_data(as_text=True)
     assert "Projected result" in page and 'name="swp" min="0" max="100" value="20"' in page
     assert f'value="{s}" selected' in page
+
+
+def test_only_our_super_voters_cast_one_vote(app):
+    from app import superpledge
+
+    o, token, ids = owner(app)
+    r, s, j = ids["Rayaan"], ids["Sofhaz"], ids["Jawid"]
+    mark(o, token, "A200001", r, "yes")
+    mark(o, token, "A200001", s, "yes")            # our super voter, pledged Rayaan + Sofhaz
+    vote(o, token, "A200001", s, "1")
+    mark(o, token, "A200002", r, "yes")
+    mark(o, token, "A200002", s, "yes")            # an ordinary Rayaan + Sofhaz voter: votes as pledged
+    mark(o, token, "A200003", j, "yes")
+    with app.test_request_context():
+        from flask import g
+        g.user = connect(app.config["DATABASE"]).execute("SELECT * FROM users WHERE username = 'admin'").fetchone()
+        cands = superpledge._by_ballot(__import__("app.pledges", fromlist=["x"]).candidates())
+        data = superpledge._data(" WHERE deceased = 0", [])
+        preset = dict(next(o for k, t, a, o in superpledge.presets(cands, s) if k == "s3"))
+        res = {x["c"]["name"]: x["votes"] for x in superpledge.project(data, preset, cands, s, 2, 2)["result"]}
+        assert res == {"Rayaan": 1, "Sofhaz": 2, "Jawid": 1, "Thalaal": 0}   # Rayaan loses only the super voter's vote
