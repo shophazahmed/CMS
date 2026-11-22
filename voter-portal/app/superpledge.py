@@ -216,7 +216,7 @@ def vote():
 # --- scenarios ----------------------------------------------------------------------------------
 
 DEFAULTS = {"sv": "decision", "b": [], "sb": [], "mw": 0, "und": "none", "uo": 50, "to": 100, "svt": 100, "nsr": 0,
-            "st": {}, "sec": "none", "secp": 100, "swf": None, "swt": None, "swp": 0, "adj": {}}
+            "st": {}, "sbt": {}, "sha": None, "shb": None, "shpa": 0, "shpb": 0, "sec": "none", "secp": 100, "swf": None, "swt": None, "swp": 0, "adj": {}}
 
 
 def read_options(args, cands):
@@ -252,6 +252,10 @@ def read_options(args, cands):
         "uo": pct("uo", 50), "to": pct("to", 100) or 100, "svt": pct("svt", 100), "nsr": nsr,
         # each candidate's supporters: what share of them turn out to vote
         "st": {c["id"]: pct(f"st{c['id']}", 100) for c in cands if args.get(f"st{c['id']}", "") not in ("", "100")},
+        # each candidate's solid base (Yes for them only): what share turn out
+        "sbt": {c["id"]: pct(f"sbt{c['id']}", 100) for c in cands if args.get(f"sbt{c['id']}", "") not in ("", "100")},
+        # shared supporters of A and B: what share vote only for A, only for B (the rest vote for both)
+        "sha": cand("sha"), "shb": cand("shb"), "shpa": pct("shpa", 0), "shpb": pct("shpb", 0),
         # voters with a single Yes: where their second vote goes
         "sec": sec if sec in ("none", "split") or (sec.isdigit() and int(sec) in ids) else "none",
         "secp": pct("secp", 100),
@@ -279,6 +283,25 @@ def _data(where, params):
     return {"voters": voters, "yes": yes, "maybe": maybe, "decided": decided, "supers": supers, "noshow": noshow}
 
 
+def groups(data, cands):
+    """Solid base (Yes for one candidate only) and shared supporters (Yes for both of a pair) among the voters
+    in the scenario, no-shows left out, like the distribution page."""
+    ids = [c["id"] for c in cands]
+    solid = {c: 0 for c in ids}
+    shared = {}
+    for nid, yes in data["yes"].items():
+        if nid in data["noshow"]:
+            continue
+        chosen = sorted({c for c in yes if c in ids}, key=ids.index)
+        if len(chosen) == 1:
+            solid[chosen[0]] += 1
+        for i, a in enumerate(chosen):
+            for b in chosen[i + 1:]:
+                shared[(a, b)] = shared.get((a, b), 0) + 1
+    pairs = [(a, b) for i, a in enumerate(ids) for b in ids[i + 1:]]
+    return {"solid": solid, "shared": [(a, b, shared.get((a, b), 0)) for a, b in pairs]}
+
+
 def project(data, opts, cands, ours, limit, n_seats):
     opts = dict(DEFAULTS, **opts)
     order = {c["id"]: i for i, c in enumerate(cands)}  # ballot order breaks ties
@@ -291,6 +314,10 @@ def project(data, opts, cands, ours, limit, n_seats):
     super_bullet = set(opts["sb"])
     single_yes = {}  # candidate -> weight of voters whose only vote is for them (and could give a second)
     swf, swt, swp = opts["swf"], opts["swt"], opts["swp"] / 100
+    sha, shb = opts["sha"], opts["shb"]
+    if sha == shb:
+        sha = shb = None
+    shpa, shpb = opts["shpa"] / 100, opts["shpb"] / 100
     for nid in data["voters"]:
         w = 1.0
         if nid in data["noshow"]:
@@ -312,7 +339,9 @@ def project(data, opts, cands, ours, limit, n_seats):
             voting += w
             continue
         yes = rank(data["yes"].get(nid, []))[:cap]
-        if yes and opts["st"]:
+        if len(yes) == 1 and yes[0] in opts["sbt"]:   # a solid base voter
+            w *= opts["sbt"][yes[0]] / 100
+        elif yes and opts["st"]:
             w *= sum(opts["st"].get(c, 100) for c in yes) / len(yes) / 100
         if not w:
             continue
@@ -326,12 +355,17 @@ def project(data, opts, cands, ours, limit, n_seats):
                     votes[c] += w * opts["mw"] / 100
             if len(yes) == 1 and cap > 1 and opts["sec"] != "none":
                 single_yes[yes[0]] = single_yes.get(yes[0], 0) + w
+        keep = {}
+        if sha is not None and shb is not None and sha in yes and shb in yes and not single:
+            # shared supporters: some vote only for A (B loses them), some only for B
+            keep = {sha: max(0.0, 1 - shpb), shb: max(0.0, 1 - shpa)}
         for c in yes:
+            k = w * keep.get(c, 1.0)
             if c == swf and swt is not None and swt not in yes and swp:
-                votes[c] += w * (1 - swp)
-                votes[swt] += w * swp
+                votes[c] += k * (1 - swp)
+                votes[swt] += k * swp
             else:
-                votes[c] += w
+                votes[c] += k
         if not yes and not data["maybe"].get(nid):
             undecided += w
     base = dict(votes)
@@ -432,6 +466,14 @@ def _opts_args(opts):
         out["swf"], out["swt"], out["swp"] = o["swf"], o["swt"], o["swp"]
     for cid, v in o["st"].items():
         out[f"st{cid}"] = v
+    for cid, v in o["sbt"].items():
+        out[f"sbt{cid}"] = v
+    if o["sha"] is not None and o["shb"] is not None and o["sha"] != o["shb"] and (o["shpa"] or o["shpb"]):
+        out["sha"], out["shb"] = o["sha"], o["shb"]
+        if o["shpa"]:
+            out["shpa"] = o["shpa"]
+        if o["shpb"]:
+            out["shpb"] = o["shpb"]
     for cid, v in o["adj"].items():
         out[f"adj{cid}"] = v
     return out
@@ -447,6 +489,11 @@ def scenarios():
     f = read_filters(request.args)
     where, params = build_where(f)
     where = f"{where} AND deceased = 0" if where else " WHERE deceased = 0"
+    pp = request.args.get("pp", "")
+    cond, extra = pledges.pattern_condition(pp, cands)
+    if cond:
+        where, params = f"{where} AND {cond}", list(params) + extra
+    f["pp"] = pp if cond else ""
     ours = pledges.our_candidate()
     limit, n_seats = pledges.max_votes(), seats()
     data = _data(where, params)
@@ -462,4 +509,5 @@ def scenarios():
     return render_template("super/scenarios.html", cands=cands, ours=ours, label=pledges.label, limit=limit,
                            n_seats=n_seats, opts=custom, p=project(data, custom, cands, ours, limit, n_seats),
                            compare=compare, active=active, boxes=boxes, f=f, loc=request.args.get("loc", ""),
-                           supers=len(data["supers"]))
+                           supers=len(data["supers"]), groups=groups(data, cands),
+                           names={c["id"]: c["name"] for c in cands})

@@ -27,14 +27,14 @@
 {% else %}
 
 <section class="card">
-  <h2>Compare scenarios{% if loc %} · {{ 'no box' if loc == '(none)' else loc }}{% endif %}{% if f.sex %} · {{ 'men' if f.sex == 'M' else 'women' }}{% endif %}{% if f.age_min or f.age_max %} · age {{ f.age_min or 18 }}–{{ f.age_max or '' }}{% endif %}</h2>
+  <h2>Compare scenarios{% if loc %} · {{ 'no box' if loc == '(none)' else loc }}{% endif %}{% if f.sex %} · {{ 'men' if f.sex == 'M' else 'women' }}{% endif %}{% if f.age_min or f.age_max %} · age {{ f.age_min or 18 }}–{{ f.age_max or '' }}{% endif %}{% if f.pp %} · {% set pids = f.pp.split(':')[1].split('-')|map('int')|list %}{{ ('only ' ~ names[pids[0]]) if f.pp.startswith('only') else ('shared ' ~ names[pids[0]] ~ ' & ' ~ names[pids[1]]) }}{% endif %}</h2>
   <div class="table-wrap">
   <table class="overlap scen-table">
     <thead><tr><th>Scenario</th>{% for c in cands %}<th class="cand cand-{{ c.id }}">{{ label(c) }}</th>{% endfor %}{% if ours %}<th>Result for us</th>{% endif %}</tr></thead>
     <tbody>
     {% for s in compare %}
     <tr class="{{ 'on' if s.key == active }}">
-      <th><a href="{{ url_for('superpledge.scenarios', loc=loc or None, sex=f.sex or None, age_min=f.age_min, age_max=f.age_max, **s.args) }}#result">{{ s.title }}</a>
+      <th><a href="{{ url_for('superpledge.scenarios', loc=loc or None, sex=f.sex or None, age_min=f.age_min, age_max=f.age_max, pp=f.pp or None, **s.args) }}#result">{{ s.title }}</a>
         <span class="muted small-text scen-about">{{ s.about }}</span></th>
       {% for c in cands %}{% set r = s.p.result|selectattr('c.id', 'equalto', c.id)|first %}
       <td class="{{ 'win' if r.wins }} {{ 'ours' if c.id == ours }}">{{ r.votes }}<span class="muted small-text"> · {{ nth(r.place) }}</span></td>
@@ -69,6 +69,21 @@
     </label>
     <label>Age from <input type="number" name="age_min" min="18" max="120" value="{{ f.age_min if f.age_min is not none }}" placeholder="18"></label>
     <label>Age to <input type="number" name="age_max" min="18" max="120" value="{{ f.age_max if f.age_max is not none }}" placeholder="any"></label>
+    {% if cands|length > 1 %}
+    <label>Pledge pattern
+      <select name="pp">
+        <option value="">All voters</option>
+        <optgroup label="Solid base (Yes for only one)">
+          {% for c in cands %}<option value="only:{{ c.id }}" {{ 'selected' if f.pp == 'only:' ~ c.id }}>Only {{ c.name }}</option>{% endfor %}
+        </optgroup>
+        <optgroup label="Shared supporters (Yes for both)">
+          {% for a in cands %}{% set i = loop.index0 %}{% for b in cands[i + 1:] %}
+          <option value="both:{{ a.id }}-{{ b.id }}" {{ 'selected' if f.pp == 'both:' ~ a.id ~ '-' ~ b.id }}>{{ a.name }} &amp; {{ b.name }}</option>
+          {% endfor %}{% endfor %}
+        </optgroup>
+      </select>
+    </label>
+    {% endif %}
   </fieldset>
 
   <fieldset class="scen-group">
@@ -79,6 +94,8 @@
       <span class="muted small-text">e.g. with transport on the day</span></label>
     <p class="scen-sub muted small-text">Each candidate's supporters who turn out (%)</p>
     {% for c in cands %}<label class="cand-{{ c.id }} scen-cand">{{ label(c) }} <input type="number" name="st{{ c.id }}" min="0" max="100" value="{{ opts.st.get(c.id, 100) }}"></label>{% endfor %}
+    <p class="scen-sub muted small-text">Each candidate's solid base (Yes for them only) who turn out (%)</p>
+    {% for c in cands %}<label class="cand-{{ c.id }} scen-cand">Only {{ c.name }} <span class="muted">({{ groups.solid[c.id] }})</span> <input type="number" name="sbt{{ c.id }}" min="0" max="100" value="{{ opts.sbt.get(c.id, 100) }}"></label>{% endfor %}
   </fieldset>
 
   <fieldset class="scen-group">
@@ -112,6 +129,15 @@
       <select name="swt"><option value="">—</option>{% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if opts.swt == c.id }}>{{ label(c) }}</option>{% endfor %}</select>
     </label>
     <label>… how many of them (%) <input type="number" name="swp" min="0" max="100" value="{{ opts.swp }}"></label>
+    <p class="scen-sub muted small-text">Shared supporters (Yes for both): some give only one of their two votes</p>
+    <label>Shared supporters of
+      <select name="sha"><option value="">—</option>{% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if opts.sha == c.id }}>{{ label(c) }}</option>{% endfor %}</select>
+    </label>
+    <label>… and
+      <select name="shb"><option value="">—</option>{% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if opts.shb == c.id }}>{{ label(c) }}</option>{% endfor %}</select>
+    </label>
+    <label>… vote only for the first (%) <input type="number" name="shpa" min="0" max="100" value="{{ opts.shpa }}"></label>
+    <label>… vote only for the second (%) <input type="number" name="shpb" min="0" max="100" value="{{ opts.shpb }}"></label>
   </fieldset>
 
   <fieldset class="scen-group">
@@ -157,6 +183,40 @@
   <p class="muted small-text">{{ p.voting }} voter{{ 's' if p.voting != 1 }} voting{% if p.from_super %} · {{ p.from_super }} super voters{% endif %}
     {%- if p.undecided %} · {{ p.undecided }} undecided{{ ' (left out)' if opts.und == 'none' }}{% endif %}.
     Estimates from the pledges; rounded.</p>
+</section>
+
+{% set keep = dict(loc=loc or None, sex=f.sex or None, age_min=f.age_min, age_max=f.age_max) %}
+<section class="card scen-groups">
+  <h2>Solid base and shared supporters</h2>
+  <p class="muted small-text">Voters in this scenario (no-shows left out). Tap a number to see them on the pledge sheet;
+    use the options above to change how they vote.</p>
+  <div class="scen-groups-grid">
+    <div>
+      <h3>Solid base · Yes for only one</h3>
+      <ul class="dist-list">
+        {% set top = groups.solid.values()|max if groups.solid else 0 %}
+        {% for c in cands %}
+        <li class="cand-{{ c.id }}">
+          <span class="dist-name">{{ label(c) }}{% if c.id == ours %} <span class="tag ours-tag">ours</span>{% endif %}</span>
+          {{ bar(groups.solid[c.id], top) }}
+          <span class="dist-num">{% if groups.solid[c.id] %}<a href="{{ url_for('pledges.sheet', pp='only:' ~ c.id, **keep) }}"><strong>{{ groups.solid[c.id] }}</strong></a>{% else %}<strong>0</strong>{% endif %}</span>
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+    <div>
+      <h3>Shared supporters · Yes for both</h3>
+      <table class="overlap shared-list">
+        <tbody>
+        {% for a, b, n in groups.shared|sort(attribute='2', reverse=True) %}
+        <tr><th><span class="dot cand-{{ a }}"></span>{{ names[a] }} &amp; <span class="dot cand-{{ b }}"></span>{{ names[b] }}</th>
+          <td>{% if n %}<a href="{{ url_for('pledges.sheet', pp='both:' ~ a ~ '-' ~ b, **keep) }}"><strong>{{ n }}</strong></a>{% else %}0{% endif %}</td>
+          <td>{% if n %}<a class="small-text" href="{{ url_for('superpledge.scenarios', pp='both:' ~ a ~ '-' ~ b, **keep) }}#result">scenario for them</a>{% endif %}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </div>
 </section>
 {% endif %}
 {% endblock %}

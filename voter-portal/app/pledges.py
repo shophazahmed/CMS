@@ -92,6 +92,23 @@ def candidates(active_only=True):
     return get_db().execute(f"SELECT * FROM candidates{cond} ORDER BY position, name COLLATE NOCASE").fetchall()
 
 
+def pattern_condition(pp, cands):
+    """SQL for ?pp=only:<id> (Yes for that candidate and nobody else) or both:<a>-<b> (Yes for both, as on the
+    distribution's shared supporters); (None, []) when it doesn't apply."""
+    active = [c["id"] for c in cands]
+    m = re.fullmatch(r"(only):(\d+)|(both):(\d+)-(\d+)", pp or "")
+    if not m or not active:
+        return None, []
+    if m.group(1) and int(m.group(2)) in active:
+        return ("national_id IN (SELECT national_id FROM pledges WHERE value = 'yes' AND candidate_id IN"
+                f" ({','.join('?' * len(active))}) GROUP BY national_id HAVING COUNT(*) = 1 AND MAX(candidate_id) = ?)",
+                active + [int(m.group(2))])
+    if m.group(3) and {int(m.group(4)), int(m.group(5))} <= set(active) and m.group(4) != m.group(5):
+        return ("national_id IN (SELECT national_id FROM pledges WHERE value = 'yes' AND candidate_id IN (?, ?)"
+                " GROUP BY national_id HAVING COUNT(*) = 2)", [int(m.group(4)), int(m.group(5))])
+    return None, []
+
+
 def undecided_counts(where, params):
     """(leaning, undecided) among the voters of a WHERE clause, no-shows left out: leaning = a Maybe for
     someone but no Yes; undecided = no mark at all."""
@@ -176,24 +193,11 @@ def _filters():
     f["ns"] = ns if ns in ("1", "0") else ""
     # ?pp=only:<id> (Yes for that candidate and nobody else) or both:<a>-<b> (Yes for both, as on the distribution)
     pp, f["pp"] = request.args.get("pp", ""), ""
-    active = [c["id"] for c in cands]
-    m = re.fullmatch(r"(only):(\d+)|(both):(\d+)-(\d+)", pp)
-    if m and active:
-        marks = ",".join("?" * len(active))
-        if m.group(1) and int(m.group(2)) in active:
-            cond = ("national_id IN (SELECT national_id FROM pledges WHERE value = 'yes' AND candidate_id IN"
-                    f" ({marks}) GROUP BY national_id HAVING COUNT(*) = 1 AND MAX(candidate_id) = ?)")
-            extra = active + [int(m.group(2))]
-        elif m.group(3) and {int(m.group(4)), int(m.group(5))} <= set(active) and m.group(4) != m.group(5):
-            cond = ("national_id IN (SELECT national_id FROM pledges WHERE value = 'yes' AND candidate_id IN (?, ?)"
-                    " GROUP BY national_id HAVING COUNT(*) = 2)")
-            extra = [int(m.group(4)), int(m.group(5))]
-        else:
-            cond = None
-        if cond:
-            where = f"{where} AND {cond}" if where else f" WHERE {cond}"
-            params = list(params) + extra
-            f["pp"] = pp
+    cond, extra = pattern_condition(pp, cands)
+    if cond:
+        where = f"{where} AND {cond}" if where else f" WHERE {cond}"
+        params = list(params) + extra
+        f["pp"] = pp
     pb = request.args.get("pb", "")
     f["pb"], f["pb_name"] = "", ""
     if pb.isdigit() and g.user["role"] == "admin":

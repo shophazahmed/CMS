@@ -186,3 +186,30 @@ def test_only_our_super_voters_cast_one_vote(app):
         preset = dict(next(o for k, t, a, o in superpledge.presets(cands, s) if k == "s3"))
         res = {x["c"]["name"]: x["votes"] for x in superpledge.project(data, preset, cands, s, 2, 2)["result"]}
         assert res == {"Rayaan": 1, "Sofhaz": 2, "Jawid": 1, "Thalaal": 0}   # Rayaan loses only the super voter's vote
+
+
+def test_solid_base_and_shared_in_scenarios(app):
+    from app import superpledge
+
+    o, token, ids = owner(app)
+    r, s, j = ids["Rayaan"], ids["Sofhaz"], ids["Jawid"]
+    mark(o, token, "A200001", r, "yes")
+    mark(o, token, "A200001", s, "yes")            # shared Rayaan & Sofhaz
+    mark(o, token, "A200002", s, "yes")            # Sofhaz's solid base
+    mark(o, token, "A200003", j, "yes")            # Jawid's solid base
+    with app.test_request_context():
+        from flask import g
+        g.user = connect(app.config["DATABASE"]).execute("SELECT * FROM users WHERE username = 'admin'").fetchone()
+        cands = superpledge._by_ballot(__import__("app.pledges", fromlist=["x"]).candidates())
+        data = superpledge._data(" WHERE deceased = 0", [])
+        gr = superpledge.groups(data, cands)
+        assert gr["solid"] == {r: 0, s: 1, j: 1, ids["Thalaal"]: 0}
+        assert (r, s, 1) in gr["shared"]
+        votes = lambda **o: {x["c"]["name"]: x["votes"] for x in superpledge.project(data, o, cands, s, 2, 2)["result"]}  # noqa: E731
+        assert votes(sbt={j: 0})["Jawid"] == 0                              # Jawid's solid base stays home
+        assert votes(sha=r, shb=s, shpb=100) == {"Rayaan": 0, "Sofhaz": 2, "Jawid": 1, "Thalaal": 0}
+        assert votes(sha=r, shb=s, shpa=100)["Sofhaz"] == 1
+    page = o.get(f"/super/scenarios?pp=both:{r}-{s}&sha={r}&shb={s}&shpb=50").get_data(as_text=True)
+    assert "Solid base and shared supporters" in page and "shared Rayaan &amp; Sofhaz" in page
+    assert f"/pledges?pp=only:{s}" not in page                          # nobody is in Sofhaz's solid base here
+    assert f"/pledges?pp=only:{s}" in o.get("/super/scenarios").get_data(as_text=True)
