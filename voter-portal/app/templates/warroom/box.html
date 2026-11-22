@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Box · {{ box or 'War Room' }}{% endblock %}
+{% block content %}
+<div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes', box=box if t != 't1' else None) }}" data-mode="box">
+{% if t != 't1' %}<a class="backlink" href="{{ url_for('warroom.home') }}">{{ icon('back', 18) }} War Room</a>{% endif %}
+<div class="page-head war-head">
+  <div>
+    <h1>{{ box or 'No box given' }}</h1>
+    <p class="muted"><strong data-war-voted>{{ voted }}</strong> of {{ total }} voted ·
+      <span data-war-pct>{{ ((100 * voted / total)|round|int) if total else 0 }}</span>%</p>
+  </div>
+  {% include "warroom/_sync.html" %}
+</div>
+{% if t != 't1' %}
+<form class="war-boxpick" method="get"><label>Box (preview as box agent)
+  <select name="box" data-autosubmit>{% for b in boxes %}<option {{ 'selected' if b == box }}>{{ b }}</option>{% endfor %}</select></label></form>
+{% if not is_open %}<p class="flash flash-info">Preview: the War Room is closed, so field agents can't use it yet. You can try it here; marks you make are real, undo them after.</p>{% endif %}
+{% endif %}
+{% if not box %}
+<div class="empty card"><p>No box given to this account yet. Ask the War Room.</p></div>
+{% else %}
+<form class="card war-lookup" method="get" action="{{ url_for('warroom.lookup') }}" data-war-lookup>
+  {% if t != 't1' %}<input type="hidden" name="box" value="{{ box }}">{% endif %}
+  <label for="war-q">{{ 'Number called out (official list) or ID card' if has_numbers else 'ID card number' }}</label>
+  <div class="war-lookup-row">
+    <input id="war-q" name="q" required autocomplete="off" autocapitalize="characters" {{ 'inputmode=numeric' if has_numbers }}
+           placeholder="{{ 'e.g. 214' if has_numbers else 'e.g. A123456' }}" enterkeyhint="search">
+    <button class="primary big">Find</button>
+  </div>
+  {% if not has_numbers %}<p class="muted small-text">The official list numbers aren't loaded for this box yet, so use the ID card number.</p>{% endif %}
+</form>
+<div id="war-card" class="war-card-slot" data-mark-url="{{ url_for('warroom.mark') }}" data-csrf="{{ csrf_token() }}" data-box="{{ box if t != 't1' else '' }}"></div>
+
+<section class="card">
+  <h2>Marked voted at this box</h2>
+  <ul class="war-recent" id="war-recent">
+    {% for r in recent %}
+    <li data-nid="{{ r.national_id }}"><span class="mono">{{ r.list_no or '' }}</span> <strong>{{ r.full_name }}</strong>
+      <span class="muted small-text">{{ hm(r.at) }}</span>
+      {% if t != 't1' or (r.by_user == me and r.at >= undo_after) %}
+      <form method="post" action="{{ url_for('warroom.mark') }}" data-war-mark data-confirm="Undo: {{ r.full_name }} hasn't voted?">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ r.national_id }}">
+        <input type="hidden" name="value" value="0">{% if t != 't1' %}<input type="hidden" name="box" value="{{ box }}">{% endif %}
+        <button class="link small-text">Undo</button></form>{% endif %}
+    </li>
+    {% else %}<li class="muted" data-empty>Nobody yet.</li>{% endfor %}
+  </ul>
+  <p class="muted small-text">You can undo your own mark for {{ undo_minutes }} minutes; after that ask the War Room.</p>
+</section>
+{% endif %}
+</div>
+{% endblock %}

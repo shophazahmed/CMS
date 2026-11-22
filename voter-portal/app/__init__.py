@@ -8,7 +8,7 @@ from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from . import (admin, agentlink, announce, auth, campaign, canvass, confirmed, fonts, imports, islandmap, personal, pledges,
-               share, superpledge, visits, voters)
+               share, superpledge, visits, voters, warroom)
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -59,6 +59,7 @@ def create_app(test_config=None):
     app.before_request(auth.load_user)
     app.before_request(auth.check_csrf)
     app.before_request(auth.pledge_only_guard)
+    app.before_request(warroom.field_guard)
     app.register_blueprint(auth.bp)
     app.register_blueprint(voters.bp)
     app.register_blueprint(admin.bp)
@@ -76,6 +77,7 @@ def create_app(test_config=None):
     app.register_blueprint(islandmap.bp)
     app.register_blueprint(pledges.bp)
     app.register_blueprint(superpledge.bp)
+    app.register_blueprint(warroom.bp)
     app.jinja_env.globals["dhivehi_font"] = fonts.font_file
     app.jinja_env.globals["dhivehi_font_name"] = fonts.font_name
     app.jinja_env.globals["share_people"] = share.people
@@ -98,7 +100,8 @@ def create_app(test_config=None):
         return {"csrf_token": auth.csrf_token, "current_user": g.get("user"), "is_admin": auth.is_admin(), "is_owner": auth.is_owner(),
                 "can_view_cf": auth.can_view_confirmed(), "can_mark_cf": auth.can_mark_confirmed(),
                 "can_view_pledges": auth.can_view_pledges(),
-                "can_view_super": auth.can_view_super() and auth.can_view_pledges(), "pledge_only": auth.is_pledge_only(),
+                "can_view_super": auth.can_view_super() and auth.can_view_pledges(),
+                "war_tier": warroom.tier(), "war_field": warroom.is_field(), "pledge_only": auth.is_pledge_only(),
                 "confirmed_metrics": confirmed.metrics,
                 "campaign_banner": campaign.banner, "whatsapp_url": campaign.whatsapp_url,
                 "sms_url": campaign.sms_url, "viber_url": campaign.viber_url, "campaign_message": campaign.message,
@@ -145,6 +148,7 @@ def create_app(test_config=None):
         islandmap.init_schema(conn)
         pledges.init_schema(conn)
         superpledge.init_schema(conn)
+        warroom.init_schema(conn)
         bootstrap_admin(conn)
         conn.close()
     return app

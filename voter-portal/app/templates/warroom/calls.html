@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}My calls{% endblock %}
+{% block content %}
+<div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes') }}" data-mode="list">
+{% if t != 't3' %}<a class="backlink" href="{{ url_for('warroom.home') }}">{{ icon('back', 18) }} War Room</a>{% endif %}
+<div class="page-head war-head">
+  <div>
+    <h1>{{ 'My calls' if t == 't3' else 'Call lists' }}</h1>
+    <p class="muted"><strong data-war-left>{{ rows|length }}</strong> still to vote · {{ done }} on this list voted already.
+      Voters drop off the list as soon as they vote.</p>
+  </div>
+  {% include "warroom/_sync.html" %}
+</div>
+{% if callers %}
+<form class="war-boxpick" method="get"><label>Caller
+  <select name="u" data-autosubmit>{% for c in callers %}<option value="{{ c.id }}" {{ 'selected' if c.id == who }}>{{ c.username }}</option>{% endfor %}</select></label></form>
+{% endif %}
+{% if rows %}
+<ul class="war-list">
+  {% for v in rows %}
+  <li class="war-item card prio-{{ v.priority }} {{ 'oc-' ~ v.outcome if v.outcome }}" data-nid="{{ v.national_id }}">
+    <div class="war-item-main">
+      {{ avatar(v, 'sm') }}
+      <div><strong>{{ v.full_name }}</strong>
+        <span class="muted small-text">{{ v.house_name }} · {{ v.location }}</span>
+        <span class="small-text"><span class="tag prio-tag">{{ priority[v.priority] }}</span>
+          {% if v.outcome %}<span class="tag oc-tag" data-oc>{{ outcomes[v.outcome] }}{% if v.attempts > 1 %} ×{{ v.attempts }}{% endif %} · {{ hm(v.outcome_at) }}</span>{% else %}<span class="tag oc-tag" data-oc hidden></span>{% endif %}</span>
+      </div>
+      {% if v.phone %}<a class="button primary war-call-btn" href="tel:{{ v.phone }}">{{ icon('phone', 18) }} Call</a>{% else %}<span class="muted small-text">No phone</span>{% endif %}
+    </div>
+    {% if t == 't3' or t in ('owner', 'room') %}
+    <div class="war-outcomes">
+      {% for k, label in outcomes.items() %}
+      <form method="post" action="{{ url_for('warroom.call') }}" data-war-call>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="outcome" value="{{ k }}"><button class="small oc-{{ k }}">{{ label }}</button></form>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty card"><p>{{ 'Everyone on your list has voted. Well done!' if done else 'No calls on this list yet.' }}</p></div>
+{% endif %}
+</div>
+{% endblock %}

@@ -466,3 +466,190 @@ document.addEventListener("submit", async (event) => {
     button.disabled = false;
   }
 });
+
+// ---- Election-day War Room -------------------------------------------------------------------
+// Marks go through an outbox kept on the phone: if the signal drops they wait and are sent when it
+// comes back (each has a key, so a resend never counts twice). Pages ask for changes every few
+// seconds; voters who voted drop off lists straight away.
+(() => {
+  const page = document.querySelector("[data-war-poll]");
+  if (!page) return;
+  const OUTBOX = "war-outbox";
+  const sync = page.querySelector("[data-war-sync]");
+  const syncText = page.querySelector("[data-war-sync-text]");
+  const csrf = (document.querySelector("input[name=csrf_token]") || {}).value
+    || (document.getElementById("war-card") || { dataset: {} }).dataset.csrf || "";
+  let since = Number(page.dataset.since || 0);
+  let online = true;
+
+  const load = () => { try { return JSON.parse(localStorage.getItem(OUTBOX) || "[]"); } catch (e) { return []; } };
+  const save = (list) => { try { localStorage.setItem(OUTBOX, JSON.stringify(list)); } catch (e) { /* private mode */ } };
+  const key = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/-/g, "").slice(0, 32);
+
+  function status() {
+    const waiting = load().length;
+    sync.classList.toggle("off", !online);
+    sync.classList.toggle("wait", waiting > 0);
+    syncText.textContent = !online ? (waiting ? `No signal · ${waiting} waiting to send` : "No signal")
+      : waiting ? `Sending ${waiting}…` : "Live";
+  }
+
+  function gone(nid) {  // a voter voted: take them off the list
+    page.querySelectorAll(`[data-nid="${CSS.escape(nid)}"].war-item`).forEach((el) => {
+      el.classList.add("war-gone");
+      setTimeout(() => el.remove(), 600);
+    });
+    const left = page.querySelector("[data-war-left]");
+    if (left) left.textContent = String(page.querySelectorAll(".war-item:not(.war-gone)").length);
+  }
+
+  async function post(url, fields) {
+    const body = new URLSearchParams(fields);
+    const r = await fetch(url, { method: "POST", body, credentials: "same-origin", headers: { "X-Requested-With": "fetch" } });
+    return r;
+  }
+
+  async function flush() {
+    let list = load();
+    while (list.length) {
+      const item = list[0];
+      try {
+        const r = await post(item.url, item.fields);
+        if (r.status >= 500) throw new Error(r.status);
+        if (!r.ok) {
+          const data = await r.json().catch(() => ({}));
+          toast(data.error || "Couldn't save one mark (" + r.status + ").");
+        }
+        list = load().slice(1);
+        save(list);
+        online = true;
+      } catch (e) {
+        online = false;
+        break;
+      }
+    }
+    status();
+  }
+
+  function queue(url, fields) {
+    fields.key = fields.key || key();
+    const list = load();
+    list.push({ url, fields });
+    save(list);
+    status();
+    return flush();
+  }
+
+  // Mark voted / undo (tier 1 recent list, tier 2 list)
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-war-mark]");
+    if (!form) return;
+    event.preventDefault();
+    const fields = Object.fromEntries(new FormData(form));
+    const item = form.closest(".war-item, li");
+    if (fields.value === "1") gone(fields.national_id); else if (item) item.remove();
+    queue(form.action, fields);
+  });
+
+  // Call outcomes (tier 3)
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-war-call]");
+    if (!form) return;
+    event.preventDefault();
+    const fields = Object.fromEntries(new FormData(form));
+    const item = form.closest(".war-item");
+    const tag = item && item.querySelector("[data-oc]");
+    if (tag) { tag.hidden = false; tag.textContent = form.querySelector("button").textContent; }
+    if (item) item.className = item.className.replace(/\boc-\w+/g, "").trim() + " oc-" + fields.outcome;
+    queue(form.action, fields);
+  });
+
+  // Tier 1 lookup: one voter by number or ID, check the face, tap Voted
+  const lookup = document.querySelector("[data-war-lookup]");
+  const slot = document.getElementById("war-card");
+  if (lookup && slot) {
+    const input = lookup.querySelector("input[name=q]");
+    lookup.addEventListener("submit", async (event) => {
+      event.preventDefault();
+      slot.replaceChildren();
+      const params = new URLSearchParams(new FormData(lookup));
+      let data;
+      try {
+        const r = await fetch(lookup.action + "?" + params, { credentials: "same-origin" });
+        data = await r.json().catch(() => ({ ok: false, error: r.status === 429 ? "Too many lookups; wait a minute." : "Not found." }));
+      } catch (e) {
+        online = false; status();
+        toast("No signal. Type the number again when it's back, or write it down.");
+        return;
+      }
+      online = true; status();
+      if (!data.ok) { slot.append(el("p", "flash flash-error", data.error)); input.select(); return; }
+      slot.append(card(data.voter));
+    });
+
+    function el(tag, cls, text) { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; }
+
+    function card(v) {
+      const box = el("div", "card war-card" + (v.voted ? " done" : ""));
+      const head = el("div", "war-card-head");
+      if (v.photo) { const img = el("img", "avatar lg"); img.src = v.photo; img.alt = ""; head.append(img); }
+      else head.append(el("span", "avatar lg", (v.name || "?").slice(0, 1)));
+      const who = el("div");
+      who.append(el("p", "war-no", v.list_no != null ? "No. " + v.list_no : ""), el("h2", null, v.name),
+        el("p", "muted", [v.national_id, v.sex, v.age, v.house].filter(Boolean).join(" · ")));
+      head.append(who);
+      box.append(head);
+      if (v.voted) { box.append(el("p", "war-already", "Already marked voted at " + v.voted_at)); return box; }
+      const btn = el("button", "primary big wide war-voted-btn", "✓ Voted");
+      btn.type = "button";
+      btn.addEventListener("click", () => {
+        const fields = { csrf_token: csrf, national_id: v.national_id, value: "1" };
+        if (slot.dataset.box) fields.box = slot.dataset.box;
+        queue(slot.dataset.markUrl, fields);
+        const recent = document.getElementById("war-recent");
+        if (recent) {
+          const empty = recent.querySelector("[data-empty]"); if (empty) empty.remove();
+          const li = el("li"); li.dataset.nid = v.national_id;
+          li.append(el("span", "mono", v.list_no != null ? String(v.list_no) : ""), " ", el("strong", null, v.name), " ",
+            el("span", "muted small-text", new Date().toTimeString().slice(0, 5)));
+          recent.prepend(li);
+        }
+        const voted = page.querySelector("[data-war-voted]");
+        if (voted) voted.textContent = String(Number(voted.textContent) + 1);
+        slot.replaceChildren(el("p", "flash flash-success", "✓ " + v.name + " marked voted."));
+        input.value = ""; input.focus();
+      });
+      box.append(btn);
+      return box;
+    }
+  }
+
+  // Changes since the last check
+  async function poll() {
+    try {
+      const sep = page.dataset.url.includes("?") ? "&" : "?";
+      const r = await fetch(page.dataset.url + sep + "since=" + since, { credentials: "same-origin" });
+      if (r.status === 423 || r.status === 403) { location.reload(); return; }
+      if (!r.ok) throw new Error(r.status);
+      const data = await r.json();
+      since = data.cursor;
+      (data.voted || []).forEach(gone);
+      if (data.stats) {
+        Object.entries(data.stats).forEach(([k, v]) => {
+          page.querySelectorAll(`[data-k="${k}"]`).forEach((e) => { e.textContent = String(v); });
+        });
+      }
+      online = true;
+    } catch (e) {
+      online = false;
+    }
+    status();
+    if (online && load().length) flush();
+  }
+
+  window.addEventListener("online", () => { online = true; flush(); poll(); });
+  window.addEventListener("offline", () => { online = false; status(); });
+  status();
+  flush();
+  setInterval(poll, page.dataset.mode === "stats" ? 15000 : 10000);
+})();

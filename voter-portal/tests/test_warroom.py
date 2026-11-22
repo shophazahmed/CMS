@@ -1,0 +1,131 @@
+import io
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from app.db import connect  # noqa: E402
+from tests.test_app import ADMIN_PW, app, csrf, login  # noqa: E402,F401
+from tests.test_pledges import mark as pledge  # noqa: E402
+from tests.test_super import owner, vote  # noqa: E402
+
+PW = "field-pass-12345"
+
+
+def make(app, o, token, name, tier, box=""):
+    o.post("/admin/users", data={"csrf_token": token, "username": name, "role": "user", "password": PW})
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE users SET must_change_password = 0 WHERE username = ?", (name,))
+    conn.commit()
+    uid = conn.execute("SELECT id FROM users WHERE username = ?", (name,)).fetchone()[0]
+    o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": uid, "tier": tier, "war_box": box})
+    c = app.test_client()
+    login(c, name, PW)
+    return c, uid
+
+
+def setup(app):
+    o, token, ids = owner(app)
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Box A'")
+    conn.execute("UPDATE voters SET location = 'Box B' WHERE national_id = 'A200003'")
+    conn.execute("UPDATE voters SET phone = '7771234' WHERE national_id = 'A200001'")
+    conn.commit()
+    s = ids["Sofhaz"]
+    pledge(o, token, "A200001", s, "yes")                       # solid base
+    pledge(o, token, "A200002", s, "yes")
+    pledge(o, token, "A200002", ids["Rayaan"], "yes")           # shared
+    vote(o, token, "A200003", s, "1")                           # super voter
+    return o, token, ids
+
+
+def test_field_accounts_see_only_their_page(app):
+    o, token, ids = setup(app)
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    assert t1.get("/war/box").status_code == 423                # closed until the owner opens it
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    page = t1.get("/war/box").get_data(as_text=True)
+    assert "Box A" in page and "Aminath Alpha" not in page      # no list of everyone
+    for path in ("/", "/pledges", "/visits", "/voters/A200001", "/dashboard", "/war", "/war/team"):
+        r = t1.get(path)
+        assert r.status_code in (302, 403), path
+        if r.status_code == 302:
+            assert r.headers["Location"].endswith(("/war", "/war/box")), path
+    assert t1.get("/war/calls").status_code == 403 and t1.get("/war/field").status_code == 403
+    # an exact ID at their own box only; no phone numbers for tier 1
+    card = t1.get("/war/lookup?q=A200001").json
+    assert card["ok"] and card["voter"]["name"] == "Aminath Alpha" and card["voter"]["phone"] == ""
+    assert t1.get("/war/lookup?q=A200003").status_code == 404   # another box
+    assert t1.get("/war/lookup?q=Aminath").status_code == 404   # no name search
+    # closing the War Room stops them at once
+    o.post("/war/team", data={"csrf_token": token, "action": "close"})
+    assert t1.get("/war/lookup?q=A200001").status_code == 423
+
+
+def test_marking_clears_the_call_list(app):
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    t3, caller = make(app, o, token, "caller", "t3")
+    o.post("/war/team", data={"csrf_token": token, "action": "allocate"})
+    conn = connect(app.config["DATABASE"])
+    prios = dict(conn.execute("SELECT national_id, priority FROM war_calls").fetchall())
+    assert prios == {"A200003": 1, "A200001": 2, "A200002": 3}       # super, solid base, shared
+    page = t3.get("/war/calls").get_data(as_text=True)
+    assert "Aminath Alpha" in page and "tel:" in page
+    cursor = t3.get("/war/changes?since=0").json["cursor"]
+    tok = csrf(t1, "/war/box")
+    r = t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "1", "key": "k1"},
+                headers={"X-Requested-With": "fetch"})
+    assert r.json == {"ok": True, "voted": True}
+    # the same key again (a resend after a signal drop) counts once
+    assert t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "1", "key": "k1"}).json["repeat"]
+    assert conn.execute("SELECT COUNT(*) FROM war_log").fetchone()[0] == 1
+    # tier 3 hears about it and the voter leaves the list
+    ch = t3.get(f"/war/changes?since={cursor}").json
+    assert ch["voted"] == ["A200001"]
+    assert "Aminath Alpha" not in t3.get("/war/calls").get_data(as_text=True)
+    # tier 1 can't mark at another box
+    assert t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200003", "value": "1"}).status_code == 403
+    # call outcomes
+    assert t3.post("/war/call", data={"csrf_token": csrf(t3, "/war/calls"), "national_id": "A200002", "outcome": "transport"},
+                   headers={"X-Requested-With": "fetch"}).json["label"] == "Needs transport"
+    dash = " ".join(o.get("/war").get_data(as_text=True).split())
+    assert "Turnout" in dash and "waiting for transport" in dash
+    # undo: their own mark, soon after
+    assert t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "0"}).json["voted"] is False
+    assert "Aminath Alpha" in t3.get("/war/calls").get_data(as_text=True)
+
+
+def test_list_numbers_and_tier2(app):
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    sheet = io.BytesIO(b"ID,No.\nA200001,17\nA200002,18\nZ999999,19\n")
+    r = o.post("/war/team", data={"csrf_token": token, "action": "import", "sheet": (sheet, "list.csv")},
+               content_type="multipart/form-data", follow_redirects=True)
+    assert "numbers saved for 2 voters" in r.get_data(as_text=True)
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    assert t1.get("/war/lookup?q=17").json["voter"]["national_id"] == "A200001"
+    assert t1.get("/war/lookup?q=99").status_code == 404
+    # tier 2 sees their houses' supporters who haven't voted
+    t2, runner = make(app, o, token, "runner", "t2")
+    conn = connect(app.config["DATABASE"])
+    house = conn.execute("SELECT house_name FROM voters WHERE national_id = 'A200001'").fetchone()[0]
+    conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES (?, ?, '2026-01-01')", (house, runner))
+    conn.commit()
+    page = t2.get("/war/field").get_data(as_text=True)
+    assert "Aminath Alpha" in page and "Moosa Beta" not in page
+    assert t2.post("/war/mark", data={"csrf_token": csrf(t2, "/war/field"), "national_id": "A200002", "value": "1"}).status_code == 403
+    assert t2.post("/war/mark", data={"csrf_token": csrf(t2, "/war/field"), "national_id": "A200001", "value": "1"}).json["voted"]
+    assert "Aminath Alpha" not in t2.get("/war/field").get_data(as_text=True)
+
+
+def test_only_the_owner_sets_it_up(app):
+    o, token, ids = setup(app)
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert b.get("/war").status_code == 403 and b.get("/war/team").status_code == 403
+    uid = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'boss'").fetchone()[0]
+    o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": uid, "tier": "room"})
+    assert b.get("/war").status_code == 200 and b.get("/war/team").status_code == 403
+    assert "War Room" in b.get("/").get_data(as_text=True)       # admins keep the whole portal

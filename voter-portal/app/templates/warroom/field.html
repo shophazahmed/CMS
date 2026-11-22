@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}My supporters{% endblock %}
+{% block content %}
+<div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes') }}" data-mode="list">
+{% if t != 't2' %}<a class="backlink" href="{{ url_for('warroom.home') }}">{{ icon('back', 18) }} War Room</a>{% endif %}
+<div class="page-head war-head">
+  <div>
+    <h1>{{ 'My supporters' if t == 't2' else 'Field runners' }}</h1>
+    <p class="muted"><strong data-war-left>{{ rows|length }}</strong> of our supporters in {{ 'your' if t == 't2' else 'these' }} houses haven't voted yet.
+      Needs-transport first.</p>
+  </div>
+  {% include "warroom/_sync.html" %}
+</div>
+{% if runners %}
+<form class="war-boxpick" method="get"><label>Runner
+  <select name="u" data-autosubmit>{% for c in runners %}<option value="{{ c.id }}" {{ 'selected' if c.id == who }}>{{ c.username }}</option>{% endfor %}</select></label></form>
+{% endif %}
+{% if rows %}
+<ul class="war-list">
+  {% for v in rows %}
+  <li class="war-item card prio-{{ v.priority }} {{ 'oc-' ~ v.outcome if v.outcome }}" data-nid="{{ v.national_id }}">
+    <div class="war-item-main">
+      {{ avatar(v, 'sm') }}
+      <div><strong>{{ v.full_name }}</strong>
+        <span class="muted small-text">{{ v.house_name }} · {{ v.location }}</span>
+        <span class="small-text"><span class="tag prio-tag">{{ priority[v.priority] }}</span>
+          {% if v.outcome %}<span class="tag oc-tag">{{ outcomes[v.outcome] }}</span>{% endif %}</span>
+      </div>
+      {% if v.phone %}<a class="button war-call-btn" href="tel:{{ v.phone }}">{{ icon('phone', 18) }} Call</a>{% endif %}
+    </div>
+    <form method="post" action="{{ url_for('warroom.mark') }}" data-war-mark data-confirm="Mark {{ v.full_name }} as voted?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+      <input type="hidden" name="value" value="1"><button class="primary wide">{{ icon('check', 16) }} Voted</button></form>
+  </li>
+  {% endfor %}
+</ul>
+{% else %}
+<div class="empty card"><p>No supporters waiting here.</p></div>
+{% endif %}
+</div>
+{% endblock %}

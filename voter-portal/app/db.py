@@ -27,7 +27,9 @@ CREATE TABLE IF NOT EXISTS users (
     confirmed_access     TEXT NOT NULL DEFAULT '',    -- given by the owner: '' none, 'view', 'mark' (never downloads)
     pledge_access        TEXT NOT NULL DEFAULT '',    -- the pledge sheet, the same way
     pledge_only          INTEGER NOT NULL DEFAULT 0,  -- 1: this account sees only the pledge sheet and distribution
-    super_access         TEXT NOT NULL DEFAULT ''     -- super pledge voters and voting scenarios, given like pledge_access
+    super_access         TEXT NOT NULL DEFAULT '',    -- super pledge voters and voting scenarios, given like pledge_access
+    war_tier             TEXT NOT NULL DEFAULT '',    -- election day: '' / room / t1 box / t2 field / t3 calls
+    war_box              TEXT NOT NULL DEFAULT ''     -- a tier 1 agent's ballot box
 );
 
 CREATE TABLE IF NOT EXISTS voters (
@@ -178,6 +180,8 @@ def _add_user_columns(conn):
         ("pledge_access", "pledge_access TEXT NOT NULL DEFAULT ''"),
         ("pledge_only", "pledge_only INTEGER NOT NULL DEFAULT 0"),
         ("super_access", "super_access TEXT NOT NULL DEFAULT ''"),
+        ("war_tier", "war_tier TEXT NOT NULL DEFAULT ''"),
+        ("war_box", "war_box TEXT NOT NULL DEFAULT ''"),
     ):
         if name in columns:
             continue
