@@ -7,10 +7,14 @@ projects the result (top seats win) from the pledges, the super voters' decision
 some candidates' supporters cast only one vote, how Maybe and undecided voters go, and turnout.
 Access is given by the owner, like the pledge sheet, and needs pledge sheet access too.
 """
-from flask import Blueprint, abort, flash, g, redirect, render_template, request, url_for
+import csv
+import io
+from datetime import datetime
+
+from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
 from . import audit, campaign, pledges
-from .auth import can_mark_super, super_marker_required, super_viewer_required
+from .auth import can_mark_super, is_owner, super_marker_required, super_viewer_required
 from .db import get_db, now_iso
 
 bp = Blueprint("superpledge", __name__)
@@ -66,10 +70,8 @@ def _super_map(ids):
     return out
 
 
-@bp.route("/super")
-@super_viewer_required
-def sheet():
-    """Every voter, like the pledge sheet; a cell per candidate marks the voter as that candidate's super voter."""
+def _sheet_filters():
+    """The pledge sheet filters plus ?sc= (super voters of one candidate, of any, or none)."""
     f, where, params, cands, pc, pv = pledges._filters()
     cands = _by_ballot(cands)
     ids = {str(c["id"]) for c in cands}
@@ -81,6 +83,70 @@ def sheet():
             sc, "national_id IN (SELECT national_id FROM super_votes WHERE candidate_id = ?)")
         where = f"{where} AND {cond}" if where else f" WHERE {cond}"
         params = list(params) + ([int(sc)] if sc.isdigit() else [])
+    return f, where, params, cands, pc, pv, sc
+
+
+@bp.route("/super/export.<fmt>")
+@super_viewer_required
+def export(fmt):
+    """The super pledge sheet as CSV or Excel, with the same filters and order. Owner only, like the pledge sheet."""
+    from openpyxl.styles import Font, PatternFill
+
+    from .voters import _safe_cell
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    if not is_owner():
+        audit.log("access_denied", target=request.path)
+        abort(403)
+    f, where, params, cands, pc, pv, sc = _sheet_filters()
+    rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {pledges.sheet_order()[2]}", params).fetchall()
+    marks = _super_map([r["national_id"] for r in rows])
+    headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box"]
+               + [pledges.label(c) for c in cands] + ["Super for"])
+    table = []
+    for n, r in enumerate(rows, 1):
+        mine = marks.get(r["national_id"], set())
+        table.append([n, r["national_id"], _safe_cell(r["full_name"]), r["sex"], r["age"], _safe_cell(r["house_name"]),
+                      _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"])]
+                     + ["super" if c["id"] in mine else "" for c in cands]
+                     + [", ".join(c["name"] for c in cands if c["id"] in mine)])
+    audit.log("super_export", target=fmt, detail={"rows": len(table)})
+    name = f"super-pledge-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(headers)
+        writer.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    from openpyxl import Workbook
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Super pledge"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for i, c in enumerate(cands):
+        cell = ws.cell(row=1, column=10 + i)
+        cell.fill = PatternFill("solid", fgColor=c["color"].lstrip("#"))
+        cell.font = Font(bold=True, color="FFFFFF")
+    for row in table:
+        ws.append(row)
+    ws.freeze_panes = "C2"
+    ws.auto_filter.ref = ws.dimensions
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
+@bp.route("/super")
+@super_viewer_required
+def sheet():
+    """Every voter, like the pledge sheet; a cell per candidate marks the voter as that candidate's super voter."""
+    f, where, params, cands, pc, pv, sc = _sheet_filters()
     sort_key, sort_dir, order = pledges.sheet_order()
     db = get_db()
     size = request.args.get("n", type=int)
@@ -104,7 +170,7 @@ def sheet():
                            cands=cands, per_cand=per_cand, n_super=n_super, total=total, page=page, pages=pages,
                            size=size, sizes=pledges.PAGE_SIZES, f=f, pc=pc, pv=pv, sc=sc, boxes=boxes,
                            can_mark=can_mark_super(), max_votes=pledges.max_votes(), ours=pledges.our_candidate(),
-                           label=pledges.label, sort_key=sort_key, sort_dir=sort_dir,
+                           label=pledges.label, sort_key=sort_key, sort_dir=sort_dir, owner=is_owner(),
                            query_args={k: v for k, v in request.args.items() if k != "page"},
                            first=(page - 1) * size)
 
@@ -149,20 +215,49 @@ def vote():
 
 # --- scenarios ----------------------------------------------------------------------------------
 
+DEFAULTS = {"sv": "decision", "b": [], "mw": 0, "und": "none", "uo": 50, "to": 100, "svt": 100, "nsr": 0,
+            "st": {}, "sec": "none", "secp": 100, "swf": None, "swt": None, "swp": 0, "adj": {}}
+
+
 def read_options(args, cands):
     ids = {c["id"] for c in cands}
-    bullet = [int(x) for x in args.getlist("b") if x.isdigit() and int(x) in ids]
+
+    def pct(key, default, hi=100):
+        value = args.get(key, "")
+        return min(hi, max(0, int(value))) if value.isdigit() else default
+
+    def cand(key):
+        value = args.get(key, "")
+        return int(value) if value.isdigit() and int(value) in ids else None
+
+    def signed(value):
+        value = (value or "").strip()
+        neg = value.startswith("-")
+        value = value[1:] if neg else value
+        return (-int(value) if neg else int(value)) if value.isdigit() and int(value) <= 100000 else 0
+
     mw = args.get("mw", "0")
     und = args.get("und", "none")
-
-    def pct(key, default):
-        value = args.get(key, "")
-        return min(100, max(0, int(value))) if value.isdigit() else default
-
-    return {"sv": args.get("sv", "decision") if args.get("sv") in ("decision", "pledge") else "decision",
-            "b": bullet, "mw": int(mw) if mw in ("0", "50", "100") else 0,
-            "und": und if und in ("none", "split", "ours") else "none",
-            "uo": pct("uo", 50), "to": pct("to", 100) or 100, "nsx": args.get("nsx", "1") != "0"}
+    sec = args.get("sec", "none")
+    nsr = pct("nsr", 0)
+    if args.get("nsx") == "0":  # the earlier "count no-shows as voting" box
+        nsr = 100
+    return {
+        "sv": args.get("sv") if args.get("sv") in ("decision", "pledge") else "decision",
+        "b": [int(x) for x in args.getlist("b") if x.isdigit() and int(x) in ids],
+        "mw": int(mw) if mw in ("0", "25", "50", "75", "100") else 0,
+        "und": und if und in ("none", "split", "ours", "even") else "none",
+        "uo": pct("uo", 50), "to": pct("to", 100) or 100, "svt": pct("svt", 100), "nsr": nsr,
+        # each candidate's supporters: what share of them turn out to vote
+        "st": {c["id"]: pct(f"st{c['id']}", 100) for c in cands if args.get(f"st{c['id']}", "") not in ("", "100")},
+        # voters with a single Yes: where their second vote goes
+        "sec": sec if sec in ("none", "split") or (sec.isdigit() and int(sec) in ids) else "none",
+        "secp": pct("secp", 100),
+        # a swing: this share of one candidate's supporters vote for another instead
+        "swf": cand("swf"), "swt": cand("swt"), "swp": pct("swp", 0),
+        # extra votes (or fewer) per candidate, e.g. voters registered elsewhere
+        "adj": {c["id"]: signed(args.get(f"adj{c['id']}")) for c in cands if signed(args.get(f"adj{c['id']}"))},
+    }
 
 
 def _data(where, params):
@@ -183,46 +278,79 @@ def _data(where, params):
 
 
 def project(data, opts, cands, ours, limit, n_seats):
+    opts = dict(DEFAULTS, **opts)
     order = {c["id"]: i for i, c in enumerate(cands)}  # ballot order breaks ties
     ids = set(order)
     rank = lambda cs: sorted((c for c in cs if c in ids), key=order.get)  # noqa: E731
     cap = limit or len(cands)
     votes = {c["id"]: 0.0 for c in cands}
-    undecided = voting = from_super = 0
+    undecided = voting = from_super = 0.0
     bullet = set(opts["b"])
+    single_yes = {}  # candidate -> weight of voters whose only vote is for them (and could give a second)
+    swf, swt, swp = opts["swf"], opts["swt"], opts["swp"] / 100
     for nid in data["voters"]:
-        if opts["nsx"] and nid in data["noshow"]:
-            continue
-        voting += 1
-        if opts["sv"] == "decision" and nid in data["supers"] and data["decided"].get(nid):
+        w = 1.0
+        if nid in data["noshow"]:
+            w = opts["nsr"] / 100
+            if not w:
+                continue
+        if opts["sv"] == "decision" and data["decided"].get(nid):
+            w *= opts["svt"] / 100
             for c in rank(data["decided"][nid])[:cap]:
-                votes[c] += 1
-            from_super += 1
+                votes[c] += w
+            from_super += w
+            voting += w
             continue
         yes = rank(data["yes"].get(nid, []))[:cap]
+        if yes and opts["st"]:
+            w *= sum(opts["st"].get(c, 100) for c in yes) / len(yes) / 100
+        if not w:
+            continue
+        voting += w
         single = [c for c in yes if c in bullet]
         if single:  # a supporter of a "one vote only" candidate gives just that vote
-            votes[single[0]] += 1
-            continue
+            yes = single[:1]
+        else:
+            if opts["mw"]:
+                for c in [c for c in rank(data["maybe"].get(nid, [])) if c not in yes][:cap - len(yes)]:
+                    votes[c] += w * opts["mw"] / 100
+            if len(yes) == 1 and cap > 1 and opts["sec"] != "none":
+                single_yes[yes[0]] = single_yes.get(yes[0], 0) + w
         for c in yes:
-            votes[c] += 1
-        if opts["mw"]:
-            for c in [c for c in rank(data["maybe"].get(nid, [])) if c not in yes][:cap - len(yes)]:
-                votes[c] += opts["mw"] / 100
+            if c == swf and swt is not None and swt not in yes and swp:
+                votes[c] += w * (1 - swp)
+                votes[swt] += w * swp
+            else:
+                votes[c] += w
         if not yes and not data["maybe"].get(nid):
-            undecided += 1
+            undecided += w
+    base = dict(votes)
+    if single_yes:  # their empty second vote
+        share = opts["secp"] / 100
+        for c, wt in single_yes.items():
+            if opts["sec"] == "split":
+                pool = {k: v for k, v in base.items() if k != c}
+                total = sum(pool.values())
+                for k, v in pool.items():
+                    votes[k] += wt * share * (v / total if total else 1 / len(pool))
+            elif int(opts["sec"]) != c:
+                votes[int(opts["sec"])] += wt * share
     if undecided and opts["und"] != "none":
-        pool = {c: v for c, v in votes.items() if not (opts["und"] == "ours" and c == ours)}
-        total = sum(pool.values())
-        left = cap
-        if opts["und"] == "ours" and ours in votes:
-            votes[ours] += undecided * opts["uo"] / 100
-            left = cap - opts["uo"] / 100
-        if total:
-            for c, v in pool.items():
-                votes[c] += undecided * min(1, left * v / total)
+        if opts["und"] == "even":
+            for c in votes:
+                votes[c] += undecided * min(1, cap / len(votes))
+        else:
+            pool = {c: v for c, v in base.items() if not (opts["und"] == "ours" and c == ours)}
+            total = sum(pool.values())
+            left = cap
+            if opts["und"] == "ours" and ours in votes:
+                votes[ours] += undecided * opts["uo"] / 100
+                left = cap - opts["uo"] / 100
+            if total:
+                for c, v in pool.items():
+                    votes[c] += undecided * min(1, left * v / total)
     scale = opts["to"] / 100
-    result = sorted(({"c": c, "votes": round(votes[c["id"]] * scale)} for c in cands),
+    result = sorted(({"c": c, "votes": max(0, round(votes[c["id"]] * scale) + opts["adj"].get(c["id"], 0))} for c in cands),
                      key=lambda r: (-r["votes"], order[r["c"]["id"]]))
     for i, r in enumerate(result):
         r["place"] = i + 1
@@ -238,7 +366,7 @@ def project(data, opts, cands, ours, limit, n_seats):
         else:
             verdict = {"wins": False, "margin": cut_in - mine["votes"] + 1, "vs": result[n_seats - 1]["c"]["name"]}
     return {"result": result, "top": top, "mine": mine, "verdict": verdict, "voting": round(voting * scale),
-            "undecided": undecided, "from_super": from_super}
+            "undecided": round(undecided), "from_super": round(from_super)}
 
 
 def presets(cands, ours):
@@ -267,21 +395,32 @@ def presets(cands, ours):
 
 def _opts_args(opts):
     """Query args for a set of options (only what differs from the defaults)."""
+    o = dict(DEFAULTS, **opts)
     out = {}
-    if opts.get("sv", "decision") != "decision":
-        out["sv"] = opts["sv"]
-    if opts.get("b"):
-        out["b"] = list(opts["b"])
-    if opts.get("mw"):
-        out["mw"] = opts["mw"]
-    if opts.get("und", "none") != "none":
-        out["und"] = opts["und"]
-        if opts["und"] == "ours":
-            out["uo"] = opts.get("uo", 50)
-    if opts.get("to", 100) != 100:
-        out["to"] = opts["to"]
-    if not opts.get("nsx", True):
-        out["nsx"] = "0"
+    if o["sv"] != "decision":
+        out["sv"] = o["sv"]
+    if o["b"]:
+        out["b"] = list(o["b"])
+    for key in ("mw", "nsr"):
+        if o[key]:
+            out[key] = o[key]
+    if o["und"] != "none":
+        out["und"] = o["und"]
+        if o["und"] == "ours":
+            out["uo"] = o["uo"]
+    for key in ("to", "svt"):
+        if o[key] != 100:
+            out[key] = o[key]
+    if o["sec"] != "none":
+        out["sec"] = o["sec"]
+        if o["secp"] != 100:
+            out["secp"] = o["secp"]
+    if o["swp"] and o["swf"] is not None and o["swt"] is not None and o["swf"] != o["swt"]:
+        out["swf"], out["swt"], out["swp"] = o["swf"], o["swt"], o["swp"]
+    for cid, v in o["st"].items():
+        out[f"st{cid}"] = v
+    for cid, v in o["adj"].items():
+        out[f"adj{cid}"] = v
     return out
 
 
@@ -298,11 +437,10 @@ def scenarios():
     ours = pledges.our_candidate()
     limit, n_seats = pledges.max_votes(), seats()
     data = _data(where, params)
-    base = {"sv": "decision", "b": [], "mw": 0, "und": "none", "uo": 50, "to": 100, "nsx": True}
     custom = read_options(request.args, cands)
     compare = []
     for key, title, about, o in presets(cands, ours):
-        opts = dict(base, **o)
+        opts = dict(DEFAULTS, **o)
         compare.append({"key": key, "title": title, "about": about, "args": _opts_args(opts),
                         "p": project(data, opts, cands, ours, limit, n_seats)})
     active = next((c["key"] for c in compare if c["args"] == _opts_args(custom)), "")

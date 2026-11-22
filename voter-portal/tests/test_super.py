@@ -109,3 +109,59 @@ def test_scenarios(app):
     assert "Our voters cast only one vote" in page and "Projected result" in page
     assert o.get(f"/super/scenarios?b={r}&mw=50&und=split&to=80").status_code == 200
     assert o.get("/super/scenarios?und=ours&uo=70&loc=nowhere").status_code == 200
+
+
+def test_super_export(app):
+    import csv
+    import io
+
+    from openpyxl import load_workbook
+
+    o, token, ids = owner(app)
+    vote(o, token, "A200001", ids["Sofhaz"], "1")
+    vote(o, token, "A200001", ids["Jawid"], "1")
+    assert "/super/export.xlsx" in o.get("/super").get_data(as_text=True)
+    r = o.get(f"/super/export.csv?sc={ids['Sofhaz']}")
+    rows = list(csv.reader(io.StringIO(r.get_data(as_text=True).lstrip("﻿"))))
+    assert rows[0][9:] == ["#1 Rayaan", "#2 Sofhaz", "#3 Jawid", "#4 Thalaal", "Super for"]
+    assert len(rows) == 2 and rows[1][1] == "A200001" and rows[1][9:] == ["", "super", "super", "", "Sofhaz, Jawid"]
+    wb = load_workbook(io.BytesIO(o.get("/super/export.xlsx").data))
+    assert wb.active.max_row == 4                                                    # every voter
+    assert "'=HYPERLINK" in [c.value for c in wb.active["C"]][1:] or any(
+        str(c.value).startswith("'") for c in wb.active["C"])                         # formulas defused
+    # only the owner downloads
+    viewer = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    for action in ("set_super_access", "set_pledge_access"):
+        o.post(f"/admin/users/{viewer}", data={"csrf_token": token, "action": action, "level": "mark"})
+    v = app.test_client()
+    login(v, "viewer", USER_PW)
+    assert v.get("/super").status_code == 200 and "/super/export" not in v.get("/super").get_data(as_text=True)
+    assert v.get("/super/export.csv").status_code == 403
+
+
+def test_more_scenario_options(app):
+    from app import superpledge
+
+    o, token, ids = owner(app)
+    r, s, j, t = ids["Rayaan"], ids["Sofhaz"], ids["Jawid"], ids["Thalaal"]
+    mark(o, token, "A200001", r, "yes")
+    mark(o, token, "A200001", j, "yes")            # Rayaan + Jawid
+    mark(o, token, "A200002", r, "yes")            # Rayaan only
+    vote(o, token, "A200003", s, "1")              # super voter for Sofhaz only
+    with app.test_request_context():
+        from flask import g
+        g.user = connect(app.config["DATABASE"]).execute("SELECT * FROM users WHERE username = 'admin'").fetchone()
+        cands = superpledge._by_ballot(__import__("app.pledges", fromlist=["x"]).candidates())
+        data = superpledge._data(" WHERE deceased = 0", [])
+        votes = lambda **o: {x["c"]["name"]: x["votes"] for x in superpledge.project(data, o, cands, s, 2, 2)["result"]}  # noqa: E731
+        assert votes() == {"Rayaan": 2, "Sofhaz": 1, "Jawid": 1, "Thalaal": 0}
+        assert votes(svt=0)["Sofhaz"] == 0                                   # super voters stay home
+        assert votes(st={r: 50})["Rayaan"] == 1                              # half of Rayaan's supporters vote
+        assert votes(sec=str(s))["Sofhaz"] == 2                              # the single-Yes voter's second vote
+        assert votes(sec=str(t), secp=100)["Thalaal"] == 1
+        assert votes(swf=r, swt=t, swp=100) == {"Rayaan": 0, "Sofhaz": 1, "Jawid": 1, "Thalaal": 2}
+        assert votes(adj={t: 5, j: -9})["Thalaal"] == 5 and votes(adj={j: -9})["Jawid"] == 0
+    page = o.get(f"/super/scenarios?svt=80&nsr=50&st{r}=70&sec=split&secp=60&swf={r}&swt={s}&swp=20&adj{t}=3"
+                 "&und=even&mw=25&sex=F&age_min=20").get_data(as_text=True)
+    assert "Projected result" in page and 'name="swp" min="0" max="100" value="20"' in page
+    assert f'value="{s}" selected' in page

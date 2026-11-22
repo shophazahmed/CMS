@@ -1035,3 +1035,12 @@ a.kpi { color: inherit; text-decoration: none; }
   .scen-table .scen-about { display: none; }
   .scen-table tbody th { min-width: 8.5rem; max-width: 10rem; white-space: normal; }
 }
+.scen-form { display: block; }
+.scen-form .scen-group { display: grid; grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr)); gap: .6rem 1rem;
+  align-items: end; border: 1px solid var(--line, #e3e7ea); border-radius: 12px; padding: .75rem 1rem 1rem; margin: 0 0 .9rem; }
+.scen-form .scen-group legend { font-weight: 700; padding: 0 .35rem; }
+.scen-form .scen-wide, .scen-form .scen-sub { grid-column: 1 / -1; margin: 0; }
+.scen-form .scen-wide { display: flex; flex-wrap: wrap; gap: .25rem 1.25rem; align-items: center; }
+.scen-form .scen-wide > span { flex-basis: 100%; }
+.scen-form .scen-cand { border-left: 4px solid var(--cand); padding-left: .5rem; }
+#result { scroll-margin-top: 5rem; }

@@ -27,14 +27,14 @@
 {% else %}
 
 <section class="card">
-  <h2>Compare scenarios{% if loc %} · {{ 'no box' if loc == '(none)' else loc }}{% endif %}</h2>
+  <h2>Compare scenarios{% if loc %} · {{ 'no box' if loc == '(none)' else loc }}{% endif %}{% if f.sex %} · {{ 'men' if f.sex == 'M' else 'women' }}{% endif %}{% if f.age_min or f.age_max %} · age {{ f.age_min or 18 }}–{{ f.age_max or '' }}{% endif %}</h2>
   <div class="table-wrap">
   <table class="overlap scen-table">
     <thead><tr><th>Scenario</th>{% for c in cands %}<th class="cand cand-{{ c.id }}">{{ label(c) }}</th>{% endfor %}{% if ours %}<th>Result for us</th>{% endif %}</tr></thead>
     <tbody>
     {% for s in compare %}
     <tr class="{{ 'on' if s.key == active }}">
-      <th><a href="{{ url_for('superpledge.scenarios', loc=loc or None, **s.args) }}">{{ s.title }}</a>
+      <th><a href="{{ url_for('superpledge.scenarios', loc=loc or None, sex=f.sex or None, age_min=f.age_min, age_max=f.age_max, **s.args) }}#result">{{ s.title }}</a>
         <span class="muted small-text scen-about">{{ s.about }}</span></th>
       {% for c in cands %}{% set r = s.p.result|selectattr('c.id', 'equalto', c.id)|first %}
       <td class="{{ 'win' if r.wins }} {{ 'ours' if c.id == ours }}">{{ r.votes }}<span class="muted small-text"> · {{ nth(r.place) }}</span></td>
@@ -49,43 +49,93 @@
 </section>
 
 <form class="card form scen-form" method="get">
-  <h2>Build a scenario</h2>
-  <label>Box
-    <select name="loc">
-      <option value="">All boxes</option>
-      {% for b in boxes %}<option value="{{ b }}" {{ 'selected' if loc == b }}>{{ b }}</option>{% endfor %}
-      <option value="(none)" {{ 'selected' if loc == '(none)' }}>No box recorded</option>
-    </select>
-  </label>
-  <label>Super voters
-    <select name="sv">
-      <option value="decision" {{ 'selected' if opts.sv == 'decision' }}>Vote for the candidates they're super voters of</option>
-      <option value="pledge" {{ 'selected' if opts.sv == 'pledge' }}>Vote as they pledged</option>
-    </select>
-  </label>
-  <fieldset class="checks">
-    <legend>These candidates' supporters cast only one vote</legend>
-    {% for c in cands %}<label class="check"><input type="checkbox" name="b" value="{{ c.id }}" {{ 'checked' if c.id in opts.b }}> {{ label(c) }}</label>{% endfor %}
+  <div class="list-head"><h2>Build a scenario</h2><a class="small-text" href="{{ url_for('superpledge.scenarios') }}">Reset</a></div>
+
+  <fieldset class="scen-group">
+    <legend>Which voters</legend>
+    <label>Box
+      <select name="loc">
+        <option value="">All boxes</option>
+        {% for b in boxes %}<option value="{{ b }}" {{ 'selected' if loc == b }}>{{ b }}</option>{% endfor %}
+        <option value="(none)" {{ 'selected' if loc == '(none)' }}>No box recorded</option>
+      </select>
+    </label>
+    <label>Sex
+      <select name="sex">
+        <option value="">Everyone</option>
+        <option value="M" {{ 'selected' if f.sex == 'M' }}>Men</option>
+        <option value="F" {{ 'selected' if f.sex == 'F' }}>Women</option>
+      </select>
+    </label>
+    <label>Age from <input type="number" name="age_min" min="18" max="120" value="{{ f.age_min if f.age_min is not none }}" placeholder="18"></label>
+    <label>Age to <input type="number" name="age_max" min="18" max="120" value="{{ f.age_max if f.age_max is not none }}" placeholder="any"></label>
   </fieldset>
-  <label>Maybe pledges count as
-    <select name="mw">
-      {% for k, t in ((0, 'Nothing'), (50, 'Half a vote'), (100, 'A full vote')) %}<option value="{{ k }}" {{ 'selected' if opts.mw == k }}>{{ t }}</option>{% endfor %}
-    </select>
-  </label>
-  <label>Undecided voters (no mark)
-    <select name="und">
-      <option value="none" {{ 'selected' if opts.und == 'none' }}>Leave them out</option>
-      <option value="split" {{ 'selected' if opts.und == 'split' }}>Split like the pledged voters</option>
-      {% if ours %}<option value="ours" {{ 'selected' if opts.und == 'ours' }}>A share votes for us, the rest split</option>{% endif %}
-    </select>
-  </label>
-  {% if ours %}<label>Share of undecided voting for us (%) <input type="number" name="uo" min="0" max="100" value="{{ opts.uo }}"></label>{% endif %}
-  <label>Turnout (%) <input type="number" name="to" min="1" max="100" value="{{ opts.to }}"></label>
-  <label class="check"><input type="checkbox" name="nsx" value="0" {{ 'checked' if not opts.nsx }}> Count no-shows as voting</label>
-  <button class="primary">Show</button>
+
+  <fieldset class="scen-group">
+    <legend>Who turns out</legend>
+    <label>Overall turnout (%) <input type="number" name="to" min="1" max="100" value="{{ opts.to }}"></label>
+    <label>Super voters who turn out (%) <input type="number" name="svt" min="0" max="100" value="{{ opts.svt }}"></label>
+    <label>No-shows who still vote (%) <input type="number" name="nsr" min="0" max="100" value="{{ opts.nsr }}">
+      <span class="muted small-text">e.g. with transport on the day</span></label>
+    <p class="scen-sub muted small-text">Each candidate's supporters who turn out (%)</p>
+    {% for c in cands %}<label class="cand-{{ c.id }} scen-cand">{{ label(c) }} <input type="number" name="st{{ c.id }}" min="0" max="100" value="{{ opts.st.get(c.id, 100) }}"></label>{% endfor %}
+  </fieldset>
+
+  <fieldset class="scen-group">
+    <legend>How they vote</legend>
+    <label>Super voters
+      <select name="sv">
+        <option value="decision" {{ 'selected' if opts.sv == 'decision' }}>As marked on the super pledge sheet</option>
+        <option value="pledge" {{ 'selected' if opts.sv == 'pledge' }}>Vote as they pledged</option>
+      </select>
+    </label>
+    <div class="checks scen-wide">
+      <span class="muted small-text">These candidates' supporters cast only one vote</span>
+      {% for c in cands %}<label class="check"><input type="checkbox" name="b" value="{{ c.id }}" {{ 'checked' if c.id in opts.b }}> {{ label(c) }}</label>{% endfor %}
+    </div>
+    <label>Voters with only one Yes give their second vote
+      <select name="sec">
+        <option value="none" {{ 'selected' if opts.sec == 'none' }}>To nobody (as pledged)</option>
+        <option value="split" {{ 'selected' if opts.sec == 'split' }}>Split like the pledged voters</option>
+        {% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if opts.sec == c.id|string }}>To {{ label(c) }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>… how many of them (%) <input type="number" name="secp" min="0" max="100" value="{{ opts.secp }}"></label>
+    <label>Swing: supporters of
+      <select name="swf"><option value="">—</option>{% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if opts.swf == c.id }}>{{ label(c) }}</option>{% endfor %}</select>
+    </label>
+    <label>… vote instead for
+      <select name="swt"><option value="">—</option>{% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if opts.swt == c.id }}>{{ label(c) }}</option>{% endfor %}</select>
+    </label>
+    <label>… how many of them (%) <input type="number" name="swp" min="0" max="100" value="{{ opts.swp }}"></label>
+  </fieldset>
+
+  <fieldset class="scen-group">
+    <legend>Voters not pledged yet</legend>
+    <label>Maybe pledges count as
+      <select name="mw">
+        {% for k, t in ((0, 'Nothing'), (25, 'A quarter vote'), (50, 'Half a vote'), (75, 'Three quarters'), (100, 'A full vote')) %}<option value="{{ k }}" {{ 'selected' if opts.mw == k }}>{{ t }}</option>{% endfor %}
+      </select>
+    </label>
+    <label>Undecided voters (no mark)
+      <select name="und">
+        <option value="none" {{ 'selected' if opts.und == 'none' }}>Leave them out</option>
+        <option value="split" {{ 'selected' if opts.und == 'split' }}>Split like the pledged voters</option>
+        <option value="even" {{ 'selected' if opts.und == 'even' }}>Split evenly between candidates</option>
+        {% if ours %}<option value="ours" {{ 'selected' if opts.und == 'ours' }}>A share votes for us, the rest split</option>{% endif %}
+      </select>
+    </label>
+    {% if ours %}<label>Share of undecided voting for us (%) <input type="number" name="uo" min="0" max="100" value="{{ opts.uo }}"></label>{% endif %}
+  </fieldset>
+
+  <fieldset class="scen-group">
+    <legend>Extra votes (e.g. voters not in the portal; use − to take away)</legend>
+    {% for c in cands %}<label class="cand-{{ c.id }} scen-cand">{{ label(c) }} <input type="number" name="adj{{ c.id }}" min="-100000" max="100000" value="{{ opts.adj.get(c.id, 0) }}"></label>{% endfor %}
+  </fieldset>
+  <button class="primary big">Show the result</button>
 </form>
 
-<section class="card scen-result">
+<section class="card scen-result" id="result">
   <h2>Projected result</h2>
   {% if p.verdict %}
   <p class="scen-verdict {{ 'win' if p.verdict.wins else 'lose' }}">{{ verdict_text(p.verdict) }}</p>
