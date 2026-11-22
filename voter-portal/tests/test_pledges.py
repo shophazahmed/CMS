@@ -399,3 +399,25 @@ def test_pledge_users_on_the_dashboard(app):
     b = app.test_client()
     login(b, "boss", ADMIN_PW)
     assert "Pledge sheet users" not in b.get("/dashboard").get_data(as_text=True)
+
+
+def test_solid_base_and_shared_supporters_lists(app):
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    token, ids = setup(a)
+    mark(a, token, "A200001", ids["Shoppe"], "yes")
+    mark(a, token, "A200001", ids["Rayya"], "yes")                 # shared Shoppe & Rayya
+    mark(a, token, "A200002", ids["Shoppe"], "yes")                # only Shoppe
+    mark(a, token, "A200003", ids["Jade"], "maybe")
+    dist = a.get("/pledges/distribution").get_data(as_text=True)
+    assert f"pp=only:{ids['Shoppe']}" in dist
+    lo, hi = sorted((ids["Shoppe"], ids["Rayya"]))
+    assert f"pp=both:{lo}-{hi}" in dist
+    only = a.get(f"/pledges?pp=only:{ids['Shoppe']}").get_data(as_text=True)
+    assert "Moosa Beta" in only and "Aminath Alpha</span>" not in only and "only Shoppe" in only
+    both = a.get(f"/pledges?pp=both:{lo}-{hi}").get_data(as_text=True)
+    assert "Aminath Alpha" in both and "Moosa Beta</span>" not in both and "Shared supporters" in both
+    assert "Only Shoppe" in only and "Shoppe &amp; Rayya" in only or "Rayya &amp; Shoppe" in only   # the filter
+    assert "Yes pledges among 1 voter" in a.get(f"/pledges/distribution?pp=only:{ids['Shoppe']}").get_data(as_text=True)
+    assert "Aminath Alpha" in a.get("/pledges?pp=bogus").get_data(as_text=True)    # ignored

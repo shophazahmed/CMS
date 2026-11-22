@@ -22,6 +22,9 @@
       {% if owner %}<a class="button small" href="{{ url_for('pledges.manage') }}">Candidates &amp; import</a>{% endif %}
     </span>
   </div>
+  {% if f.pp %}{% set ids = f.pp.split(':')[1].split('-') %}{% set names = cands|selectattr('id', 'in', ids|map('int')|list)|map(attribute='name')|list %}
+  <p class="flash flash-info">{% if f.pp.startswith('only') %}Voters who pledged Yes to <strong>only {{ names|first }}</strong>{% else %}Shared supporters: Yes to both <strong>{{ names|join(' and ') }}</strong>{% endif %} ·
+    <a href="{{ url_for('pledges.sheet', **dict(query_args, pp=None)) }}">Show everyone</a></p>{% endif %}
   {% if f.pb %}<p class="flash flash-info">Voters marked by <strong>{{ f.pb_name }}</strong> ·
     <a href="{{ url_for('pledges.sheet', **dict(query_args, pb=None)) }}">Show everyone</a></p>{% endif %}
   <p class="muted">{% if can_mark %}Tap a cell to mark it: Yes → Maybe → No → blank. It saves straight away.

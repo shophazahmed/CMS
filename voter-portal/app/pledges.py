@@ -174,6 +174,26 @@ def _filters():
                 else "national_id NOT IN (SELECT national_id FROM pledge_noshow)")
         where = f"{where} AND {cond}" if where else f" WHERE {cond}"
     f["ns"] = ns if ns in ("1", "0") else ""
+    # ?pp=only:<id> (Yes for that candidate and nobody else) or both:<a>-<b> (Yes for both, as on the distribution)
+    pp, f["pp"] = request.args.get("pp", ""), ""
+    active = [c["id"] for c in cands]
+    m = re.fullmatch(r"(only):(\d+)|(both):(\d+)-(\d+)", pp)
+    if m and active:
+        marks = ",".join("?" * len(active))
+        if m.group(1) and int(m.group(2)) in active:
+            cond = ("national_id IN (SELECT national_id FROM pledges WHERE value = 'yes' AND candidate_id IN"
+                    f" ({marks}) GROUP BY national_id HAVING COUNT(*) = 1 AND MAX(candidate_id) = ?)")
+            extra = active + [int(m.group(2))]
+        elif m.group(3) and {int(m.group(4)), int(m.group(5))} <= set(active) and m.group(4) != m.group(5):
+            cond = ("national_id IN (SELECT national_id FROM pledges WHERE value = 'yes' AND candidate_id IN (?, ?)"
+                    " GROUP BY national_id HAVING COUNT(*) = 2)")
+            extra = [int(m.group(4)), int(m.group(5))]
+        else:
+            cond = None
+        if cond:
+            where = f"{where} AND {cond}" if where else f" WHERE {cond}"
+            params = list(params) + extra
+            f["pp"] = pp
     pb = request.args.get("pb", "")
     f["pb"], f["pb_name"] = "", ""
     if pb.isdigit() and g.user["role"] == "admin":

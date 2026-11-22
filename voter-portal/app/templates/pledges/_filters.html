@@ -47,6 +47,21 @@
     </span>
   </label>
   {% endif %}
+  {% if cands|length > 1 %}
+  <label>Pledge pattern
+    <select name="pp">
+      <option value="">Any</option>
+      <optgroup label="Yes for only one candidate">
+        {% for c in cands %}<option value="only:{{ c.id }}" {{ 'selected' if f.pp == 'only:' ~ c.id }}>Only {{ c.name }}</option>{% endfor %}
+      </optgroup>
+      <optgroup label="Shared supporters (Yes for both)">
+        {% for a in cands %}{% set i = loop.index0 %}{% for b in cands[i + 1:] %}
+        <option value="both:{{ a.id }}-{{ b.id }}" {{ 'selected' if f.pp == 'both:' ~ a.id ~ '-' ~ b.id }}>{{ a.name }} &amp; {{ b.name }}</option>
+        {% endfor %}{% endfor %}
+      </optgroup>
+    </select>
+  </label>
+  {% endif %}
   <label>No-show
     <select name="ns">
       <option value="">Everyone</option>

@@ -64,10 +64,11 @@
 
 <section class="card">
   <h2>Solid base: voters pledged to only one candidate</h2>
+  <p class="muted small-text">Tap a name to see those voters.</p>
   <ul class="dist-list">
     {% for c in cands %}
     <li class="cand-{{ c.id }}">
-      <span class="dist-name">{{ c.name }}</span>
+      <a class="dist-name" href="{{ url_for('pledges.sheet', **dict(query_args, pp='only:' ~ c.id)) }}">{{ c.name }}</a>
       {{ bar(exclusive[c.id], yes[c.id] or 1) }}
       <span class="dist-num"><strong>{{ exclusive[c.id] }}</strong>
         <span class="muted small-text">{{ ((100 * exclusive[c.id] / yes[c.id])|round) if yes[c.id] else 0 }}% of their pledges</span></span>
@@ -79,14 +80,14 @@
 {% if cands|length > 1 %}
 <section class="card">
   <h2>Shared supporters</h2>
-  <p class="muted small-text">How many voters pledged Yes to both candidates.</p>
+  <p class="muted small-text">How many voters pledged Yes to both candidates. Tap a number to see them.</p>
   <div class="table-wrap">
   <table class="overlap">
     <thead><tr><th></th>{% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}</tr></thead>
     <tbody>
     {% for a in cands %}
     <tr><th class="cand cand-{{ a.id }}">{{ a.name }}</th>
-      {% for b in cands %}<td class="{{ 'diag' if a.id == b.id }}">{{ '—' if a.id == b.id else overlap[a.id][b.id] }}</td>{% endfor %}</tr>
+      {% for b in cands %}<td class="{{ 'diag' if a.id == b.id }}">{% if a.id == b.id %}—{% elif overlap[a.id][b.id] %}<a href="{{ url_for('pledges.sheet', **dict(query_args, pp='both:' ~ [a.id, b.id]|min ~ '-' ~ [a.id, b.id]|max)) }}">{{ overlap[a.id][b.id] }}</a>{% else %}0{% endif %}</td>{% endfor %}</tr>
     {% endfor %}
     </tbody>
   </table>
