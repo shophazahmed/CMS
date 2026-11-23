@@ -688,3 +688,34 @@ document.addEventListener("submit", async (event) => {
   }
   document.querySelectorAll("[data-print]").forEach((b) => b.addEventListener("click", () => window.print()));
 })();
+
+// Assign agents sheet: a row's agent saves as soon as it's picked; tick-all and the ticked count.
+(() => {
+  document.addEventListener("change", async (event) => {
+    const select = event.target.closest("[data-agent-form] select");
+    if (!select) return;
+    const form = select.form;
+    select.disabled = true;
+    try {
+      const body = new FormData(form);
+      body.set("agent", select.value);
+      const r = await fetch(form.getAttribute("action"), { method: "POST", body, credentials: "same-origin",
+        headers: { "X-Requested-With": "fetch" } });
+      if (!r.ok) throw new Error(r.status);
+      const data = await r.json();
+      select.classList.toggle("set", select.value !== "");
+      toast(data.agent ? `Saved: ${data.agent}` : "Saved: back with the house agent");
+    } catch (e) {
+      form.submit();
+    } finally {
+      select.disabled = false;
+    }
+  });
+  const all = document.querySelector("[data-tick-all]");
+  const count = document.querySelector("[data-ticked]");
+  if (!all || !count) return;
+  const boxes = () => [...document.querySelectorAll('input[type=checkbox][name=ids]')];
+  const update = () => { count.textContent = String(boxes().filter((b) => b.checked).length); };
+  all.addEventListener("change", () => { boxes().forEach((b) => { b.checked = all.checked; }); update(); });
+  document.addEventListener("change", (e) => { if (e.target.matches('input[name=ids]')) update(); });
+})();

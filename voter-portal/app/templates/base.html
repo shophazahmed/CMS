@@ -74,6 +74,7 @@
         {% if is_owner %}<a href="{{ url_for('warroom.team') }}">War Room team</a>{% endif %}
         {% if is_admin %}
         <a href="{{ url_for('voters.create') }}">Add a voter</a>
+        <a href="{{ url_for('agentsheet.sheet') }}">Assign agents to voters</a>
         <a href="{{ url_for('admin.changes') }}">Changes</a>
         <a href="{{ url_for('admin.audit_log') }}">Activity log</a>
         <a href="{{ url_for('campaign.settings') }}">Campaign settings</a>

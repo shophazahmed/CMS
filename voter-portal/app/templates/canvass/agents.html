@@ -3,7 +3,8 @@
 {% block title %}Agents{% endblock %}
 {% block content %}
 <div class="page-head">
-  <h1>Agents</h1>
+  <div class="house-title"><h1>Agents</h1>
+    <a class="button small primary" href="{{ url_for('agentsheet.sheet') }}">Assign agents to voters (sheet)</a></div>
   <p class="muted">Agents are canvassers. Each sees only the voters in the houses assigned to them, plus any voter you hand them one by one
     (open a voter and use <strong>Assigned agent</strong>, or tick voters in Search).
     Add agents (no sign-in) under <a href="{{ url_for('admin.users') }}">Users and agents</a>; read-only users can be given houses too.</p>

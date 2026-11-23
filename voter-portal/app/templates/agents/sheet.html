@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, pager, avatar %}
+{% block title %}Assign agents{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
+{% block main_class %}page wide{% endblock %}
+{% macro sort_th(key, label, cls='') -%}
+{%- set on = sort_key == key %}{% set next_dir = 'desc' if on and sort_dir == 'asc' else 'asc' %}
+<th class="{{ cls }} sortable {{ 'on' if on }}"><a href="{{ url_for('agentsheet.sheet', **dict(query_args, sort=key, dir=next_dir)) }}">{{ label }}
+  <span class="sort-arrow" aria-hidden="true">{{ ('▲' if sort_dir == 'asc' else '▼') if on else '↕' }}</span></a></th>
+{%- endmacro %}
+{% block content %}
+<div class="page-head">
+  <div class="house-title">
+    <h1>Assign agents</h1>
+    <span class="list-links">
+      <a class="button small" href="{{ url_for('canvass.agents') }}">Agents &amp; houses</a>
+      {% if war_tier in ('owner', 'room') %}<a class="button small" href="{{ url_for('warroom.home') }}">War Room</a>{% endif %}
+    </span>
+  </div>
+  <p class="muted">Pick an agent on a row and it saves straight away. <em>House agent</em> gives the voter back to whoever has their
+    house. Tick rows (or take everyone in the list) to hand many at once. War Room field runners work exactly these voters.</p>
+</div>
+
+<details class="filter-panel card" {{ 'open' if request.args }}>
+  <summary>{{ icon('filter') }} Filters</summary>
+  {% set box_list_options = boxes %}{% set with_pledge_filter = True %}
+  {% include "pledges/_filters.html" %}
+</details>
+
+<section class="pledge-totals agent-totals" aria-label="Voters per agent">
+  <a class="pledge-total dist-none {{ 'on' if f.ag == 'none' }}" href="{{ url_for('agentsheet.sheet', **dict(query_args, ag=(None if f.ag == 'none' else 'none'))) }}">
+    <span class="pt-name">No agent</span><strong>{{ counts.get(None, 0) }}</strong><span class="muted small-text">voters</span></a>
+  {% for a in agents if counts.get(a.id) or f.ag == a.id|string %}
+  <a class="pledge-total agent-total {{ 'on' if f.ag == a.id|string }}" href="{{ url_for('agentsheet.sheet', **dict(query_args, ag=(None if f.ag == a.id|string else a.id))) }}">
+    <span class="pt-name">{{ a.username }}</span><strong>{{ counts.get(a.id, 0) }}</strong>
+    <span class="muted small-text">{{ {'t1': 'box agent', 't2': 'field runner', 't3': 'caller', 'room': 'War Room'}.get(a.war_tier, 'agent' if a.role == 'agent' else a.role) }}</span></a>
+  {% endfor %}
+</section>
+
+<form method="post" action="{{ url_for('agentsheet.assign_many', **query_args) }}" id="assign-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <div class="card assign-bar">
+    <label>Give to
+      <select name="agent"><option value="">House agent (undo one-by-one)</option>
+        {% for a in agents %}<option value="{{ a.id }}">{{ a.username }}</option>{% endfor %}</select></label>
+    <button class="primary" name="scope" value="ticked">Ticked voters</button>
+    <button name="scope" value="all" data-confirm="Give all {{ total }} voters in this list to this agent?" {{ 'disabled' if total > max_bulk }}>All {{ total }} in this list</button>
+    <span class="muted small-text"><strong data-ticked>0</strong> ticked</span>
+  </div>
+</form>
+
+<div class="resultbar"><p><strong>{{ total }}</strong> voter{{ 's' if total != 1 }}</p></div>
+<div class="pledge-wrap">
+<table class="pledge-table agent-table">
+  <thead><tr>
+    <th class="num"><input type="checkbox" data-tick-all aria-label="Tick every voter on this page"></th>
+    {{ sort_th('name', 'Name', 'sticky') }}{{ sort_th('id', 'ID') }}{{ sort_th('house', 'House') }}{{ sort_th('box', 'Box') }}<th>Phone</th>
+    <th>House agent</th><th class="agent-col">Agent</th>
+  </tr></thead>
+  <tbody>
+  {% for v in rows %}{% set who = v.one_by_one or v.house_agent %}
+  <tr>
+    <td class="num"><input type="checkbox" name="ids" value="{{ v.national_id }}" form="assign-form" aria-label="Tick {{ v.full_name }}"></td>
+    <td class="sticky"><a class="pl-name" href="{{ url_for('voters.detail', national_id=v.national_id, back=request.full_path.rstrip('?')) }}">{{ avatar(v, 'xs') }}<span>{{ v.full_name or '(no name)' }}</span></a></td>
+    <td class="mono">{{ v.national_id }}</td><td class="trunc" title="{{ v.house_name }}">{{ v.house_name }}</td>
+    <td class="small-text trunc" title="{{ v.location }}">{{ v.location }}</td><td class="mono">{{ v.phone }}</td>
+    <td class="small-text muted">{{ names.get(v.house_agent, '—') }}</td>
+    <td class="agent-col">
+      <form method="post" action="{{ url_for('agentsheet.set_one') }}" data-agent-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+        <select name="agent" class="{{ 'set' if v.one_by_one else '' }}" aria-label="Agent for {{ v.full_name }}">
+          <option value="">{{ 'House agent: ' ~ names[v.house_agent] if v.house_agent in names else 'No agent' }}</option>
+          {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if v.one_by_one == a.id }}>{{ a.username }}</option>{% endfor %}
+        </select>
+        <noscript><button class="small">Save</button></noscript>
+      </form>
+    </td>
+  </tr>
+  {% else %}
+  <tr><td colspan="8" class="muted">No voters here.</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{{ pager('agentsheet.sheet', page, pages, query_args) }}
+<form class="page-size" method="get">
+  {% for k, val in query_args.items() if k != 'n' %}<input type="hidden" name="{{ k }}" value="{{ val }}">{% endfor %}
+  <label>Voters per page
+    <select name="n" data-autosubmit>{% for s in sizes %}<option value="{{ s }}" {{ 'selected' if s == size }}>{{ s }}</option>{% endfor %}</select>
+  </label>
+</form>
+{% endblock %}
