@@ -57,7 +57,7 @@
       {% if can_view_cf %}
       <a href="{{ url_for('confirmed.overview') }}" {{ 'aria-current=page' if ep == 'confirmed.overview' }}>Confirmed</a>
       {% endif %}
-      {% if war_tier in ('owner', 'room') %}
+      {% if war_tier in ('owner', 'room') or is_admin %}
       <a class="war-tab" href="{{ url_for('warroom.home') }}" {{ 'aria-current=page' if ep.startswith('warroom.') }}>War Room</a>
       {% endif %}
       {% endif %}
@@ -71,7 +71,7 @@
         <p><strong>{{ current_user.username }}</strong><br><span class="muted">{{ {'t1': 'Election day · box agent', 't2': 'Election day · field runner', 't3': 'Election day · call centre'}[war_tier] if war_field else 'Pledge sheet' if pledge_only else {'admin': 'Admin', 'agent': 'Agent (canvasser)', 'user': 'Read-only user'}[role] }}</span></p>
         {% if not pledge_only and not war_field %}
         {% if war_tier in ('owner', 'room') %}<a href="{{ url_for('warroom.home') }}">War Room</a>{% endif %}
-        {% if is_owner %}<a href="{{ url_for('warroom.team') }}">War Room team</a>{% endif %}
+        {% if is_admin %}<a href="{{ url_for('warroom.team') }}">War Room team</a>{% endif %}
         {% if is_admin %}
         <a href="{{ url_for('voters.create') }}">Add a voter</a>
         <a href="{{ url_for('agentsheet.sheet') }}">Assign agents to voters</a>

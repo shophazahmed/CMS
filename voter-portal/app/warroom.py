@@ -248,9 +248,15 @@ def home():
     if t == "t3":
         return redirect(url_for("warroom.calls"))
     if t not in ("owner", "room"):
+        if g.user["role"] == "admin":
+            return redirect(url_for("warroom.team"))
         abort(403)
+    ag = agent_filter()[2]
+    agents = get_db().execute("SELECT id, username FROM users WHERE role IN ('agent', 'user', 'admin') AND deleted_at IS NULL"
+                              " ORDER BY username COLLATE NOCASE").fetchall()
     return render_template("warroom/dashboard.html", s=stats(), tiers=TIERS, is_open=is_open(), cursor=_cursor(),
-                           outcomes=OUTCOMES, priority=PRIORITY)
+                           outcomes=OUTCOMES, priority=PRIORITY, ag=ag, agents=agents,
+                           ag_name=next((a["username"] for a in agents if str(a["id"]) == ag), "No agent" if ag == "none" else ""))
 
 
 def _closed():
@@ -463,11 +469,28 @@ def field():
 
 # --- the dashboard ----------------------------------------------------------------------------------
 
+def agent_filter():
+    """?ag=<user id> or none: limit the dashboard to one agent's voters (SQL on voters, params, value)."""
+    from .voters import NO_AGENT, handled_by
+
+    ag = request.args.get("ag", "")
+    if ag == "none":
+        return NO_AGENT, [], ag
+    if ag.isdigit():
+        return handled_by(), [int(ag), int(ag)], ag
+    return None, [], ""
+
+
 def stats():
     db = get_db()
     now = datetime.now(timezone.utc)
     clause, extra = campaign.party_scope()
     scope = f" AND {clause}" if clause else ""
+    acond, aparams, _ = agent_filter()
+    if acond:
+        scope += f" AND {acond}"
+        extra = list(extra) + aparams
+    mine = f" AND national_id IN (SELECT national_id FROM voters WHERE deceased = 0{scope})"
     total = db.execute(f"SELECT COUNT(*) FROM voters WHERE deceased = 0{scope}", extra).fetchone()[0]
     voted = db.execute(f"SELECT COUNT(*) FROM war_voted WHERE national_id IN (SELECT national_id FROM voters"
                        f" WHERE deceased = 0{scope})", extra).fetchone()[0]
@@ -476,14 +499,16 @@ def stats():
     by_box = {}
     if sql:
         for r in db.execute(f"SELECT s.priority, v.location, s.national_id IN (SELECT national_id FROM war_voted) AS done"
-                            f" FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id", sp):
+                            f" FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id"
+                            f" WHERE 1{mine.replace('national_id IN', 's.national_id IN', 1)}", sp + list(extra)):
             groups[r[0]]["total"] += 1
             groups[r[0]]["voted"] += r[2]
             b = by_box.setdefault(r[1] or "", {"sup": 0, "sup_voted": 0})
             b["sup"] += 1
             b["sup_voted"] += r[2]
     box_last = dict(db.execute("SELECT v.location, MAX(w.at) FROM war_voted w JOIN voters v ON v.national_id = w.national_id"
-                               " GROUP BY v.location").fetchall())
+                               f" WHERE 1{mine.replace('national_id IN', 'w.national_id IN', 1)} GROUP BY v.location",
+                               extra).fetchall())
     boxes = []
     for r in db.execute(f"SELECT location, COUNT(*), SUM(national_id IN (SELECT national_id FROM war_voted))"
                         f" FROM voters WHERE deceased = 0{scope} GROUP BY location ORDER BY COUNT(*) DESC", extra):
@@ -493,7 +518,7 @@ def stats():
     sup_voted = sum(x["voted"] for x in groups.values())
     # hourly turnout, Maldives time
     hours = {}
-    for (at,) in db.execute("SELECT at FROM war_voted"):
+    for (at,) in db.execute(f"SELECT at FROM war_voted WHERE 1{mine}", extra):
         try:
             t = (datetime.fromisoformat(at) + LOCAL).replace(minute=0, second=0, microsecond=0)
         except ValueError:
@@ -517,8 +542,8 @@ def stats():
                        "marks": marks[0], "calls": calls_made[0], "pending": assigned, "last": _hm(last) if last else "",
                        "stale": stale, "hot": hits >= LOOKUP_LIMIT * 0.8})
     outcomes = dict(db.execute("SELECT outcome, COUNT(*) FROM war_calls WHERE outcome != '' AND national_id NOT IN"
-                               " (SELECT national_id FROM war_voted) GROUP BY outcome").fetchall())
-    called = db.execute("SELECT COUNT(*) FROM war_calls").fetchone()[0]
+                               f" (SELECT national_id FROM war_voted){mine} GROUP BY outcome", extra).fetchall())
+    called = db.execute(f"SELECT COUNT(*) FROM war_calls WHERE 1{mine}", extra).fetchone()[0]
     alerts = []
     turnout = voted / total if total else 0
     for b in boxes:
@@ -531,7 +556,7 @@ def stats():
         if a["hot"]:
             alerts.append(f"{a['username']}: very many lookups in 5 minutes. Check the phone.")
     # transport
-    tr = transport_counts()
+    tr = transport_counts(mine, extra)
     if tr["late"]:
         alerts.append(f"{tr['late']} transport request{'s' if tr['late'] != 1 else ''} waiting more than"
                       f" {TRANSPORT_LATE} minutes (oldest {tr['oldest']} min). Send a runner.")
@@ -581,9 +606,13 @@ def _flat(s):
 @bp.route("/war/team", methods=["GET", "POST"])
 @login_required
 def team():
-    if not is_owner():
+    """Who does what on the day. Admins can see it; only the owner changes it."""
+    if not is_owner() and g.user["role"] != "admin":
         abort(403)
     db = get_db()
+    if request.method == "POST" and not is_owner():
+        audit.log("access_denied", target=request.path)
+        abort(403)
     if request.method == "POST":
         action = request.form.get("action", "")
         if action == "set":
@@ -639,7 +668,8 @@ def team():
     numbered = db.execute("SELECT COUNT(*) FROM war_list").fetchone()[0]
     return render_template("warroom/team.html", users=users, tiers=TIERS, boxes=boxes, loads=loads, is_open=is_open(),
                            close=campaign.get_setting("war_close") or "16:00", numbered=numbered,
-                           ours=pledges.our_candidate(), owner_id=g.user["id"])
+                           ours=pledges.our_candidate(), owner_id=next((u["id"] for u in users if is_owner(u)), None),
+                           can_edit=is_owner(), can_watch=can_watch())
 
 
 def allocate():
@@ -731,12 +761,12 @@ def _transport_rev():
     return f"{row[0]}-{row[1]}-{voted}"
 
 
-def transport_counts():
+def transport_counts(mine="", extra=()):
     db = get_db()
     now = datetime.now(timezone.utc)
     out = {"waiting": 0, "onway": 0, "done": 0, "late": 0, "oldest": 0}
     for st, at, voted in db.execute("SELECT status, requested_at, national_id IN (SELECT national_id FROM war_voted)"
-                                    " FROM war_transport WHERE status != 'cancelled'"):
+                                    f" FROM war_transport WHERE status != 'cancelled'{mine}", list(extra)):
         if st == "done" or voted:
             out["done"] += 1
             continue

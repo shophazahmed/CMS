@@ -125,10 +125,15 @@ def test_only_the_owner_sets_it_up(app):
     o, token, ids = setup(app)
     b = app.test_client()
     login(b, "boss", ADMIN_PW)
-    assert b.get("/war").status_code == 403 and b.get("/war/team").status_code == 403
+    assert b.get("/war").headers["Location"].endswith("/war/team")          # an admin without a tier: the team page
+    team = b.get("/war/team").get_data(as_text=True)
+    assert "War Room team" in team and "Only the owner can change it" in team and 'value="open"' not in team
     uid = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'boss'").fetchone()[0]
+    assert b.post("/war/team", data={"csrf_token": csrf(b, "/war/team"), "action": "set", "user_id": uid,
+                                     "tier": "room"}).status_code == 403    # can't change it
+    assert b.get("/war/sheets").status_code == 403
     o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": uid, "tier": "room"})
-    assert b.get("/war").status_code == 200 and b.get("/war/team").status_code == 403
+    assert b.get("/war").status_code == 200
     assert "War Room" in b.get("/").get_data(as_text=True)       # admins keep the whole portal
 
 
@@ -178,3 +183,20 @@ def test_sheets(app):
     b = app.test_client()
     login(b, "boss", ADMIN_PW)
     assert b.get("/war/sheets.xlsx").status_code == 403
+
+
+
+def test_dashboard_agent_filter(app):
+    o, token, ids = setup(app)
+    conn = connect(app.config["DATABASE"])
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    conn.execute("INSERT INTO voter_assignments (national_id, user_id, assigned_at) VALUES ('A200001', ?, '2026-01-01')", (viewer,))
+    conn.execute("INSERT INTO war_voted (national_id, at, by_user, tier) VALUES ('A200002', '2026-01-01T08:00:00+00:00', 1, 'owner')")
+    conn.commit()
+    whole = " ".join(o.get("/war").get_data(as_text=True).split())
+    assert 'data-k="voted">1<' in whole and 'name="ag"' in whole
+    mine = " ".join(o.get(f"/war?ag={viewer}").get_data(as_text=True).split())
+    assert "War Room · viewer" in mine and 'data-k="voted">0<' in mine and "</span> of 1 voted" in mine
+    assert 'data-k="sup_pending">1<' in mine                              # A200001, the only supporter of theirs
+    assert o.get(f"/war/changes?since=0&stats=1&ag={viewer}").json["stats"]["voted"] == 0
+    assert o.get("/war?ag=none").status_code == 200

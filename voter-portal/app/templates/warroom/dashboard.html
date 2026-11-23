@@ -9,10 +9,10 @@
 </svg>
 {%- endmacro %}
 {% block content %}
-<div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes', stats=1) }}" data-mode="stats">
+<div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes', stats=1, ag=ag or None) }}" data-mode="stats">
 <div class="page-head war-head">
   <div>
-    <h1>War Room</h1>
+    <h1>War Room{% if ag_name %} · {{ ag_name }}{% endif %}</h1>
     <p class="muted">Election day, live. <span data-k="now">{{ s.now }}</span> · polls close {{ s.close }}
       {% if s.left %}· <strong class="war-left">closes in <span data-k="left">{{ s.left }}</span></strong>{% endif %}
       {% if not is_open %}· <strong class="war-closed-tag">closed: field agents can't work yet</strong>{% endif %}</p>
@@ -24,8 +24,20 @@
   <a class="button small" href="{{ url_for('warroom.calls') }}">Call lists</a>
   <a class="button small" href="{{ url_for('warroom.field') }}">Field runners</a>
   <a class="button small" href="{{ url_for('warroom.transport') }}">Transport</a>
-  {% if is_owner %}<a class="button small primary" href="{{ url_for('warroom.team') }}">Team &amp; setup</a>{% endif %}
+  {% if is_admin %}<a class="button small primary" href="{{ url_for('warroom.team') }}">War Room team</a>{% endif %}
 </p>
+<form class="war-agent-filter" method="get">
+  <label>Agent
+    <select name="ag" data-autosubmit>
+      <option value="">Everyone</option>
+      <option value="none" {{ 'selected' if ag == 'none' }}>No agent</option>
+      {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if ag == a.id|string }}>{{ a.username }}</option>{% endfor %}
+    </select>
+  </label>
+  {% if ag %}<a class="small-text" href="{{ url_for('warroom.home') }}">Show everyone</a>{% endif %}
+  <noscript><button class="small">Show</button></noscript>
+</form>
+{% if ag %}<p class="muted small-text">Only voters this agent is responsible for (one by one, or in their houses). The Agents table still lists everyone.</p>{% endif %}
 {% if not s.ours %}<p class="flash flash-error">Choose our candidate (Pledges → Candidates &amp; import) so the War Room knows who our supporters are.</p>{% endif %}
 
 <section class="kpis war-kpis">
