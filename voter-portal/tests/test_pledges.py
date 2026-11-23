@@ -421,3 +421,24 @@ def test_solid_base_and_shared_supporters_lists(app):
     assert "Only Shoppe" in only and "Shoppe &amp; Rayya" in only or "Rayya &amp; Shoppe" in only   # the filter
     assert "Yes pledges among 1 voter" in a.get(f"/pledges/distribution?pp=only:{ids['Shoppe']}").get_data(as_text=True)
     assert "Aminath Alpha" in a.get("/pledges?pp=bogus").get_data(as_text=True)    # ignored
+
+
+def test_agent_filter_on_the_pledge_sheet(app):
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    token, ids = setup(a)
+    conn = connect(app.config["DATABASE"])
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    house = conn.execute("SELECT house_name FROM voters WHERE national_id = 'A200002'").fetchone()[0]
+    conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES (?, ?, '2026-01-01')", (house, viewer))
+    conn.commit()
+    page = a.get("/pledges").get_data(as_text=True)
+    assert 'name="ag"' in page and "/agents/sheet" in page              # the filter and the moved button
+    only = a.get(f"/pledges?ag={viewer}").get_data(as_text=True)
+    assert "Moosa Beta" in only and "Aminath Alpha</span>" not in only
+    none = a.get("/pledges?ag=none").get_data(as_text=True)
+    assert "Aminath Alpha" in none and "Moosa Beta</span>" not in none
+    rows = a.get(f"/pledges/export.csv?ag={viewer}").get_data(as_text=True).strip().splitlines()
+    assert len(rows) == 2                                                  # the export follows it
+    assert "Yes pledges among 1 voter" in a.get(f"/pledges/distribution?ag={viewer}").get_data(as_text=True)

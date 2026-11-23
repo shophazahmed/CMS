@@ -19,6 +19,7 @@
       <a class="button small" href="{{ url_for('pledges.distribution', **query_args) }}">{{ icon('chart', 16) }} Distribution</a>
       {% if show_super %}<a class="button small" href="{{ url_for('superpledge.sheet') }}">★ Super pledge</a>
       <a class="button small" href="{{ url_for('superpledge.scenarios') }}">Scenarios</a>{% endif %}
+      {% if is_admin and not pledge_only %}<a class="button small" href="{{ url_for('agentsheet.sheet') }}">{{ icon('users', 16) }} Assign agents to voters</a>{% endif %}
       {% if owner %}<a class="button small" href="{{ url_for('pledges.manage') }}">Candidates &amp; import</a>{% endif %}
     </span>
   </div>

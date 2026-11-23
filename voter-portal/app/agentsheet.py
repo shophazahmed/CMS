@@ -24,18 +24,8 @@ def _agents():
 
 
 def _where():
-    """The pledge sheet filters (search, box, house, sex, age, pledges, pledge pattern...) plus ?ag=."""
-    from .voters import handled_by
-
-    f, where, params, cands, pc, pv = pledges._filters()
-    ag = request.args.get("ag", "")
-    if ag == "none" or ag.isdigit():
-        cond = ("(national_id NOT IN (SELECT national_id FROM voter_assignments) AND house_name NOT IN"
-                " (SELECT house_name FROM house_assignments))") if ag == "none" else handled_by()
-        where = f"{where} AND {cond}" if where else f" WHERE {cond}"
-        params = list(params) + ([] if ag == "none" else [int(ag), int(ag)])
-    f["ag"] = ag if ag == "none" or ag.isdigit() else ""
-    return f, where, params, cands, pc, pv
+    """The pledge sheet filters (search, box, house, sex, age, pledges, pledge pattern, agent...)."""
+    return pledges._filters()
 
 
 @bp.route("/agents/sheet")

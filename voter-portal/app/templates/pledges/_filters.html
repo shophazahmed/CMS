@@ -1,5 +1,5 @@
 <form class="card filters pledge-filters" method="get">
-  {% for k in ('sort', 'dir', 'bs', 'bd', 'pb', 'sc', 'n', 'ag') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args[k] }}">{% endif %}{% endfor %}
+  {% for k in ('sort', 'dir', 'bs', 'bd', 'pb', 'sc', 'n') %}{% if request.args.get(k) %}<input type="hidden" name="{{ k }}" value="{{ request.args[k] }}">{% endif %}{% endfor %}
   <label>Search
     <input type="search" name="q" value="{{ f.q }}" placeholder="Name, ID, house, phone">
   </label>
@@ -59,6 +59,16 @@
         <option value="both:{{ a.id }}-{{ b.id }}" {{ 'selected' if f.pp == 'both:' ~ a.id ~ '-' ~ b.id }}>{{ a.name }} &amp; {{ b.name }}</option>
         {% endfor %}{% endfor %}
       </optgroup>
+    </select>
+  </label>
+  {% endif %}
+  {% set ag_list = agent_options() %}
+  {% if ag_list %}
+  <label>Agent
+    <select name="ag">
+      <option value="">Any agent</option>
+      <option value="none" {{ 'selected' if f.ag == 'none' }}>No agent</option>
+      {% for a in ag_list %}<option value="{{ a.id }}" {{ 'selected' if f.ag == a.id|string }}>{{ a.username }}</option>{% endfor %}
     </select>
   </label>
   {% endif %}

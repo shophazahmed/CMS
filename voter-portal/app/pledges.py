@@ -92,6 +92,16 @@ def candidates(active_only=True):
     return get_db().execute(f"SELECT * FROM candidates{cond} ORDER BY position, name COLLATE NOCASE").fetchall()
 
 
+def agent_options():
+    """Agents for the Agent filter (none for pledge-only accounts)."""
+    from .auth import is_pledge_only
+
+    if is_pledge_only():
+        return []
+    return get_db().execute("SELECT id, username FROM users WHERE role IN ('agent', 'user', 'admin') AND deleted_at IS NULL"
+                            " ORDER BY username COLLATE NOCASE").fetchall()
+
+
 def pattern_condition(pp, cands):
     """SQL for ?pp=only:<id> (Yes for that candidate and nobody else) or both:<a>-<b> (Yes for both, as on the
     distribution's shared supporters); (None, []) when it doesn't apply."""
@@ -198,6 +208,17 @@ def _filters():
         where = f"{where} AND {cond}" if where else f" WHERE {cond}"
         params = list(params) + extra
         f["pp"] = pp
+    # ?ag=<user id> / none: the responsible agent (one by one, else the house's agent). Not for pledge-only accounts.
+    from .auth import is_pledge_only
+    from .voters import handled_by
+
+    ag, f["ag"] = request.args.get("ag", ""), ""
+    if (ag == "none" or ag.isdigit()) and not is_pledge_only():
+        cond = ("(national_id NOT IN (SELECT national_id FROM voter_assignments) AND house_name NOT IN"
+                " (SELECT house_name FROM house_assignments))") if ag == "none" else handled_by()
+        where = f"{where} AND {cond}" if where else f" WHERE {cond}"
+        params = list(params) + ([] if ag == "none" else [int(ag), int(ag)])
+        f["ag"] = ag
     pb = request.args.get("pb", "")
     f["pb"], f["pb_name"] = "", ""
     if pb.isdigit() and g.user["role"] == "admin":
