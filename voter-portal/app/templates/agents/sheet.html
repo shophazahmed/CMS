@@ -49,7 +49,11 @@
   </div>
 </form>
 
-<div class="resultbar"><p><strong>{{ total }}</strong> voter{{ 's' if total != 1 }}</p></div>
+<div class="resultbar"><p><strong>{{ total }}</strong> voter{{ 's' if total != 1 }}</p>
+  {% if total %}<div class="export">
+    <a class="button small" href="{{ url_for('agentsheet.export', fmt='csv', **query_args) }}">{{ icon('download', 16) }} CSV</a>
+    <a class="button small" href="{{ url_for('agentsheet.export', fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
+  </div>{% endif %}</div>
 <div class="pledge-wrap">
 <table class="pledge-table agent-table">
   <thead><tr>

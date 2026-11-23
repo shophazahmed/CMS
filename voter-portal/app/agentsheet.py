@@ -4,9 +4,13 @@ Pick an agent in a row's drop-down and it saves straight away (the voter is hand
 one; "House agent" gives them back to whoever has their house). Tick rows, or take everyone matching the
 filters, to hand many at once. The War Room's tier 2 runners work exactly these voters.
 """
-from flask import Blueprint, flash, jsonify, redirect, render_template, request, url_for
+import csv
+import io
+from datetime import datetime
 
-from . import pledges
+from flask import Blueprint, Response, abort, flash, jsonify, redirect, render_template, request, url_for
+
+from . import audit, pledges
 from .auth import admin_required
 from .db import get_db
 
@@ -111,3 +115,55 @@ def assign_many():
         flash(f"{n} voter{'s' if n != 1 else ''} now with {name or 'their house agent'}." if n else "Nothing changed.",
               "success" if n else "info")
     return redirect(url_for("agentsheet.sheet", **request.args))
+
+
+@bp.route("/agents/sheet/export.<fmt>")
+@admin_required
+def export(fmt):
+    """The sheet as CSV or Excel: same filters and order, with each voter's agents."""
+    from .voters import _safe_cell
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    f, where, params, *_ = _where()
+    order = pledges.sheet_order()[2]
+    db = get_db()
+    rows = db.execute(
+        "SELECT * FROM (SELECT v.*, va.user_id AS one_by_one, ha.user_id AS house_agent FROM voters v"
+        " LEFT JOIN voter_assignments va ON va.national_id = v.national_id"
+        " LEFT JOIN house_assignments ha ON ha.house_name = v.house_name"
+        f" WHERE v.national_id IN (SELECT national_id FROM voters{where})) ORDER BY {order}", params).fetchall()
+    names = {a["id"]: a["username"] for a in _agents()}
+    headers = ["#", "ID", "Full name", "Sex", "Age", "House name", "Phone", "Box", "Agent", "Given by", "House agent"]
+    table = []
+    for n, r in enumerate(rows, 1):
+        who = r["one_by_one"] or r["house_agent"]
+        table.append([n, r["national_id"], _safe_cell(r["full_name"]), r["sex"], r["age"], _safe_cell(r["house_name"]),
+                      r["phone"], _safe_cell(r["location"]), names.get(who, ""),
+                      ("One by one" if r["one_by_one"] else "House") if who else "", names.get(r["house_agent"], "")])
+    audit.log("agents_sheet_export", target=fmt, detail={"rows": len(table), "agent": f.get("ag", "")})
+    name = f"agents-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(headers)
+        writer.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Agents"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in table:
+        ws.append(row)
+    ws.freeze_panes = "C2"
+    ws.auto_filter.ref = ws.dimensions
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")

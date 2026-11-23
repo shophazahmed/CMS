@@ -39,3 +39,27 @@ def test_assign_agents_sheet(app):
     v = app.test_client()
     login(v, "viewer", USER_PW)
     assert v.get("/agents/sheet").status_code in (302, 403)
+
+
+def test_assign_agents_export(app):
+    import csv
+    import io
+
+    from openpyxl import load_workbook
+
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    conn = connect(app.config["DATABASE"])
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    token = csrf(b, "/agents/sheet")
+    b.post("/agents/sheet/set", data={"csrf_token": token, "national_id": "A200002", "agent": viewer},
+           headers={"X-Requested-With": "fetch"})
+    assert "/agents/sheet/export.xlsx" in b.get("/agents/sheet").get_data(as_text=True)
+    rows = list(csv.reader(io.StringIO(b.get(f"/agents/sheet/export.csv?ag={viewer}").get_data(as_text=True).lstrip("﻿"))))
+    assert rows[0][8:] == ["Agent", "Given by", "House agent"]
+    assert len(rows) == 2 and rows[1][1] == "A200002" and rows[1][8:10] == ["viewer", "One by one"]
+    wb = load_workbook(io.BytesIO(b.get("/agents/sheet/export.xlsx").data))
+    assert wb.active.max_row == 4
+    v = app.test_client()
+    login(v, "viewer", USER_PW)
+    assert v.get("/agents/sheet/export.csv").status_code in (302, 403)
