@@ -252,3 +252,30 @@ def test_agent_links_and_contact_statuses(app):
     b.post("/war/team", data={"csrf_token": btok, "action": "unlink", "user_id": ali})
     assert a.get("/war/field").status_code == 302
     assert a.get(f"/w/{token_}").status_code == 410
+
+
+def test_supporters_export(app):
+    import csv as _csv
+
+    from openpyxl import load_workbook
+
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    t2, runner = make(app, o, token, "runner", "t2")
+    conn = connect(app.config["DATABASE"])
+    house = conn.execute("SELECT house_name FROM voters WHERE national_id = 'A200001'").fetchone()[0]
+    conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES (?, ?, '2026-01-01')", (house, runner))
+    conn.commit()
+    t2.post("/war/contact", data={"csrf_token": csrf(t2, "/war/field"), "national_id": "A200001", "status": "coming"})
+    page = o.get(f"/war/field?u={runner}").get_data(as_text=True)
+    assert "/war/field/export.xlsx" in page
+    assert "/war/field/export" not in t2.get("/war/field").get_data(as_text=True)   # not on field phones
+    assert t2.get(f"/war/field/export.csv?u={runner}").status_code in (302, 403)
+    rows = list(_csv.reader(io.StringIO(o.get(f"/war/field/export.csv?u={runner}").get_data(as_text=True).lstrip("﻿"))))
+    assert rows[0][:4] == ["#", "Runner", "ID", "Name"] and len(rows) == 3    # two supporters in that house
+    mine = {r[2]: r for r in rows[1:]}
+    assert mine["A200001"][1] == "runner" and mine["A200001"][9] == "Coming" and mine["A200003"][9] == "Not reached yet"
+    assert mine["A200003"][3].startswith("'")                                    # formulas defused
+    assert len(list(_csv.reader(io.StringIO(o.get(f"/war/field/export.csv?u={runner}&cs=none").get_data(as_text=True))))) == 2
+    wb = load_workbook(io.BytesIO(o.get("/war/field/export.xlsx?u=all").data))
+    assert wb.active.max_row == 3

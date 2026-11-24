@@ -486,27 +486,102 @@ def field():
         who = runners[0]["id"]
     cs = request.args.get("cs", "")
     cs = cs if cs in CONTACT or cs == "none" else ""
-    rows, counts = [], {}
-    if sql:
-        cond, params = _scope_sql("t2", who or 0, "")
-        base = (f"FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id"
-                " LEFT JOIN war_contact k ON k.national_id = v.national_id"
-                " LEFT JOIN war_calls c ON c.national_id = v.national_id"
-                " LEFT JOIN war_transport tr ON tr.national_id = v.national_id AND tr.status IN ('waiting', 'onway')"
-                f" WHERE v.national_id IN (SELECT national_id FROM voters WHERE {cond})"
-                " AND v.national_id NOT IN (SELECT national_id FROM war_voted)")
-        counts = dict(db.execute(f"SELECT COALESCE(k.status, 'none'), COUNT(*) {base} GROUP BY 1", sp + params).fetchall())
-        where = "" if not cs else (" AND k.status IS NULL" if cs == "none" else " AND k.status = ?")
-        rows = db.execute(
-            f"SELECT v.*, s.priority, c.outcome, k.status AS contact, k.at AS contact_at, k.by_user AS contact_by,"
-            f" tr.status AS ride {base}{where}"
-            " ORDER BY CASE COALESCE(k.status, '') WHEN 'transport' THEN 0 WHEN '' THEN 1 WHEN 'later' THEN 2"
-            " WHEN 'noanswer' THEN 3 WHEN 'notcoming' THEN 4 ELSE 5 END, s.priority, v.house_name COLLATE NOCASE, v.full_name",
-            sp + params + ([cs] if cs and cs != "none" else [])).fetchall()
+    rows, counts = runner_rows(who or 0, cs)
     return render_template("warroom/field.html", rows=rows, priority=PRIORITY, outcomes=OUTCOMES, t=t,
                            runners=runners if t != "t2" else [], who=who, cursor=_cursor(), contact=CONTACT,
                            counts=counts, cs=cs, total=sum(counts.values()), transport_labels=TRANSPORT,
                            trev=_transport_rev(), hm=_hm)
+
+
+def runner_rows(who, cs=""):
+    """A runner's supporters who haven't voted (who='all': every runner's), and the counts per contact status."""
+    from .voters import handled_by
+
+    db = get_db()
+    sql, sp = supporters_sql()
+    if not sql:
+        return [], {}
+    if who == "all":
+        runners = [r[0] for r in db.execute("SELECT id FROM users WHERE war_tier = 't2' AND deleted_at IS NULL")]
+        if not runners:
+            return [], {}
+        cond = " OR ".join([handled_by()] * len(runners))
+        params = [x for r in runners for x in (r, r)]
+    else:
+        cond, params = _scope_sql("t2", who, "")
+    base = (f"FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id"
+            " LEFT JOIN war_contact k ON k.national_id = v.national_id"
+            " LEFT JOIN war_calls c ON c.national_id = v.national_id"
+            " LEFT JOIN war_transport tr ON tr.national_id = v.national_id AND tr.status IN ('waiting', 'onway')"
+            " LEFT JOIN voter_assignments va ON va.national_id = v.national_id"
+            " LEFT JOIN house_assignments ha ON ha.house_name = v.house_name"
+            " LEFT JOIN users ru ON ru.id = COALESCE(va.user_id, ha.user_id)"
+            f" WHERE v.national_id IN (SELECT national_id FROM voters WHERE {cond})"
+            " AND v.national_id NOT IN (SELECT national_id FROM war_voted)")
+    counts = dict(db.execute(f"SELECT COALESCE(k.status, 'none'), COUNT(*) {base} GROUP BY 1", sp + params).fetchall())
+    where = "" if not cs else (" AND k.status IS NULL" if cs == "none" else " AND k.status = ?")
+    rows = db.execute(
+        f"SELECT v.*, s.priority, c.outcome, k.status AS contact, k.at AS contact_at, k.by_user AS contact_by,"
+        f" tr.status AS ride, ru.username AS runner {base}{where}"
+        " ORDER BY CASE COALESCE(k.status, '') WHEN 'transport' THEN 0 WHEN '' THEN 1 WHEN 'later' THEN 2"
+        " WHEN 'noanswer' THEN 3 WHEN 'notcoming' THEN 4 ELSE 5 END, s.priority, v.house_name COLLATE NOCASE, v.full_name",
+        sp + params + ([cs] if cs and cs != "none" else [])).fetchall()
+    return rows, counts
+
+
+@bp.route("/war/field/export.<fmt>")
+@login_required
+def field_export(fmt):
+    """A runner's list (or every runner's) as CSV / Excel, with what each voter said. War Room only: field
+    phones never download lists."""
+    from flask import Response
+
+    from .voters import _safe_cell
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    if tier() not in ("owner", "room"):
+        audit.log("access_denied", target=request.path)
+        abort(403)
+    who = request.args.get("u", "")
+    who = "all" if who == "all" else (int(who) if who.isdigit() else 0)
+    cs = request.args.get("cs", "")
+    cs = cs if cs in CONTACT or cs == "none" else ""
+    rows, _ = runner_rows(who, cs)
+    headers = ["#", "Runner", "ID", "Name", "House", "Box", "Phone", "Age", "Group", "Said", "When", "Transport",
+               "Call centre"]
+    table = [[n, r["runner"] or "", r["national_id"], _safe_cell(r["full_name"]), _safe_cell(r["house_name"]),
+              _safe_cell(r["location"]), r["phone"], r["age"], PRIORITY.get(r["priority"], ""),
+              CONTACT.get(r["contact"], "Not reached yet"), _local_day(r["contact_at"]) if r["contact_at"] else "",
+              TRANSPORT.get(r["ride"], ""), OUTCOMES.get(r["outcome"], "")] for n, r in enumerate(rows, 1)]
+    audit.log("war_field_export", target=fmt, detail={"runner": who, "status": cs, "rows": len(table)})
+    name = f"supporters-{'all' if who == 'all' else who}-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "csv":
+        import csv
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(headers)
+        writer.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Supporters"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in table:
+        ws.append(row)
+    ws.freeze_panes = "D2"
+    ws.auto_filter.ref = ws.dimensions
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 # --- the dashboard ----------------------------------------------------------------------------------
