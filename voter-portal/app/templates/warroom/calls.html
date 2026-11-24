@@ -16,6 +16,14 @@
 <form class="war-boxpick" method="get"><label>Caller
   <select name="u" data-autosubmit>{% for c in callers %}<option value="{{ c.id }}" {{ 'selected' if c.id == who }}>{{ c.username }}</option>{% endfor %}</select></label></form>
 {% endif %}
+<div class="resultbar war-export">
+  <p class="muted small-text">{{ 'Download your call list (keep it private):' if t == 't3' else 'Download:' }}</p>
+  <div class="export">
+    <a class="button small" href="{{ url_for('warroom.calls_export', fmt='xlsx', u=who if t != 't3' else None) }}">{{ icon('download', 16) }} Excel</a>
+    <a class="button small" href="{{ url_for('warroom.calls_export', fmt='csv', u=who if t != 't3' else None) }}">{{ icon('download', 16) }} CSV</a>
+    {% if t != 't3' %}<a class="button small" href="{{ url_for('warroom.calls_export', fmt='xlsx', u='all') }}">{{ icon('download', 16) }} All callers (Excel)</a>{% endif %}
+  </div>
+</div>
 {% if rows %}
 <ul class="war-list">
   {% for v in rows %}

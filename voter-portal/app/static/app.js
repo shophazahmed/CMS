@@ -747,3 +747,21 @@ document.addEventListener("submit", async (event) => {
   }
 });
 document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select-all]")) e.target.select(); });
+
+// Left menu: a drawer on phones and tablets (Menu button), always open on big screens.
+(() => {
+  const body = document.body;
+  const openers = document.querySelectorAll("[data-nav-open]");
+  if (!openers.length) return;
+  const set = (open) => {
+    body.classList.toggle("nav-open", open);
+    openers.forEach((b) => b.setAttribute("aria-expanded", open ? "true" : "false"));
+    if (open) { const first = document.querySelector(".sidebar .side-link"); if (first) first.focus({ preventScroll: true }); }
+  };
+  openers.forEach((b) => b.addEventListener("click", () => set(!body.classList.contains("nav-open"))));
+  document.querySelectorAll("[data-nav-close]").forEach((b) => b.addEventListener("click", () => set(false)));
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && body.classList.contains("nav-open")) set(false); });
+  // keep the current page in view in a long menu
+  const here = document.querySelector(".side-link[aria-current]");
+  if (here) here.scrollIntoView({ block: "nearest" });
+})();

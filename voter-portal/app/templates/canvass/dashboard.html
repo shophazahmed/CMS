@@ -3,15 +3,27 @@
 {% block title %}Dashboard{% endblock %}
 {% block head %}{% if can_view_pledges %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endif %}{% endblock %}
 {% block content %}
+<div class="dash-hello">
+  <div>
+    <p class="muted small-text dash-kicker">GM CAMPAIGN</p>
+    <h1>Welcome, {{ current_user.username }}</h1>
+  </div>
+  <nav class="dash-quick" aria-label="Quick actions">
+    <a class="button small" href="{{ url_for('voters.search') }}">{{ icon('search', 16) }} Find a voter</a>
+    {% if can_view_pledges %}<a class="button small" href="{{ url_for('pledges.sheet') }}">{{ icon('clipboard', 16) }} Pledge sheet</a>{% endif %}
+    <a class="button small" href="{{ url_for('visits.index') }}">{{ icon('door', 16) }} House visits</a>
+    {% if war_tier in ('owner', 'room') %}<a class="button small primary" href="{{ url_for('warroom.home') }}">{{ icon('flag', 16) }} War Room</a>{% endif %}
+  </nav>
+</div>
 <div class="page-head">
-  <h1>Canvassing dashboard</h1>
+  <h2 class="dash-title">Canvassing</h2>
   <p class="muted">Progress per house{{ ' · box ' ~ ('not recorded' if box == no_box else box) if box }}{{ ' · ' ~ party if party }}{% if agent == 'none' %} · unassigned houses{% endif %}
     {%- if who_name %} · reached by <strong>{{ who_name }}</strong>{% endif %}{% if rng.label %} · <strong>{{ rng.label }}</strong>{% endif %}</p>
 </div>
 
 {% if can_view_cf %}{% set cm = confirmed_metrics() %}
 <a class="card cf-widget" href="{{ url_for('confirmed.overview') }}">
-  <span class="kpi-label">{{ icon('check', 14) }} 100% confirmed · {{ cm.label }} voters · only you see this</span>
+  <span class="kpi-label">{{ icon('check', 14) }} 100% confirmed · {{ cm.label }}{{ '' if (cm.label|lower).endswith('voters') else ' voters' }} · only you see this</span>
   <strong>{{ cm.pct }}%</strong>
   <span class="muted">{{ cm.confirmed }} of {{ cm.total }}{% if cm.this_week %} · +{{ cm.this_week }} this week{% endif %}</span>
   {{ progress({'total': cm.total, 'contacted': cm.confirmed, 'reached': cm.confirmed}, 'lg') }}

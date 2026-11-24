@@ -285,3 +285,20 @@ def test_supporters_export(app):
     assert len(list(_csv.reader(io.StringIO(o.get(f"/war/field/export.csv?u={runner}&cs=none").get_data(as_text=True))))) == 2
     wb = load_workbook(io.BytesIO(o.get("/war/field/export.xlsx?u=all").data))
     assert wb.active.max_row == 3
+
+
+def test_call_list_export(app):
+    import csv as _csv
+
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    t3, caller = make(app, o, token, "caller", "t3")
+    other, _ = make(app, o, token, "caller2", "t3")
+    o.post("/war/team", data={"csrf_token": token, "action": "allocate"})
+    assert "/war/calls/export.xlsx" in t3.get("/war/calls").get_data(as_text=True)
+    mine = list(_csv.reader(io.StringIO(t3.get("/war/calls/export.csv?u=all").get_data(as_text=True).lstrip("﻿"))))
+    assert mine[0][1] == "Caller" and {r[1] for r in mine[1:]} == {"caller"}            # only their own
+    everyone = list(_csv.reader(io.StringIO(o.get("/war/calls/export.csv?u=all").get_data(as_text=True).lstrip("﻿"))))
+    assert len(everyone) == 4 and {r[1] for r in everyone[1:]} == {"caller", "caller2"}
+    t2, _ = make(app, o, token, "runner", "t2")
+    assert t2.get("/war/calls/export.csv").status_code in (302, 403)

@@ -126,7 +126,7 @@ LOCAL = timedelta(hours=5)  # Maldives time
 FIELD_ENDPOINTS = {
     "warroom.home", "warroom.box", "warroom.lookup", "warroom.mark", "warroom.calls", "warroom.call",
     "warroom.field", "warroom.changes", "warroom.transport", "warroom.transport_action", "warroom.contact",
-    "warroom.link_open", "warroom.field_export", "voters.photo", "theme.theme_css", "theme.set_appearance",
+    "warroom.link_open", "warroom.field_export", "warroom.calls_export", "voters.photo", "theme.theme_css", "theme.set_appearance",
     "fonts.stylesheet", "fonts.serve", "auth.login", "auth.logout", "auth.change_password", "static",
 }
 
@@ -440,6 +440,68 @@ def calls():
                       " (SELECT national_id FROM war_voted)", (who or 0,)).fetchone()[0]
     return render_template("warroom/calls.html", rows=rows, done=done, outcomes=OUTCOMES, priority=PRIORITY, t=t,
                            callers=callers if t != "t3" else [], who=who, cursor=_cursor(), hm=_hm)
+
+
+@bp.route("/war/calls/export.<fmt>")
+@login_required
+def calls_export(fmt):
+    """A caller's list (or every caller's) as CSV / Excel: who still has to vote, and how each call went.
+    A tier 3 caller gets only their own list, while the War Room is open."""
+    from flask import Response
+
+    from .voters import _safe_cell
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    t = _need("t3")
+    who = request.args.get("u", "")
+    who = "all" if who == "all" and t != "t3" else (int(who) if who.isdigit() else 0)
+    if t == "t3":
+        who = g.user["id"]
+    db = get_db()
+    cond, params = ("1", []) if who == "all" else ("c.user_id = ?", [who])
+    rows = db.execute(
+        "SELECT v.national_id, v.full_name, v.house_name, v.phone, v.location, v.age, c.priority, c.outcome,"
+        " c.outcome_at, c.attempts, u.username AS caller, k.status AS contact FROM war_calls c"
+        " JOIN voters v ON v.national_id = c.national_id LEFT JOIN users u ON u.id = c.user_id"
+        " LEFT JOIN war_contact k ON k.national_id = c.national_id"
+        f" WHERE {cond} AND c.national_id NOT IN (SELECT national_id FROM war_voted)"
+        " ORDER BY u.username COLLATE NOCASE, c.outcome = 'coming', c.priority, c.attempts, v.house_name COLLATE NOCASE",
+        params).fetchall()
+    headers = ["#", "Caller", "ID", "Name", "House", "Box", "Phone", "Age", "Group", "Last call", "When", "Calls",
+               "Said (field / calls)"]
+    table = [[n, r["caller"] or "", r["national_id"], _safe_cell(r["full_name"]), _safe_cell(r["house_name"]),
+              _safe_cell(r["location"]), r["phone"], r["age"], PRIORITY.get(r["priority"], ""),
+              OUTCOMES.get(r["outcome"], "Not called yet"), _local_day(r["outcome_at"]) if r["outcome_at"] else "",
+              r["attempts"], CONTACT.get(r["contact"], "")] for n, r in enumerate(rows, 1)]
+    audit.log("war_calls_export", target=fmt, detail={"caller": who, "rows": len(table)})
+    name = f"calls-{'all' if who == 'all' else who}-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "csv":
+        import csv
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(headers)
+        writer.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Calls"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in table:
+        ws.append(row)
+    ws.freeze_panes = "D2"
+    ws.auto_filter.ref = ws.dimensions
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @bp.post("/war/call")

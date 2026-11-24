@@ -7,7 +7,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="robots" content="noindex, nofollow">
   <meta name="theme-color" content="{{ themes[theme][1]['accent'] }}">
-  <title>{% block title %}Voters{% endblock %} · Gadhdhoo voter portal</title>
+  <title>{% block title %}Voters{% endblock %} · GM CAMPAIGN</title>
   <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
   {% if current_user and dhivehi_font() %}<link rel="stylesheet" href="{{ url_for('fonts.stylesheet') }}">{% endif %}
   <link rel="stylesheet" href="{{ url_for('theme.theme_css', v=theme) }}">
@@ -17,93 +17,110 @@
   {% block head %}{% endblock %}
 </head>
 {% set role = current_user.role if current_user else '' %}
-<body class="{{ 'has-tabbar' if current_user }}">
+{% macro nav(href, label, ic, on=false, cls='') -%}
+<a class="side-link {{ cls }}" href="{{ href }}" {{ 'aria-current=page' if on }}>{{ icon(ic, 18) }}<span>{{ label }}</span></a>
+{%- endmacro %}
+<body class="{{ 'shell has-tabbar' if current_user }}">
   {% if current_user %}
   {% set ep = request.endpoint or '' %}
-  <header class="topbar">
-    <a class="brand" href="{{ url_for('warroom.home') if war_field else url_for('pledges.sheet') if pledge_only else url_for('voters.search') }}">
-      <span class="brand-mark">{{ icon('logo', 18) }}</span>
-      <span>Gadhdhoo <span class="brand-sub">voters</span></span>
-    </a>
-    <nav class="topnav" aria-label="Main">
+  {% set home = url_for('warroom.home') if war_field else url_for('pledges.sheet') if pledge_only
+     else url_for('canvass.dashboard') if role == 'admin' else url_for('canvass.my_houses') %}
+  <aside class="sidebar" id="sidebar" aria-label="Menu">
+    <div class="side-head">
+      <a class="brand" href="{{ home }}">
+        <span class="brand-mark">{{ icon('logo', 18) }}</span>
+        <span class="brand-name">GM <b>CAMPAIGN</b></span>
+      </a>
+      <button class="side-close icon-btn" type="button" data-nav-close aria-label="Close menu">{{ icon('x', 20) }}</button>
+    </div>
+    <nav class="side-nav" aria-label="Main">
       {% if war_field %}
-      <a href="{{ url_for('warroom.home') }}" {{ 'aria-current=page' if ep != 'warroom.transport' }}>{{ {'t1': 'My box', 't2': 'My supporters', 't3': 'My calls'}[war_tier] }}</a>
-      {% if war_tier == 't2' %}<a href="{{ url_for('warroom.transport') }}" {{ 'aria-current=page' if ep == 'warroom.transport' }}>Transport</a>{% endif %}
+      <p class="side-label">Election day</p>
+      {{ nav(url_for('warroom.home'), {'t1': 'My box', 't2': 'My supporters', 't3': 'My calls'}[war_tier], 'check', ep != 'warroom.transport') }}
+      {% if war_tier == 't2' %}{{ nav(url_for('warroom.transport'), 'Transport', 'home', ep == 'warroom.transport') }}{% endif %}
       {% elif pledge_only %}
-      <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep == 'pledges.sheet' }}>Pledge sheet</a>
-      <a href="{{ url_for('pledges.distribution') }}" {{ 'aria-current=page' if ep == 'pledges.distribution' }}>Distribution</a>
-      {% if can_view_super %}<a href="{{ url_for('superpledge.sheet') }}" {{ 'aria-current=page' if ep == 'superpledge.sheet' }}>Super pledge</a>
-      <a href="{{ url_for('superpledge.scenarios') }}" {{ 'aria-current=page' if ep == 'superpledge.scenarios' }}>Scenarios</a>{% endif %}
+      <p class="side-label">Pledges</p>
+      {{ nav(url_for('pledges.sheet'), 'Pledge sheet', 'clipboard', ep == 'pledges.sheet') }}
+      {{ nav(url_for('pledges.distribution'), 'Distribution', 'chart', ep == 'pledges.distribution') }}
+      {% if can_view_super %}{{ nav(url_for('superpledge.sheet'), 'Super pledge', 'star', ep == 'superpledge.sheet') }}
+      {{ nav(url_for('superpledge.scenarios'), 'Scenarios', 'layers', ep == 'superpledge.scenarios') }}{% endif %}
       {% else %}
-      {% if role == 'agent' %}
-      <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>My dashboard</a>
-      {% endif %}
-      <a href="{{ url_for('voters.search') }}" {{ 'aria-current=page' if ep.startswith('voters.') and ep != 'voters.create' }}>Search</a>
-      <a href="{{ url_for('visits.index') }}" {{ 'aria-current=page' if ep.startswith('visits.') }}>Visits</a>
-      {% if role == 'user' %}
-      <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>My dashboard</a>
-      {% elif role == 'admin' %}
-      <a href="{{ url_for('canvass.dashboard') }}" {{ 'aria-current=page' if ep == 'canvass.dashboard' }}>Dashboard</a>
-      {% endif %}
-      {% if is_admin %}
-      <a href="{{ url_for('canvass.agents') }}" {{ 'aria-current=page' if ep == 'canvass.agents' or (ep == 'canvass.my_houses') }}>Agents</a>
-      <a href="{{ url_for('imports.index') }}" {{ 'aria-current=page' if ep.startswith('imports.') }}>Import</a>
-      <a href="{{ url_for('admin.users') }}" {{ 'aria-current=page' if ep.startswith('admin.user') }}>Users</a>
-      <a href="{{ url_for('campaign.settings') }}" {{ 'aria-current=page' if ep == 'campaign.settings' }}>Settings</a>
-      {% endif %}
+      <p class="side-label">Overview</p>
+      {% if role == 'admin' %}{{ nav(url_for('canvass.dashboard'), 'Dashboard', 'chart', ep == 'canvass.dashboard') }}
+      {% else %}{{ nav(url_for('canvass.my_houses'), 'My dashboard', 'chart', ep == 'canvass.my_houses') }}{% endif %}
+      {{ nav(url_for('announce.index'), 'Announcements', 'megaphone', ep.startswith('announce.')) }}
+
+      <p class="side-label">Voters</p>
+      {{ nav(url_for('voters.search'), 'Search voters', 'search', ep.startswith('voters.') and ep != 'voters.create') }}
+      {{ nav(url_for('visits.index'), 'House visits', 'door', ep.startswith('visits.')) }}
+      {% if is_admin %}{{ nav(url_for('voters.create'), 'Add a voter', 'plus', ep == 'voters.create') }}{% endif %}
+
+      {% if can_view_pledges or can_view_cf %}
+      <p class="side-label">Campaign</p>
       {% if can_view_pledges %}
-      <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep.startswith('pledges.') or ep.startswith('superpledge.') }}>Pledges</a>
+      {{ nav(url_for('pledges.sheet'), 'Pledge sheet', 'clipboard', ep in ('pledges.sheet', 'pledges.manage')) }}
+      {{ nav(url_for('pledges.distribution'), 'Distribution', 'chart', ep == 'pledges.distribution') }}
       {% endif %}
-      {% if can_view_cf %}
-      <a href="{{ url_for('confirmed.overview') }}" {{ 'aria-current=page' if ep == 'confirmed.overview' }}>Confirmed</a>
+      {% if can_view_super %}
+      {{ nav(url_for('superpledge.sheet'), 'Super pledge', 'star', ep == 'superpledge.sheet') }}
+      {{ nav(url_for('superpledge.scenarios'), 'Scenarios', 'layers', ep == 'superpledge.scenarios') }}
       {% endif %}
+      {% if can_view_cf %}{{ nav(url_for('confirmed.overview'), '100% confirmed', 'check', ep.startswith('confirmed.')) }}{% endif %}
+      {% endif %}
+
       {% if war_tier in ('owner', 'room') or is_admin %}
-      <a class="war-tab" href="{{ url_for('warroom.home') }}" {{ 'aria-current=page' if ep.startswith('warroom.') }}>War Room</a>
+      <p class="side-label">Election day</p>
+      {% if war_tier in ('owner', 'room') %}{{ nav(url_for('warroom.home'), 'War Room', 'flag', ep.startswith('warroom.') and ep != 'warroom.team', 'war-link') }}{% endif %}
+      {% if is_admin %}{{ nav(url_for('warroom.team'), 'War Room team', 'users', ep == 'warroom.team') }}{% endif %}
+      {% endif %}
+
+      {% if is_admin %}
+      <p class="side-label">Team &amp; data</p>
+      {{ nav(url_for('canvass.agents'), 'Agents', 'users', ep == 'canvass.agents') }}
+      {{ nav(url_for('agentsheet.sheet'), 'Assign agents', 'user', ep.startswith('agentsheet.')) }}
+      {{ nav(url_for('admin.users'), 'Users', 'user', ep.startswith('admin.user')) }}
+      {{ nav(url_for('imports.index'), 'Import', 'upload', ep.startswith('imports.')) }}
+      {{ nav(url_for('islandmap.admin'), 'Island map', 'map', ep.startswith('islandmap.')) }}
+      {{ nav(url_for('admin.changes'), 'Changes', 'edit', ep == 'admin.changes') }}
+      {{ nav(url_for('admin.audit_log'), 'Activity log', 'log', ep == 'admin.audit_log') }}
+      {{ nav(url_for('campaign.settings'), 'Settings', 'gear', ep == 'campaign.settings') }}
       {% endif %}
       {% endif %}
     </nav>
-    <details class="account">
-      <summary aria-label="Account">
-        <span class="account-avatar">{{ current_user.username[:1]|upper }}</span>
-        <span class="account-name">{{ current_user.username }}</span>
-      </summary>
-      <div class="account-menu">
-        <p><strong>{{ current_user.username }}</strong><br><span class="muted">{{ {'t1': 'Election day · box agent', 't2': 'Election day · field runner', 't3': 'Election day · call centre'}[war_tier] if war_field else 'Pledge sheet' if pledge_only else {'admin': 'Admin', 'agent': 'Agent (canvasser)', 'user': 'Read-only user'}[role] }}</span></p>
-        {% if not pledge_only and not war_field %}
-        {% if war_tier in ('owner', 'room') %}<a href="{{ url_for('warroom.home') }}">War Room</a>{% endif %}
-        {% if is_admin %}<a href="{{ url_for('warroom.team') }}">War Room team</a>{% endif %}
-        {% if is_admin %}
-        <a href="{{ url_for('voters.create') }}">Add a voter</a>
-        <a href="{{ url_for('agentsheet.sheet') }}">Assign agents to voters</a>
-        <a href="{{ url_for('admin.changes') }}">Changes</a>
-        <a href="{{ url_for('admin.audit_log') }}">Activity log</a>
-        <a href="{{ url_for('campaign.settings') }}">Campaign settings</a>
-        <a href="{{ url_for('islandmap.admin') }}">Island map</a>
-        {% endif %}
-        <a href="{{ url_for('announce.index') }}">Announcements</a>
-        {% if can_view_cf %}<a href="{{ url_for('confirmed.overview') }}">100% confirmed voters</a>{% endif %}
-        {% if can_view_pledges %}<a href="{{ url_for('pledges.sheet') }}">Pledge sheet</a>
-        <a href="{{ url_for('pledges.distribution') }}">Pledge distribution</a>{% endif %}
-        {% if can_view_super %}<a href="{{ url_for('superpledge.sheet') }}">Super pledge voters</a>
-        <a href="{{ url_for('superpledge.scenarios') }}">Voting scenarios</a>{% endif %}
-        {% endif %}
-        <form class="appearance" method="post" action="{{ url_for('theme.set_appearance') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
-          <span class="muted small-text">Appearance</span>
-          <div class="appearance-btns">
-            {% for key, label in [('system', 'Auto'), ('light', 'Light'), ('dark', 'Dark')] %}
-            <button name="appearance" value="{{ key }}" class="small {{ 'on' if look == key }}" aria-pressed="{{ 'true' if look == key else 'false' }}">{{ label }}</button>
-            {% endfor %}
-          </div>
-        </form>
-        <a href="{{ url_for('auth.change_password') }}">Change password</a>
-        <form method="post" action="{{ url_for('auth.logout') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-          <button class="link">Sign out</button>
-        </form>
-      </div>
-    </details>
+    <div class="side-foot">
+      <details class="side-account">
+        <summary>
+          <span class="account-avatar">{{ current_user.username[:1]|upper }}</span>
+          <span class="side-who"><strong>{{ current_user.username }}</strong>
+            <span class="muted small-text">{{ {'t1': 'Box agent', 't2': 'Field runner', 't3': 'Call centre'}[war_tier] if war_field else 'Pledge sheet' if pledge_only else {'admin': 'Admin', 'agent': 'Agent', 'user': 'Read-only user'}[role] }}</span></span>
+          {{ icon('chevron', 16) }}
+        </summary>
+        <div class="side-account-menu">
+          <form class="appearance" method="post" action="{{ url_for('theme.set_appearance') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+            <span class="muted small-text">Appearance</span>
+            <div class="appearance-btns">
+              {% for key, label in [('system', 'Auto'), ('light', 'Light'), ('dark', 'Dark')] %}
+              <button name="appearance" value="{{ key }}" class="small {{ 'on' if look == key }}" aria-pressed="{{ 'true' if look == key else 'false' }}">{{ label }}</button>
+              {% endfor %}
+            </div>
+          </form>
+          {% if not war_link %}<a class="side-link" href="{{ url_for('auth.change_password') }}">{{ icon('edit', 16) }}<span>Change password</span></a>{% endif %}
+          <form method="post" action="{{ url_for('auth.logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button class="side-link side-signout">{{ icon('logout', 16) }}<span>Sign out</span></button>
+          </form>
+        </div>
+      </details>
+    </div>
+  </aside>
+  <div class="side-scrim" data-nav-close></div>
+
+  <header class="topbar">
+    <button class="icon-btn" type="button" data-nav-open aria-controls="sidebar" aria-expanded="false" aria-label="Open menu">{{ icon('menu', 22) }}</button>
+    <a class="brand" href="{{ home }}"><span class="brand-mark">{{ icon('logo', 16) }}</span><span class="brand-name">GM <b>CAMPAIGN</b></span></a>
+    <span class="account-avatar" aria-hidden="true">{{ current_user.username[:1]|upper }}</span>
   </header>
   {% endif %}
 
@@ -144,31 +161,21 @@
   </main>
 
   {% if current_user %}
-  <nav class="tabbar" aria-label="Main">
+  <nav class="tabbar" aria-label="Shortcuts">
     {% if war_field %}
-    <a href="{{ url_for('warroom.home') }}" {{ 'aria-current=page' if ep != 'warroom.transport' }}>{{ icon('check') }}<span>{{ {'t1': 'My box', 't2': 'My supporters', 't3': 'My calls'}[war_tier] }}</span></a>
+    <a href="{{ url_for('warroom.home') }}" {{ 'aria-current=page' if ep != 'warroom.transport' }}>{{ icon('check') }}<span>{{ {'t1': 'My box', 't2': 'Supporters', 't3': 'My calls'}[war_tier] }}</span></a>
     {% if war_tier == 't2' %}<a href="{{ url_for('warroom.transport') }}" {{ 'aria-current=page' if ep == 'warroom.transport' }}>{{ icon('home') }}<span>Transport</span></a>{% endif %}
     {% elif pledge_only %}
-    <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep == 'pledges.sheet' }}>{{ icon('check') }}<span>Pledge sheet</span></a>
+    <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep == 'pledges.sheet' }}>{{ icon('clipboard') }}<span>Pledges</span></a>
     <a href="{{ url_for('pledges.distribution') }}" {{ 'aria-current=page' if ep == 'pledges.distribution' }}>{{ icon('chart') }}<span>Distribution</span></a>
-    {% if can_view_super %}<a href="{{ url_for('superpledge.scenarios') }}" {{ 'aria-current=page' if ep.startswith('superpledge.') }}>{{ icon('users') }}<span>Super</span></a>{% endif %}
     {% else %}
-    {% if role == 'agent' %}
-    <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>{{ icon('home') }}<span>My dashboard</span></a>
-    {% endif %}
+    <a href="{{ home }}" {{ 'aria-current=page' if ep in ('canvass.dashboard', 'canvass.my_houses') }}>{{ icon('chart') }}<span>Dashboard</span></a>
     <a href="{{ url_for('voters.search') }}" {{ 'aria-current=page' if ep.startswith('voters.') }}>{{ icon('search') }}<span>Search</span></a>
     <a href="{{ url_for('visits.index') }}" {{ 'aria-current=page' if ep.startswith('visits.') }}>{{ icon('door') }}<span>Visits</span></a>
-    {% if role == 'user' %}
-    <a href="{{ url_for('canvass.my_houses') }}" {{ 'aria-current=page' if ep == 'canvass.my_houses' }}>{{ icon('chart') }}<span>My dashboard</span></a>
-    {% elif role == 'admin' %}
-    <a href="{{ url_for('canvass.dashboard') }}" {{ 'aria-current=page' if ep == 'canvass.dashboard' }}>{{ icon('chart') }}<span>Dashboard</span></a>
+    {% if war_tier in ('owner', 'room') %}<a href="{{ url_for('warroom.home') }}" {{ 'aria-current=page' if ep.startswith('warroom.') }}>{{ icon('flag') }}<span>War Room</span></a>
+    {% elif can_view_pledges %}<a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep.startswith('pledges.') }}>{{ icon('clipboard') }}<span>Pledges</span></a>{% endif %}
     {% endif %}
-    {% if is_admin %}
-    <a href="{{ url_for('canvass.agents') }}" {{ 'aria-current=page' if ep in ('canvass.agents', 'canvass.my_houses') }}>{{ icon('users') }}<span>Agents</span></a>
-    <a href="{{ url_for('imports.index') }}" {{ 'aria-current=page' if ep.startswith('imports.') }}>{{ icon('upload') }}<span>Import</span></a>
-    <a href="{{ url_for('admin.users') }}" {{ 'aria-current=page' if ep.startswith('admin.') }}>{{ icon('user') }}<span>Users</span></a>
-    {% endif %}
-    {% endif %}
+    <button type="button" class="tab-menu" data-nav-open aria-controls="sidebar" aria-label="Open menu">{{ icon('menu') }}<span>Menu</span></button>
   </nav>
   {% endif %}
 </body>

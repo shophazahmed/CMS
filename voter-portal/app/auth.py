@@ -322,12 +322,19 @@ def _safe_next(target, user=None):
 
 
 def home_url(user=None):
+    """Where someone lands after signing in: their dashboard."""
+    from .warroom import FIELD_TIERS
+
     user = user or g.get("user")
-    if user is not None and is_pledge_only(user):
+    if user is None:
+        return url_for("voters.search")
+    if user["role"] != "admin" and user["war_tier"] in FIELD_TIERS:
+        return url_for("warroom.home")
+    if is_pledge_only(user):
         return url_for("pledges.sheet")
-    if user is not None and user["role"] == "agent":
-        return url_for("canvass.my_houses")
-    return url_for("voters.search")
+    if user["role"] == "admin":
+        return url_for("canvass.dashboard")
+    return url_for("canvass.my_houses")
 
 
 @bp.route("/login", methods=["GET", "POST"])

@@ -147,5 +147,5 @@ def build_pdf(rows, *, lang, title, subtitle, recipient, photos_dir):
         page.insert_text((28, page.rect.height - 20), note, fontsize=7.5, color=(0.4, 0.4, 0.4))
         page.insert_text((page.rect.width - 70, page.rect.height - 20), f"Page {i} / {doc.page_count}",
                          fontsize=7.5, color=(0.4, 0.4, 0.4))
-    doc.set_metadata({"title": title, "creator": "Gadhdhoo voter portal"})
+    doc.set_metadata({"title": title, "creator": "GM CAMPAIGN"})
     return doc.tobytes(garbage=3, deflate=True)
