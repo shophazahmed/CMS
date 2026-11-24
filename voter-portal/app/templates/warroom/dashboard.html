@@ -98,6 +98,15 @@
 </section>
 
 <section class="card">
+  <h2>Reached before the vote</h2>
+  <p class="muted small-text">Our supporters who haven't voted, by what they told the field agents or the call centre.</p>
+  <ul class="war-oc-list war-contact-list">
+    <li class="cs-none"><span>Not reached yet</span><strong data-k="c_none">{{ s.contact.get('', 0) }}</strong></li>
+    {% for k, label in contact.items() %}<li class="cs-{{ k }}"><span>{{ label }}</span><strong data-k="c_{{ k }}">{{ s.contact.get(k, 0) }}</strong></li>{% endfor %}
+  </ul>
+</section>
+
+<section class="card">
   <h2>Call centre</h2>
   <p class="muted small-text">{{ s.called }} supporters on call lists. Latest outcome for those who haven't voted:</p>
   <ul class="war-oc-list">

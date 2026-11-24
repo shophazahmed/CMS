@@ -3,57 +3,82 @@
 {% block title %}War Room team{% endblock %}
 {% block content %}
 {% if can_watch %}<a class="backlink" href="{{ url_for('warroom.home') }}">{{ icon('back', 18) }} War Room</a>{% endif %}
-<div class="page-head"><h1>War Room team{{ ' &amp; setup'|safe if can_edit }}</h1>
-  <p class="muted">{% if can_edit %}Only you can change this.{% else %}You can see who does what. Only the owner can change it, open or close the War Room, or print the sheets.{% endif %}
-    Field accounts (tiers 1–3) see only their own election-day page and only their voters.</p></div>
+<div class="page-head"><h1>War Room team</h1>
+  <p class="muted">Give users and agents their election-day role. Field accounts (tiers 1–3) see only their own War Room page and
+    only their voters. {% if not can_own %}Only the owner opens or closes the War Room, gives the War Room dashboard and prints the sheets.{% endif %}</p></div>
 
 <section class="card war-switch {{ 'on' if is_open else '' }}">
   <h2>{{ 'The War Room is open' if is_open else 'The War Room is closed' }}</h2>
-  <p class="muted">{{ 'Field agents can look up, mark and call now.' if is_open else 'Field agents see a "not open" page. You and War Room viewers can preview everything.' }}</p>
-  {% if can_edit %}<form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <p class="muted">{{ 'Field agents can look up, mark and call now.' if is_open else 'Field agents see a "not open" page. Set everything up, then open it on the day.' }}</p>
+  {% if can_own %}
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% if is_open %}<button class="danger" name="action" value="close" data-confirm="Close the War Room? Every field account stops working at once.">Close the War Room (stops all field accounts)</button>
     {% else %}<button class="primary" name="action" value="open">Open the War Room</button>{% endif %}
   </form>
   <form class="inline war-times" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <label>Polls close <input type="time" name="close" value="{{ close }}"></label>
-    <button class="small" name="action" value="times">Save</button></form>{% else %}
-  <p class="small-text">Polls close {{ close }}.</p>{% endif %}
+    <button class="small" name="action" value="times">Save</button></form>
+  {% else %}<p class="small-text">Polls close {{ close }}.</p>{% endif %}
 </section>
 
 <section class="card">
   <h2>Who does what</h2>
   {% if not ours %}<p class="flash flash-error">Choose our candidate first (Pledges → Candidates &amp; import).</p>{% endif %}
+  <p class="muted small-text">Agents who don't sign in get a <strong>private link</strong> instead of a password: give them a tier,
+    make a link and send it (WhatsApp). The link opens only their War Room page; stop it any time.</p>
   <div class="table-wrap">
   <table class="overlap war-table war-team">
-    <thead><tr><th>User</th><th>Election day</th><th>Box (tier 1)</th><th>Calls left</th></tr></thead>
+    <thead><tr><th>Name</th><th>Election day</th><th>Access</th><th>Calls left</th></tr></thead>
     <tbody>
-    {% for u in users %}
-    <tr><th>{{ u.username }} <span class="muted small-text">{{ u.role }}</span></th>
-      {% if u.id == owner_id %}<td colspan="3" class="muted small-text">Owner: sees everything</td>
-      {% elif not can_edit %}<td>{{ tiers.get(u.war_tier, '') if u.war_tier else '—' }}</td><td>{{ u.war_box or '' }}</td><td>{{ loads.get(u.id, '') }}</td>
-      {% else %}
-      <td colspan="2">
+    {% for u in users %}{% set link = links.get(u.id) %}
+    <tr><th>{{ u.username }} <span class="agent-badge">{{ 'agent' if u.role == 'agent' else u.role }}{{ ' · no sign-in' if not u.can_login }}</span></th>
+      {% if u.id == owner_id %}<td colspan="3" class="muted small-text">Owner: sees everything</td>{% else %}
+      <td>
         <form class="inline war-tier-form" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="set"><input type="hidden" name="user_id" value="{{ u.id }}">
-          <select name="tier" aria-label="Election day role for {{ u.username }}">
-            {% for k, label in tiers.items() %}{% if not (u.role == 'admin' and k in ('t1', 't2', 't3')) %}<option value="{{ k }}" {{ 'selected' if u.war_tier == k }}>{{ label }}</option>{% endif %}{% endfor %}
+          <select name="tier" aria-label="Election day role for {{ u.username }}" {{ 'disabled' if u.war_tier == 'room' and not can_own }}>
+            {% for k, label in tiers.items() %}
+              {% if not (u.role == 'admin' and k in ('t1', 't2', 't3')) and not (u.role != 'admin' and not u.can_login and k == 'room') and (can_own or k != 'room' or u.war_tier == 'room') %}
+              <option value="{{ k }}" {{ 'selected' if u.war_tier == k }}>{{ label }}</option>{% endif %}
+            {% endfor %}
           </select>
           <select name="war_box" aria-label="Box for {{ u.username }}">
-            <option value="">—</option>{% for b in boxes %}<option {{ 'selected' if u.war_box == b }}>{{ b }}</option>{% endfor %}
+            <option value="">Box (tier 1) —</option>{% for b in boxes %}<option {{ 'selected' if u.war_box == b }}>{{ b }}</option>{% endfor %}
           </select>
-          <button class="small">Save</button>
+          <button class="small" {{ 'disabled' if u.war_tier == 'room' and not can_own }}>Save</button>
         </form>
+      </td>
+      <td class="small-text">
+        {% if u.war_tier in ('t1', 't2', 't3') and u.role != 'admin' %}
+          {% if u.can_login %}Signs in with their password{% endif %}
+          {% if link %}
+          <div class="war-link-box">
+            <span>Link until {{ local(link.expires_at) }} · opened {{ link.opens }}×{% if link.last_open_at %}, last {{ local(link.last_open_at) }}{% endif %}</span>
+            <input readonly value="{{ link_url(link) }}" aria-label="Private link for {{ u.username }}" data-select-all>
+            <div class="war-link-row">
+              <a class="button small" href="https://wa.me/?text={{ ('Your election-day page (keep it private): ' ~ link_url(link))|urlencode }}" target="_blank" rel="noopener">WhatsApp</a>
+              <form method="post" data-confirm="Stop {{ u.username }}'s link? It stops working at once."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="action" value="unlink"><input type="hidden" name="user_id" value="{{ u.id }}"><button class="small danger">Stop link</button></form>
+            </div>
+          </div>
+          {% endif %}
+          <form class="inline war-link-row" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="action" value="link"><input type="hidden" name="user_id" value="{{ u.id }}">
+            <select name="days" aria-label="Link lasts">{% for d in link_days %}<option value="{{ d }}" {{ 'selected' if d == 7 }}>{{ d }} days</option>{% endfor %}</select>
+            <button class="small">{{ 'New link' if link else 'Make private link' }}</button></form>
+        {% elif u.role == 'agent' and not u.can_login %}<span class="muted">Give a tier to make a link</span>
+        {% elif u.war_tier %}{{ 'Signs in' if u.can_login else '' }}{% endif %}
       </td>
       <td>{{ loads.get(u.id, '') }}</td>{% endif %}</tr>
     {% endfor %}
     </tbody>
   </table>
   </div>
-  <p class="muted small-text">Tier 2 runners work the voters given to them: by house on the Agents page, or one by one on the
-    <a href="{{ url_for('agentsheet.sheet') }}">Assign agents sheet</a>.</p>
+  <p class="muted small-text">Tier 2 runners look after the voters given to them: by house on the Agents page, or one by one on the
+    <a href="{{ url_for('agentsheet.sheet') }}">Assign agents sheet</a>. Making a new link stops the old one.</p>
 </section>
 
-{% if can_edit %}<section class="card form">
+<section class="card form">
   <h2>Call lists (tier 3)</h2>
   <p class="muted small-text">Shares our supporters who haven't voted between the callers, best first: super voters, solid base,
     shared supporters, then leaning. Lists already made keep their call outcomes; run it again after adding callers.</p>
@@ -66,32 +91,34 @@
     <label>to <select name="to">{% for u in users if u.war_tier == 't3' %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}</select></label>
     <button class="small">Move</button>
   </form>
-</section>{% endif %}
+</section>
 
-{% if can_edit %}<section class="card form">
+<section class="card form">
   <h2>Transport</h2>
-  <p class="muted small-text">Callers' "Needs transport" and runners' requests go to the transport queue on their own. You can also add
+  <p class="muted small-text">"Needs transport" from runners and callers goes to the transport queue on its own. You can also add
     our supporters from houses whose latest visit said "needs transport".</p>
   <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button name="action" value="transport_from_visits">Add from house visits</button>
     <a class="button" href="{{ url_for('warroom.transport') }}">Open the transport queue</a></form>
-</section>{% endif %}
+</section>
 
-{% if can_edit %}<section class="card form">
+{% if can_own %}
+<section class="card form">
   <h2>Allocation sheets</h2>
   <p class="muted small-text">The paper backup for each agent: tier 1 their box's list by number, tier 2 their supporters, tier 3
     their call list. Each page carries the agent's name. Make the call lists first.</p>
   <p><a class="button primary" href="{{ url_for('warroom.sheets') }}">Print all sheets</a>
     <a class="button" href="{{ url_for('warroom.sheets_xlsx') }}">{{ icon('download', 16) }} Excel</a></p>
   <ul class="war-sheet-links">{% for u in users if u.war_tier in ('t1', 't2', 't3') %}<li><a href="{{ url_for('warroom.sheets', u=u.id) }}">{{ u.username }}</a></li>{% endfor %}</ul>
-</section>{% endif %}
+</section>
+{% endif %}
 
-{% if can_edit %}<form class="card form" method="post" enctype="multipart/form-data">
+<form class="card form" method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <h2>Official list numbers</h2>
   <p class="muted small-text">So box agents can type the number the official calls out. Excel or CSV with an <strong>ID</strong>
     column and a <strong>No.</strong> column (the voter's number on their box's list). {{ numbered }} voters have a number now.</p>
   <label>Official list <input type="file" name="sheet" accept=".xlsx,.xlsm,.csv" required></label>
   <button class="primary" name="action" value="import">Import</button>
-</form>{% endif %}
+</form>
 {% endblock %}

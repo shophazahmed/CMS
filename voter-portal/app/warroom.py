@@ -75,6 +75,27 @@ CREATE TABLE IF NOT EXISTS war_transport (
     note         TEXT NOT NULL DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS ix_war_transport ON war_transport (status, requested_at);
+-- Contact before the vote: what the agent (or the call centre) heard from the voter. Separate from the
+-- portal's canvassing statuses, which stay as they are.
+CREATE TABLE IF NOT EXISTS war_contact (
+    national_id TEXT PRIMARY KEY,
+    status      TEXT NOT NULL,
+    at          TEXT NOT NULL,
+    by_user     INTEGER,
+    note        TEXT NOT NULL DEFAULT ''
+);
+-- Private links: agents who don't sign in open their War Room page with a link (no password).
+CREATE TABLE IF NOT EXISTS war_links (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL,
+    token        TEXT NOT NULL UNIQUE,
+    created_at   TEXT NOT NULL,
+    created_by   INTEGER,
+    expires_at   TEXT NOT NULL,
+    revoked_at   TEXT,
+    opens        INTEGER NOT NULL DEFAULT 0,
+    last_open_at TEXT
+);
 -- Lookups by field phones, for the rate limit and the alerts.
 CREATE TABLE IF NOT EXISTS war_hits (
     user_id INTEGER NOT NULL,
@@ -89,6 +110,11 @@ FIELD_TIERS = ("t1", "t2", "t3")
 PRIORITY = {1: "Super voter", 2: "Solid base", 3: "Shared supporter", 4: "Leaning"}
 OUTCOMES = {"coming": "Coming", "transport": "Needs transport", "noanswer": "No answer", "later": "Call later",
             "refused": "Refused", "wrong": "Wrong number"}
+CONTACT = {"coming": "Coming", "transport": "Needs transport", "later": "Call later", "noanswer": "No answer",
+           "notcoming": "Not coming"}
+CALL_TO_CONTACT = {"coming": "coming", "transport": "transport", "later": "later", "noanswer": "noanswer",
+                   "refused": "notcoming"}
+LINK_DAYS = (3, 7, 30)
 TRANSPORT = {"waiting": "Waiting", "onway": "On the way", "done": "Dropped at the box", "cancelled": "Cancelled"}
 TRANSPORT_LATE = 20         # minutes a request may wait before the War Room is alerted
 UNDO_MINUTES = 10
@@ -99,7 +125,8 @@ LOCAL = timedelta(hours=5)  # Maldives time
 # What a field account (tiers 1-3) may open.
 FIELD_ENDPOINTS = {
     "warroom.home", "warroom.box", "warroom.lookup", "warroom.mark", "warroom.calls", "warroom.call",
-    "warroom.field", "warroom.changes", "warroom.transport", "warroom.transport_action", "voters.photo", "theme.theme_css", "theme.set_appearance",
+    "warroom.field", "warroom.changes", "warroom.transport", "warroom.transport_action", "warroom.contact",
+    "warroom.link_open", "voters.photo", "theme.theme_css", "theme.set_appearance",
     "fonts.stylesheet", "fonts.serve", "auth.login", "auth.logout", "auth.change_password", "static",
 }
 
@@ -118,7 +145,10 @@ def tier(user=None):
         return ""
     if is_owner(user):
         return "owner"
-    if not user["can_login"] or user["deleted_at"] or not user["is_active"]:
+    by_link = g.get("war_link") and g.get("user") is not None and g.user["id"] == user["id"]
+    if (not user["can_login"] and not by_link) or user["deleted_at"] or not user["is_active"]:
+        return ""
+    if by_link and user["war_tier"] not in FIELD_TIERS:
         return ""
     return user["war_tier"] if user["war_tier"] in TIERS else ""
 
@@ -255,7 +285,7 @@ def home():
     agents = get_db().execute("SELECT id, username FROM users WHERE role IN ('agent', 'user', 'admin') AND deleted_at IS NULL"
                               " ORDER BY username COLLATE NOCASE").fetchall()
     return render_template("warroom/dashboard.html", s=stats(), tiers=TIERS, is_open=is_open(), cursor=_cursor(),
-                           outcomes=OUTCOMES, priority=PRIORITY, ag=ag, agents=agents,
+                           outcomes=OUTCOMES, priority=PRIORITY, ag=ag, agents=agents, contact=CONTACT,
                            ag_name=next((a["username"] for a in agents if str(a["id"]) == ag), "No agent" if ag == "none" else ""))
 
 
@@ -428,6 +458,8 @@ def call():
                (outcome, now_iso(), nid))
     if outcome == "transport":
         request_transport(nid, "call")
+    if outcome in CALL_TO_CONTACT:
+        set_contact(nid, CALL_TO_CONTACT[outcome])
     audit.log("war_call", target=nid, detail={"outcome": outcome}, commit=False)
     db.commit()
     if request.headers.get("X-Requested-With") == "fetch":
@@ -438,7 +470,8 @@ def call():
 @bp.route("/war/field")
 @login_required
 def field():
-    """Tier 2: my houses' supporters who haven't voted yet."""
+    """Tier 2: my supporters who haven't voted. Reach each one before the vote and set what they said:
+    coming, needs transport, call later, no answer or not coming."""
     t = tier()
     if t not in ("t2", "owner", "room"):
         abort(403)
@@ -451,20 +484,29 @@ def field():
                          " ORDER BY username COLLATE NOCASE").fetchall()
     if who is None and runners:
         who = runners[0]["id"]
-    rows = []
+    cs = request.args.get("cs", "")
+    cs = cs if cs in CONTACT or cs == "none" else ""
+    rows, counts = [], {}
     if sql:
         cond, params = _scope_sql("t2", who or 0, "")
+        base = (f"FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id"
+                " LEFT JOIN war_contact k ON k.national_id = v.national_id"
+                " LEFT JOIN war_calls c ON c.national_id = v.national_id"
+                " LEFT JOIN war_transport tr ON tr.national_id = v.national_id AND tr.status IN ('waiting', 'onway')"
+                f" WHERE v.national_id IN (SELECT national_id FROM voters WHERE {cond})"
+                " AND v.national_id NOT IN (SELECT national_id FROM war_voted)")
+        counts = dict(db.execute(f"SELECT COALESCE(k.status, 'none'), COUNT(*) {base} GROUP BY 1", sp + params).fetchall())
+        where = "" if not cs else (" AND k.status IS NULL" if cs == "none" else " AND k.status = ?")
         rows = db.execute(
-            f"SELECT v.*, s.priority, c.outcome FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id"
-            f" LEFT JOIN war_calls c ON c.national_id = v.national_id"
-            f" WHERE v.national_id IN (SELECT national_id FROM voters WHERE {cond})"
-            " AND v.national_id NOT IN (SELECT national_id FROM war_voted)"
-            " ORDER BY c.outcome = 'transport' DESC, s.priority, v.house_name COLLATE NOCASE, v.full_name",
-            sp + params).fetchall()
-    rides = dict(db.execute("SELECT national_id, status FROM war_transport WHERE status IN ('waiting', 'onway')").fetchall())
+            f"SELECT v.*, s.priority, c.outcome, k.status AS contact, k.at AS contact_at, k.by_user AS contact_by,"
+            f" tr.status AS ride {base}{where}"
+            " ORDER BY CASE COALESCE(k.status, '') WHEN 'transport' THEN 0 WHEN '' THEN 1 WHEN 'later' THEN 2"
+            " WHEN 'noanswer' THEN 3 WHEN 'notcoming' THEN 4 ELSE 5 END, s.priority, v.house_name COLLATE NOCASE, v.full_name",
+            sp + params + ([cs] if cs and cs != "none" else [])).fetchall()
     return render_template("warroom/field.html", rows=rows, priority=PRIORITY, outcomes=OUTCOMES, t=t,
-                           runners=runners if t != "t2" else [], who=who, cursor=_cursor(), rides=rides,
-                           transport_labels=TRANSPORT, trev=_transport_rev())
+                           runners=runners if t != "t2" else [], who=who, cursor=_cursor(), contact=CONTACT,
+                           counts=counts, cs=cs, total=sum(counts.values()), transport_labels=TRANSPORT,
+                           trev=_transport_rev(), hm=_hm)
 
 
 # --- the dashboard ----------------------------------------------------------------------------------
@@ -584,7 +626,7 @@ def stats():
             "called": called, "alerts": alerts, "close": close, "ours": pledges.our_candidate(),
             "now": local_now.strftime("%H:%M"), "transport": tr,
             "left": ("closed" if left is not None and left <= 0 else f"{left // 60}h {left % 60:02d}m" if left is not None else ""),
-            "projection": projection(scope, extra)}
+            "projection": projection(scope, extra), "contact": contact_counts(mine, extra)}
 
 
 def _flat(s):
@@ -598,6 +640,8 @@ def _flat(s):
         out[f"b{i}sv"], out[f"b{i}sp"] = b["sup_voted"], b["sup"] - b["sup_voted"]
     for code, n in s["outcomes"].items():
         out[f"o_{code}"] = n
+    for code, n in s["contact"].items():
+        out[f"c_{code or 'none'}"] = n
     return out
 
 
@@ -606,26 +650,33 @@ def _flat(s):
 @bp.route("/war/team", methods=["GET", "POST"])
 @login_required
 def team():
-    """Who does what on the day. Admins can see it; only the owner changes it."""
-    if not is_owner() and g.user["role"] != "admin":
+    """Who does what on the day. Admins give tiers and links and make the call lists; only the owner
+    opens or closes the War Room, gives the War Room dashboard and prints the sheets."""
+    owner = is_owner()
+    if not owner and g.user["role"] != "admin":
         abort(403)
     db = get_db()
-    if request.method == "POST" and not is_owner():
-        audit.log("access_denied", target=request.path)
-        abort(403)
     if request.method == "POST":
         action = request.form.get("action", "")
+        if action in ("open", "close", "times") and not owner:
+            audit.log("access_denied", target=request.path, detail={"action": action})
+            abort(403)
         if action == "set":
             uid = request.form.get("user_id", type=int)
             user = db.execute("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (uid,)).fetchone() or abort(404)
             if is_owner(user):
                 abort(400)
             level = request.form.get("tier", "")
+            if not owner and "room" in (level, user["war_tier"]):
+                flash("Only the owner gives (or takes away) the War Room dashboard.", "error")
+                return redirect(url_for("warroom.team"))
             if level not in TIERS or (level in FIELD_TIERS and user["role"] == "admin"):
                 flash("Admins can be given the War Room dashboard, not a field tier.", "error")
                 return redirect(url_for("warroom.team"))
             b = request.form.get("war_box", "")[:200]
             db.execute("UPDATE users SET war_tier = ?, war_box = ? WHERE id = ?", (level, b if level == "t1" else "", uid))
+            if level not in FIELD_TIERS:  # no field tier: their private links stop
+                db.execute("UPDATE war_links SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", (now_iso(), uid))
             audit.log("war_tier", target=user["username"], detail={"tier": level, "box": b}, commit=False)
             flash(f"{user['username']}: {TIERS[level]}{' · ' + b if level == 't1' and b else ''}.", "success")
         elif action in ("open", "close"):
@@ -652,6 +703,22 @@ def team():
             n = transport_from_visits()
             flash(f"{n} supporter{'s' if n != 1 else ''} from houses flagged 'needs transport' added to the transport queue.",
                   "success")
+        elif action == "link":
+            uid = request.form.get("user_id", type=int)
+            user = db.execute("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (uid,)).fetchone() or abort(404)
+            days = request.form.get("days", type=int)
+            if user["war_tier"] not in FIELD_TIERS or user["role"] == "admin":
+                flash("Give the agent a tier first.", "error")
+            elif days not in LINK_DAYS:
+                abort(400)
+            else:
+                make_link(user, days)
+                flash(f"New private link for {user['username']}: copy it below and send it to them.", "success")
+        elif action == "unlink":
+            uid = request.form.get("user_id", type=int)
+            n = db.execute("UPDATE war_links SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", (now_iso(), uid)).rowcount
+            audit.log("war_link_stop", target=str(uid), commit=False)
+            flash("Link stopped: it doesn't open any more." if n else "There was no live link.", "success")
         elif action == "import":
             try:
                 n, missing = import_numbers(request.files.get("sheet"))
@@ -661,7 +728,11 @@ def team():
                 flash(str(exc), "error")
         db.commit()
         return redirect(url_for("warroom.team"))
-    users = db.execute("SELECT * FROM users WHERE deleted_at IS NULL AND can_login = 1 ORDER BY username COLLATE NOCASE").fetchall()
+    users = db.execute("SELECT * FROM users WHERE deleted_at IS NULL AND (can_login = 1 OR role = 'agent')"
+                       " ORDER BY role != 'agent', username COLLATE NOCASE").fetchall()
+    now = now_iso()
+    links = {r["user_id"]: r for r in db.execute(
+        "SELECT * FROM war_links WHERE revoked_at IS NULL AND expires_at > ? ORDER BY id", (now,))}
     boxes = [r[0] for r in db.execute("SELECT DISTINCT location FROM voters WHERE location != '' ORDER BY location")]
     loads = dict(db.execute("SELECT user_id, COUNT(*) FROM war_calls WHERE national_id NOT IN"
                             " (SELECT national_id FROM war_voted) GROUP BY user_id").fetchall())
@@ -669,7 +740,9 @@ def team():
     return render_template("warroom/team.html", users=users, tiers=TIERS, boxes=boxes, loads=loads, is_open=is_open(),
                            close=campaign.get_setting("war_close") or "16:00", numbered=numbered,
                            ours=pledges.our_candidate(), owner_id=next((u["id"] for u in users if is_owner(u)), None),
-                           can_edit=is_owner(), can_watch=can_watch())
+                           can_edit=True, can_own=owner, can_watch=can_watch(), links=links, link_days=LINK_DAYS,
+                           link_url=lambda r: url_for("warroom.link_open", token=r["token"], _external=True),
+                           contact=CONTACT, local=_local_day)
 
 
 def allocate():
@@ -951,3 +1024,106 @@ def projection(scope, extra):
     now = superpledge.project(so_far, {"sv": "decision", "nsr": 100}, cands, ours, limit, seats)
     final = superpledge.project(data, {"sv": "decision"}, cands, ours, limit, seats)
     return {"now": now, "final": final, "label": pledges.label, "ours": ours, "seats": seats}
+
+
+# --- contact before the vote ------------------------------------------------------------------------
+
+def set_contact(nid, status, note=""):
+    get_db().execute("INSERT INTO war_contact (national_id, status, at, by_user, note) VALUES (?, ?, ?, ?, ?)"
+                     " ON CONFLICT(national_id) DO UPDATE SET status = excluded.status, at = excluded.at,"
+                     " by_user = excluded.by_user, note = excluded.note",
+                     (nid, status, now_iso(), g.user["id"], note[:300]))
+
+
+@bp.post("/war/contact")
+@login_required
+def contact():
+    """Tier 2: what the voter said when the agent reached them. 'Needs transport' joins the transport queue."""
+    t = _need("t2")
+    db = get_db()
+    nid = request.form.get("national_id", "")
+    status = request.form.get("status", "")
+    if status not in CONTACT and status != "":
+        abort(400)
+    if t == "t2":
+        cond, params = _scope_sql("t2", g.user["id"], "")
+        if not db.execute(f"SELECT 1 FROM voters WHERE national_id = ? AND {cond}", [nid] + params).fetchone():
+            audit.log("access_denied", target=nid, detail={"war_contact": t})
+            abort(403)
+    elif not db.execute("SELECT 1 FROM voters WHERE national_id = ?", (nid,)).fetchone():
+        abort(404)
+    if status:
+        set_contact(nid, status, clean_text(request.form.get("note", "")))
+        if status == "transport":
+            request_transport(nid, "field")
+    else:
+        db.execute("DELETE FROM war_contact WHERE national_id = ?", (nid,))
+    audit.log("war_contact", target=nid, detail={"status": status}, commit=False)
+    db.commit()
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify({"ok": True, "status": status, "label": CONTACT.get(status, "Not contacted yet")})
+    return redirect(request.referrer or url_for("warroom.field"))
+
+
+def contact_counts(mine="", extra=()):
+    """Our supporters who haven't voted, by what they told us (and how many nobody has reached)."""
+    sql, sp = supporters_sql()
+    if not sql:
+        return {}
+    rows = get_db().execute(
+        f"SELECT COALESCE(c.status, '') AS st, COUNT(*) FROM ({sql}) s LEFT JOIN war_contact c ON c.national_id = s.national_id"
+        f" WHERE s.national_id NOT IN (SELECT national_id FROM war_voted){mine.replace('national_id IN', 's.national_id IN', 1)}"
+        " GROUP BY st", sp + list(extra)).fetchall()
+    return dict(rows)
+
+
+# --- private links ---------------------------------------------------------------------------------
+
+def make_link(user, days):
+    import secrets
+
+    db = get_db()
+    db.execute("UPDATE war_links SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", (now_iso(), user["id"]))
+    expires = (datetime.now(timezone.utc) + timedelta(days=days)).isoformat(timespec="seconds")
+    db.execute("INSERT INTO war_links (user_id, token, created_at, created_by, expires_at) VALUES (?, ?, ?, ?, ?)",
+               (user["id"], secrets.token_urlsafe(24), now_iso(), g.user["id"], expires))
+    audit.log("war_link_make", target=user["username"], detail={"days": days}, commit=False)
+
+
+def link_user(link_id, user_id):
+    """The user a War Room link session belongs to, while the link and their field tier are live."""
+    db = get_db()
+    row = db.execute("SELECT u.* FROM war_links l JOIN users u ON u.id = l.user_id WHERE l.id = ? AND l.user_id = ?"
+                     " AND l.revoked_at IS NULL AND l.expires_at > ? AND u.deleted_at IS NULL AND u.is_active = 1"
+                     " AND u.role != 'admin' AND u.war_tier IN ('t1', 't2', 't3')",
+                     (link_id, user_id, now_iso())).fetchone()
+    return row
+
+
+@bp.route("/w/<token>")
+def link_open(token):
+    """Open the agent's War Room page from their private link (no password)."""
+    from flask import session
+
+    db = get_db()
+    row = db.execute("SELECT * FROM war_links WHERE token = ?", (token[:64],)).fetchone()
+    user = link_user(row["id"], row["user_id"]) if row else None
+    if user is None:
+        audit.log("war_link_refused", target=token[:6])
+        db.commit()
+        return render_template("warroom/link_stopped.html"), 410
+    session.clear()
+    session.permanent = True
+    session["uid"] = user["id"]
+    session["wlink"] = row["id"]
+    db.execute("UPDATE war_links SET opens = opens + 1, last_open_at = ? WHERE id = ?", (now_iso(), row["id"]))
+    audit.log("war_link_open", user=user, detail={"opens": row["opens"] + 1}, commit=False)
+    db.commit()
+    return redirect(url_for("warroom.home"))
+
+
+def _local_day(stamp):
+    try:
+        return (datetime.fromisoformat(stamp) + LOCAL).strftime("%-d %b %H:%M")
+    except (TypeError, ValueError):
+        return ""

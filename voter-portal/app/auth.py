@@ -66,8 +66,19 @@ def generate_password():
 def load_user():
     """Attach the signed-in user to g, rejecting stale or disabled sessions."""
     g.user = None
+    g.war_link = None
     user_id = session.get("uid")
     if user_id is None:
+        return
+    if session.get("wlink"):
+        # signed in with a private War Room link (no password): the link must still be live
+        from .warroom import link_user
+
+        user = link_user(session["wlink"], user_id)
+        if user is None:
+            session.clear()
+            return
+        g.user, g.war_link = user, session["wlink"]
         return
     user = get_db().execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     # A password change or deactivation ends every existing session.
@@ -121,7 +132,7 @@ def login_required(view):
     def wrapped(*args, **kwargs):
         if g.user is None:
             return redirect(url_for("auth.login", next=request.full_path.rstrip("?")))
-        if g.user["must_change_password"] and request.endpoint != "auth.change_password":
+        if g.user["must_change_password"] and not g.get("war_link") and request.endpoint != "auth.change_password":
             flash("Choose a new password to continue.", "info")
             return redirect(url_for("auth.change_password"))
         return view(*args, **kwargs)

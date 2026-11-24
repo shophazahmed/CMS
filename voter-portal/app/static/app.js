@@ -719,3 +719,31 @@ document.addEventListener("submit", async (event) => {
   all.addEventListener("change", () => { boxes().forEach((b) => { b.checked = all.checked; }); update(); });
   document.addEventListener("change", (e) => { if (e.target.matches('input[name=ids]')) update(); });
 })();
+
+// War Room tier 2: tap what the voter said; saved in the background (resent if the signal drops).
+document.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-war-contact]");
+  if (!form) return;
+  event.preventDefault();
+  const item = form.closest(".war-item");
+  const button = form.querySelector("button");
+  const was = button.classList.contains("on");
+  const body = new FormData(form);
+  if (was) body.set("status", "");  // tapping the chosen one again clears it
+  item.querySelectorAll(".cs-btn").forEach((b) => { b.classList.remove("on"); b.setAttribute("aria-pressed", "false"); });
+  try {
+    const r = await fetch(form.getAttribute("action"), { method: "POST", body, credentials: "same-origin",
+      headers: { "X-Requested-With": "fetch" } });
+    if (!r.ok) throw new Error(r.status);
+    const data = await r.json();
+    if (data.status) { button.classList.add("on"); button.setAttribute("aria-pressed", "true"); }
+    item.className = item.className.replace(/\bcs-\w+/g, "").trim() + " cs-" + (data.status || "none");
+    const tag = item.querySelector("[data-cs-tag]");
+    if (tag) tag.textContent = data.status ? data.label + " · " + new Date().toTimeString().slice(0, 5) : "Not reached yet";
+    if (data.status === "transport") toast("Added to the transport queue.");
+  } catch (e) {
+    if (was) button.classList.add("on");
+    toast("Not saved: no signal. Tap again when it's back.");
+  }
+});
+document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select-all]")) e.target.select(); });

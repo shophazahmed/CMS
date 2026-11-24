@@ -127,10 +127,16 @@ def test_only_the_owner_sets_it_up(app):
     login(b, "boss", ADMIN_PW)
     assert b.get("/war").headers["Location"].endswith("/war/team")          # an admin without a tier: the team page
     team = b.get("/war/team").get_data(as_text=True)
-    assert "War Room team" in team and "Only the owner can change it" in team and 'value="open"' not in team
-    uid = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'boss'").fetchone()[0]
-    assert b.post("/war/team", data={"csrf_token": csrf(b, "/war/team"), "action": "set", "user_id": uid,
-                                     "tier": "room"}).status_code == 403    # can't change it
+    assert "War Room team" in team and "Only the owner opens or closes" in team and 'value="open"' not in team
+    conn = connect(app.config["DATABASE"])
+    uid = conn.execute("SELECT id FROM users WHERE username = 'boss'").fetchone()[0]
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    btok = csrf(b, "/war/team")
+    b.post("/war/team", data={"csrf_token": btok, "action": "set", "user_id": uid, "tier": "room"})   # not the dashboard
+    assert conn.execute("SELECT war_tier FROM users WHERE id = ?", (uid,)).fetchone()[0] == ""
+    b.post("/war/team", data={"csrf_token": btok, "action": "set", "user_id": viewer, "tier": "t2"})  # field roles: yes
+    assert conn.execute("SELECT war_tier FROM users WHERE id = ?", (viewer,)).fetchone()[0] == "t2"
+    assert b.post("/war/team", data={"csrf_token": btok, "action": "open"}).status_code == 403
     assert b.get("/war/sheets").status_code == 403
     o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": uid, "tier": "room"})
     assert b.get("/war").status_code == 200
@@ -200,3 +206,49 @@ def test_dashboard_agent_filter(app):
     assert 'data-k="sup_pending">1<' in mine                              # A200001, the only supporter of theirs
     assert o.get(f"/war/changes?since=0&stats=1&ag={viewer}").json["stats"]["voted"] == 0
     assert o.get("/war?ag=none").status_code == 200
+
+
+
+def test_agent_links_and_contact_statuses(app):
+    from tests.test_canvass import add_agent
+
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    add_agent(app, "ali")                                                  # a canvasser who never signs in
+    conn = connect(app.config["DATABASE"])
+    ali = conn.execute("SELECT id FROM users WHERE username = 'ali'").fetchone()[0]
+    conn.execute("UPDATE users SET can_login = 0 WHERE id = ?", (ali,))
+    house = conn.execute("SELECT house_name FROM voters WHERE national_id = 'A200001'").fetchone()[0]
+    conn.execute("INSERT OR REPLACE INTO house_assignments (house_name, user_id, assigned_at) VALUES (?, ?, '2026-01-01')", (house, ali))
+    conn.commit()
+    team = o.get("/war/team").get_data(as_text=True)
+    assert "ali" in team and "no sign-in" in team                        # agents are on the team page
+    b = app.test_client()                                                  # another admin gives the role and the link
+    login(b, "boss", ADMIN_PW)
+    btok = csrf(b, "/war/team")
+    b.post("/war/team", data={"csrf_token": btok, "action": "set", "user_id": ali, "tier": "t2"})
+    b.post("/war/team", data={"csrf_token": btok, "action": "link", "user_id": ali, "days": "7"})
+    token_ = conn.execute("SELECT token FROM war_links WHERE user_id = ? AND revoked_at IS NULL", (ali,)).fetchone()[0]
+    assert f"/w/{token_}" in b.get("/war/team").get_data(as_text=True)
+    # the agent opens the link: their supporters, nothing else
+    a = app.test_client()
+    r = a.get(f"/w/{token_}")
+    assert r.headers["Location"].endswith("/war")
+    page = a.get("/war/field").get_data(as_text=True)
+    assert "Aminath Alpha" in page and "Not reached yet" in page and "Needs transport" in page
+    assert a.get("/pledges").headers["Location"].endswith("/war")
+    assert a.get("/war/team").status_code in (302, 403)
+    # what the voter said
+    atok = csrf(a, "/war/field")
+    r = a.post("/war/contact", data={"csrf_token": atok, "national_id": "A200001", "status": "transport"},
+               headers={"X-Requested-With": "fetch"})
+    assert r.json == {"ok": True, "status": "transport", "label": "Needs transport"}
+    assert tuple(conn.execute("SELECT status, source FROM war_transport WHERE national_id = 'A200001'").fetchone()) == ("waiting", "field")
+    assert a.post("/war/contact", data={"csrf_token": atok, "national_id": "A200002", "status": "coming"}).status_code == 403
+    assert "Needs transport · " in a.get("/war/field?cs=transport").get_data(as_text=True)
+    dash = " ".join(o.get("/war").get_data(as_text=True).split())
+    assert "Reached before the vote" in dash and 'data-k="c_transport">1<' in dash
+    # stopping the link signs them out at once
+    b.post("/war/team", data={"csrf_token": btok, "action": "unlink", "user_id": ali})
+    assert a.get("/war/field").status_code == 302
+    assert a.get(f"/w/{token_}").status_code == 410

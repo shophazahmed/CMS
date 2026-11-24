@@ -7,8 +7,8 @@
 <div class="page-head war-head">
   <div>
     <h1>{{ 'My supporters' if t == 't2' else 'Field runners' }}</h1>
-    <p class="muted"><strong data-war-left>{{ rows|length }}</strong> of our supporters in {{ 'your' if t == 't2' else 'these' }} houses haven't voted yet.
-      Needs-transport first. <a href="{{ url_for('warroom.transport') }}">Transport queue ›</a></p>
+    <p class="muted"><strong data-war-left>{{ total }}</strong> of our supporters {{ 'you look after' if t == 't2' else 'here' }} haven't voted yet.
+      Reach each one before they vote and tap what they said.</p>
   </div>
   {% include "warroom/_sync.html" %}
 </div>
@@ -16,34 +16,47 @@
 <form class="war-boxpick" method="get"><label>Runner
   <select name="u" data-autosubmit>{% for c in runners %}<option value="{{ c.id }}" {{ 'selected' if c.id == who }}>{{ c.username }}</option>{% endfor %}</select></label></form>
 {% endif %}
+
+<nav class="chips war-contact-chips" aria-label="Show">
+  {% set keep = {'u': who} if t != 't2' else {} %}
+  <a class="chip {{ 'on' if not cs }}" href="{{ url_for('warroom.field', **keep) }}">All <b>{{ total }}</b></a>
+  <a class="chip {{ 'on' if cs == 'none' }}" href="{{ url_for('warroom.field', cs='none', **keep) }}">Not reached yet <b>{{ counts.get('none', 0) }}</b></a>
+  {% for k, label in contact.items() %}
+  <a class="chip cs-{{ k }} {{ 'on' if cs == k }}" href="{{ url_for('warroom.field', cs=k, **keep) }}">{{ label }} <b>{{ counts.get(k, 0) }}</b></a>
+  {% endfor %}
+</nav>
+
 {% if rows %}
 <ul class="war-list">
   {% for v in rows %}
-  <li class="war-item card prio-{{ v.priority }} {{ 'oc-' ~ v.outcome if v.outcome }}" data-nid="{{ v.national_id }}">
+  <li class="war-item card prio-{{ v.priority }} {{ 'cs-' ~ v.contact if v.contact else 'cs-none' }}" data-nid="{{ v.national_id }}">
     <div class="war-item-main">
       {{ avatar(v, 'sm') }}
       <div><strong>{{ v.full_name }}</strong>
-        <span class="muted small-text">{{ v.house_name }} · {{ v.location }}</span>
+        <span class="muted small-text">{{ v.house_name }} · {{ v.location }}{% if v.age is not none %} · {{ v.age }}{% endif %}</span>
         <span class="small-text"><span class="tag prio-tag">{{ priority[v.priority] }}</span>
-          {% if v.outcome %}<span class="tag oc-tag">{{ outcomes[v.outcome] }}</span>{% endif %}</span>
+          <span class="tag cs-tag" data-cs-tag>{{ contact[v.contact] ~ ' · ' ~ hm(v.contact_at) if v.contact else 'Not reached yet' }}</span>
+          {% if v.ride %}<a class="tag tr-tag tr-{{ v.ride }}" href="{{ url_for('warroom.transport') }}">{{ transport_labels[v.ride] }}</a>{% endif %}
+          {% if v.outcome and not v.contact %}<span class="tag oc-tag">Call centre: {{ outcomes[v.outcome] }}</span>{% endif %}</span>
       </div>
-      {% if v.phone %}<a class="button war-call-btn" href="tel:{{ v.phone }}">{{ icon('phone', 18) }} Call</a>{% endif %}
+      {% if v.phone %}<a class="button primary war-call-btn" href="tel:{{ v.phone }}">{{ icon('phone', 18) }} Call</a>{% else %}<span class="muted small-text">No phone</span>{% endif %}
     </div>
-    <div class="war-field-acts">
-    {% set ride = rides.get(v.national_id) %}
-    {% if ride %}<a class="tag tr-tag tr-{{ ride }}" href="{{ url_for('warroom.transport') }}">{{ transport_labels[ride] }}</a>
-    {% else %}<form method="post" action="{{ url_for('warroom.transport_action') }}" data-war-transport data-confirm="Ask for a ride for {{ v.full_name }}?">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
-      <input type="hidden" name="action" value="request"><button class="small">Needs transport</button></form>{% endif %}
-    <form method="post" action="{{ url_for('warroom.mark') }}" data-war-mark data-confirm="Mark {{ v.full_name }} as voted?">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
-      <input type="hidden" name="value" value="1"><button class="primary">{{ icon('check', 16) }} Voted</button></form>
+    <div class="war-contact" role="group" aria-label="What did {{ v.full_name }} say?">
+      {% for k, label in contact.items() %}
+      <form method="post" action="{{ url_for('warroom.contact') }}" data-war-contact>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="status" value="{{ k }}">
+        <button class="small cs-btn cs-{{ k }} {{ 'on' if v.contact == k }}" aria-pressed="{{ 'true' if v.contact == k else 'false' }}">{{ label }}</button></form>
+      {% endfor %}
     </div>
+    <form class="war-voted-row" method="post" action="{{ url_for('warroom.mark') }}" data-war-mark data-confirm="Mark {{ v.full_name }} as voted?">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+      <input type="hidden" name="value" value="1"><button class="small">{{ icon('check', 14) }} Already voted</button></form>
   </li>
   {% endfor %}
 </ul>
 {% else %}
-<div class="empty card"><p>No supporters waiting here.</p></div>
+<div class="empty card"><p>{{ 'Nobody here.' if cs else 'No supporters waiting here.' }}</p></div>
 {% endif %}
 </div>
 {% endblock %}
