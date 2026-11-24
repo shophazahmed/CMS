@@ -198,6 +198,59 @@ def contact(token):
     return redirect(url_for("agentlink.view", token=token))
 
 
+@bp.route("/a/<token>/export.<fmt>")
+def export(token, fmt):
+    """The agent's own voters as CSV / Excel, with what each said. Only while the link is live; logged."""
+    import csv
+    import io
+
+    from flask import Response
+
+    from .voters import _safe_cell
+    from .warroom import CONTACT
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    link, live = _live(token)
+    if not live:
+        abort(410)
+    agent = get_db().execute("SELECT id, username FROM users WHERE id = ? AND deleted_at IS NULL", (link["user_id"],)).fetchone()
+    if agent is None:
+        abort(410)
+    rows = _voters(agent["id"])
+    headers = ["#", "House", "Name", "Name (Dhivehi)", "ID", "Phone", "Box", "Said", "When"]
+    table = [[n, _safe_cell(r["house_name"]), _safe_cell(r["full_name"]), _safe_cell(r["full_name_dv"] or ""),
+              r["national_id"], r["phone"], _safe_cell(r["location"]),
+              CONTACT.get(r["contact"], "Not reached yet"), _local_day(r["contact_at"]) if r["contact_at"] else ""]
+             for n, r in enumerate(rows, 1)]
+    audit.log("agent_link_export", target=fmt, detail={"agent": agent["username"], "rows": len(table)}, user=agent)
+    name = f"{agent['username']}-voters-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    headers_out = {"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "private, no-store"}
+    if fmt == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(headers)
+        writer.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8", headers=headers_out)
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "My voters"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in table:
+        ws.append(row)
+    ws.freeze_panes = "C2"
+    ws.auto_filter.ref = ws.dimensions
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers=headers_out,
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 @bp.route("/a/<token>/p/<national_id>")
 def photo(token, national_id):
     from .voters import handled_by

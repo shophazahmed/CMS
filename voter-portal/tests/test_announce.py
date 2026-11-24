@@ -118,8 +118,14 @@ def test_agent_dashboard_link(app):
     anon.post(path + "/contact", data={"csrf_token": atok, "national_id": "A200001", "status": ""})
     assert conn.execute("SELECT COUNT(*) FROM war_contact").fetchone()[0] == 0
 
+    # their own list as a file
+    exp = anon.get(path + "/export.csv")
+    assert exp.status_code == 200 and "A200001" in exp.get_data(as_text=True) and "A200002" not in exp.get_data(as_text=True)
+    assert anon.get(path + "/export.xlsx").status_code == 200 and "/export.xlsx" in anon.get(path).get_data(as_text=True)
+
     a.post(f"/admin/agents/{agent}/link/stop", data={"csrf_token": token})
     assert anon.get(path).status_code == 410
+    assert anon.get(path + "/export.csv").status_code == 410
     assert anon.post(path + "/contact", data={"csrf_token": atok, "national_id": "A200001", "status": "coming"}).status_code == 410
 
 

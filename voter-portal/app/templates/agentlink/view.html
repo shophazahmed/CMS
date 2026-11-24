@@ -15,6 +15,13 @@
   <p class="muted small-text">Call or visit each voter before election day, then tap what they said. It saves straight away;
     tap the same answer again to clear it. <strong>Needs transport</strong> goes to the campaign's transport list.</p>
 </div>
+<div class="resultbar al-export">
+  <p class="muted small-text">Download your list (keep it private):</p>
+  <div class="export">
+    <a class="button small" href="{{ url_for('agentlink.export', token=token, fmt='xlsx') }}">{{ icon('download', 16) }} Excel</a>
+    <a class="button small" href="{{ url_for('agentlink.export', token=token, fmt='csv') }}">{{ icon('download', 16) }} CSV</a>
+  </div>
+</div>
 <input type="search" class="wide" placeholder="Search name, house or phone…" aria-label="Search" data-filter-rows="#al-rows">
 <ul class="al-list" id="al-rows">
   {% for house, people in houses.items() %}
