@@ -126,7 +126,7 @@ LOCAL = timedelta(hours=5)  # Maldives time
 FIELD_ENDPOINTS = {
     "warroom.home", "warroom.box", "warroom.lookup", "warroom.mark", "warroom.calls", "warroom.call",
     "warroom.field", "warroom.changes", "warroom.transport", "warroom.transport_action", "warroom.contact",
-    "warroom.link_open", "voters.photo", "theme.theme_css", "theme.set_appearance",
+    "warroom.link_open", "warroom.field_export", "voters.photo", "theme.theme_css", "theme.set_appearance",
     "fonts.stylesheet", "fonts.serve", "auth.login", "auth.logout", "auth.change_password", "static",
 }
 
@@ -532,19 +532,19 @@ def runner_rows(who, cs=""):
 @bp.route("/war/field/export.<fmt>")
 @login_required
 def field_export(fmt):
-    """A runner's list (or every runner's) as CSV / Excel, with what each voter said. War Room only: field
-    phones never download lists."""
+    """A runner's list (or every runner's) as CSV / Excel, with what each voter said. A tier 2 runner can
+    download only their own list (while the War Room is open); the War Room any runner's or all."""
     from flask import Response
 
     from .voters import _safe_cell
 
     if fmt not in ("csv", "xlsx"):
         abort(404)
-    if tier() not in ("owner", "room"):
-        audit.log("access_denied", target=request.path)
-        abort(403)
+    t = _need("t2")
     who = request.args.get("u", "")
     who = "all" if who == "all" else (int(who) if who.isdigit() else 0)
+    if t == "t2":
+        who = g.user["id"]  # their own list, whatever is asked
     cs = request.args.get("cs", "")
     cs = cs if cs in CONTACT or cs == "none" else ""
     rows, _ = runner_rows(who, cs)

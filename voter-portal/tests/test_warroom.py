@@ -269,8 +269,14 @@ def test_supporters_export(app):
     t2.post("/war/contact", data={"csrf_token": csrf(t2, "/war/field"), "national_id": "A200001", "status": "coming"})
     page = o.get(f"/war/field?u={runner}").get_data(as_text=True)
     assert "/war/field/export.xlsx" in page
-    assert "/war/field/export" not in t2.get("/war/field").get_data(as_text=True)   # not on field phones
-    assert t2.get(f"/war/field/export.csv?u={runner}").status_code in (302, 403)
+    assert "/war/field/export" in t2.get("/war/field").get_data(as_text=True)       # runners get their own list
+    own = t2.get("/war/field/export.csv?u=all").get_data(as_text=True)              # 'all' is ignored for them
+    assert own.count("\n") == 3 and "A200001" in own
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    assert t1.get("/war/field/export.csv").status_code in (302, 403)                # other tiers can't
+    o.post("/war/team", data={"csrf_token": token, "action": "close"})
+    assert t2.get("/war/field/export.csv").status_code == 423                       # not while closed
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
     rows = list(_csv.reader(io.StringIO(o.get(f"/war/field/export.csv?u={runner}").get_data(as_text=True).lstrip("﻿"))))
     assert rows[0][:4] == ["#", "Runner", "ID", "Name"] and len(rows) == 3    # two supporters in that house
     mine = {r[2]: r for r in rows[1:]}
