@@ -1,14 +1,19 @@
 {% extends "base.html" %}
-{% from "_macros.html" import progress, legend, icon %}
+{% from "_macros.html" import icon %}
 {% block title %}{{ agent.username }}'s voters{% endblock %}
 {% block content %}
 <div class="page-head al-head">
-  <h1>{{ agent.username }} <span class="muted">· MDP Gadhdhoo</span></h1>
+  <h1>{{ agent.username }} <span class="muted">· GM CAMPAIGN</span></h1>
   <p class="al-stamp">For {{ agent.username }} · Do not forward · valid until {{ until }}</p>
   <p class="muted">{{ houses|length }} house{{ 's' if houses|length != 1 }} · {{ t.total }} voters ·
-    <strong>{{ (100 * t.reached / t.total)|round|int if t.total else 0 }}% reached</strong></p>
-  {{ progress(t) }}
-  {{ legend() }}
+    <strong>{{ t.reached }} reached</strong>, {{ t.total - t.reached }} not yet</p>
+  <svg class="dbar al-bar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+    <rect class="dbar-track" x="0" y="0" width="100" height="8"/>
+    {% if t.total %}<rect class="dbar-fill" x="0" y="0" width="{{ (100 * t.reached / t.total)|round(2) }}" height="8"/>{% endif %}
+  </svg>
+  <p class="al-counts small-text">{% for k, label in contact.items() %}<span class="tag cs-tag-{{ k }}">{{ label }} {{ t.counts[k] }}</span> {% endfor %}</p>
+  <p class="muted small-text">Call or visit each voter before election day, then tap what they said. It saves straight away;
+    tap the same answer again to clear it. <strong>Needs transport</strong> goes to the campaign's transport list.</p>
 </div>
 <input type="search" class="wide" placeholder="Search name, house or phone…" aria-label="Search" data-filter-rows="#al-rows">
 <ul class="al-list" id="al-rows">
@@ -17,15 +22,27 @@
     <h2>{{ house or 'No address' }}{% if people[0].house_name_dv %} <span class="muted dv-inline" dir="rtl">{{ people[0].house_name_dv }}</span>{% endif %} <span class="muted small-text">({{ people|length }})</span></h2>
     <ul class="al-voters">
       {% for v in people %}
-      <li class="card al-voter">
-        {% if v.photo_path %}<img src="{{ url_for('agentlink.photo', token=token, national_id=v.national_id) }}" alt="" loading="lazy" width="56" height="56">{% else %}<span class="al-nophoto">{{ icon('user', 24) }}</span>{% endif %}
-        <div>
-          <strong>{{ v.full_name }}</strong>{% if v.deceased %} <span class="badge">deceased</span>{% endif %}
-          {% if v.full_name_dv %}<br><span class="muted" dir="rtl">{{ v.full_name_dv }}</span>{% endif %}
-          <p class="small-text">{% if v.phone %}<a href="tel:{{ v.phone }}" class="mono">{{ v.phone }}</a>{% else %}<span class="muted">No phone</span>{% endif %}
-            {% if v.location %}<span class="muted"> · {{ v.location }}</span>{% endif %}</p>
+      <li class="card al-voter war-item {{ 'cs-' ~ v.contact if v.contact else 'cs-none' }}">
+        <div class="al-voter-main">
+          {% if v.photo_path %}<img src="{{ url_for('agentlink.photo', token=token, national_id=v.national_id) }}" alt="" loading="lazy" width="56" height="56">{% else %}<span class="al-nophoto">{{ icon('user', 24) }}</span>{% endif %}
+          <div>
+            <strong>{{ v.full_name }}</strong>{% if v.deceased %} <span class="badge">deceased</span>{% endif %}
+            {% if v.full_name_dv %}<br><span class="muted" dir="rtl">{{ v.full_name_dv }}</span>{% endif %}
+            <p class="small-text">{% if v.phone %}<a href="tel:{{ v.phone }}" class="mono">{{ v.phone }}</a>{% else %}<span class="muted">No phone</span>{% endif %}
+              {% if v.location %}<span class="muted"> · {{ v.location }}</span>{% endif %}</p>
+          </div>
+          <span class="tag cs-tag" data-cs-tag>{{ contact[v.contact] ~ ' · ' ~ hm(v.contact_at) if v.contact else 'Not reached yet' }}</span>
         </div>
-        <span class="badge st-tag-{{ v.status }}">{{ statuses.get(v.status, v.status) }}</span>
+        {% if not v.deceased %}
+        <div class="war-contact" role="group" aria-label="What did {{ v.full_name }} say?">
+          {% for k, label in contact.items() %}
+          <form method="post" action="{{ url_for('agentlink.contact', token=token) }}" data-war-contact>
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+            <input type="hidden" name="status" value="{{ k }}">
+            <button class="small cs-btn cs-{{ k }} {{ 'on' if v.contact == k }}" aria-pressed="{{ 'true' if v.contact == k else 'false' }}">{{ label }}</button></form>
+          {% endfor %}
+        </div>
+        {% endif %}
       </li>
       {% endfor %}
     </ul>
@@ -34,5 +51,5 @@
   <li class="muted">No voters assigned yet.</li>
   {% endfor %}
 </ul>
-<p class="muted small-text">Read-only. Updates from the campaign team show here as soon as they're made.</p>
+<p class="muted small-text">Your answers go straight to the campaign team. This link works only for you until {{ until }}.</p>
 {% endblock %}

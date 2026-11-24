@@ -128,9 +128,11 @@ def _voters(agent_id):
         where += f" AND {clause}"
         params += extra
     return get_db().execute(
-        f"SELECT national_id, full_name, full_name_dv, house_name, house_name_dv, phone, photo_path, status,"
-        f" location, deceased FROM voters WHERE {where}"
-        " ORDER BY house_name = '', house_name COLLATE NOCASE, full_name COLLATE NOCASE", params).fetchall()
+        f"SELECT v.national_id, v.full_name, v.full_name_dv, v.house_name, v.house_name_dv, v.phone, v.photo_path,"
+        f" v.status, v.location, v.deceased, k.status AS contact, k.at AS contact_at FROM voters v"
+        f" LEFT JOIN war_contact k ON k.national_id = v.national_id"
+        f" WHERE v.national_id IN (SELECT national_id FROM voters WHERE {where})"
+        " ORDER BY v.house_name = '', v.house_name COLLATE NOCASE, v.full_name COLLATE NOCASE", params).fetchall()
 
 
 @bp.route("/a/<token>")
@@ -150,17 +152,50 @@ def view(token):
     houses = {}
     for r in rows:
         houses.setdefault(r["house_name"] or "", []).append(r)
-    reached = sum(1 for r in rows if r["status"] != "new")
-    t = {"total": len(rows), "reached": reached,
-         "contacted": sum(1 for r in rows if r["status"] == "contacted"),
-         "followup": sum(1 for r in rows if r["status"] == "followup"),
-         "noanswer": sum(1 for r in rows if r["status"] == "noanswer"),
-         "wontvote": sum(1 for r in rows if r["status"] == "wontvote")}
+    from .warroom import CONTACT, _hm
+
+    counts = {k: sum(1 for r in rows if r["contact"] == k) for k in CONTACT}
+    t = {"total": len(rows), "reached": sum(counts.values()), "counts": counts}
     resp = current_app.make_response(render_template(
-        "agentlink/view.html", agent=agent, houses=houses, t=t, token=token, statuses=STATUSES, until=_local_day(link["expires_at"])))
+        "agentlink/view.html", agent=agent, houses=houses, t=t, token=token, statuses=STATUSES, contact=CONTACT,
+        hm=_hm, until=_local_day(link["expires_at"])))
     resp.headers["Cache-Control"] = "private, no-store"
     resp.headers["Referrer-Policy"] = "no-referrer"  # the link never leaks to other sites
     return resp
+
+
+@bp.post("/a/<token>/contact")
+def contact(token):
+    """The agent taps what a voter said (Coming, Needs transport, Call later, No answer, Not coming; '' clears).
+    Only for the agent's own voters, while the link is live. Same statuses as the War Room."""
+    from flask import jsonify
+
+    from .voters import handled_by
+    from .warroom import CONTACT, request_transport, set_contact
+
+    link, live = _live(token)
+    if not live:
+        abort(410)
+    db = get_db()
+    agent = db.execute("SELECT id, username FROM users WHERE id = ? AND deleted_at IS NULL", (link["user_id"],)).fetchone()
+    nid = request.form.get("national_id", "")
+    status = request.form.get("status", "")
+    if agent is None or (status and status not in CONTACT):
+        abort(400)
+    if not db.execute(f"SELECT 1 FROM voters WHERE national_id = ? AND {handled_by()}", (nid, agent["id"], agent["id"])).fetchone():
+        abort(403)
+    if status:
+        set_contact(nid, status, by=agent["id"])
+        if status == "transport":
+            request_transport(nid, "agent link", by=agent["id"])
+    else:
+        db.execute("DELETE FROM war_contact WHERE national_id = ?", (nid,))
+    audit.log("agent_link_contact", target=nid, detail={"agent": agent["username"], "status": status}, user=agent,
+              commit=False)
+    db.commit()
+    if request.headers.get("X-Requested-With") == "fetch":
+        return jsonify({"ok": True, "status": status, "label": CONTACT.get(status, "Not reached yet")})
+    return redirect(url_for("agentlink.view", token=token))
 
 
 @bp.route("/a/<token>/p/<national_id>")

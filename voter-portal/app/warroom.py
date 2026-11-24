@@ -948,7 +948,7 @@ def import_numbers(upload):
 
 # --- transport ------------------------------------------------------------------------------------
 
-def request_transport(nid, source):
+def request_transport(nid, source, by=None):
     """Put a supporter in the transport queue (again, if an earlier request was cancelled)."""
     db = get_db()
     if db.execute("SELECT 1 FROM war_voted WHERE national_id = ?", (nid,)).fetchone():
@@ -960,7 +960,7 @@ def request_transport(nid, source):
                " VALUES (?, 'waiting', ?, ?, ?, ?) ON CONFLICT(national_id) DO UPDATE SET status = 'waiting',"
                " source = excluded.source, requested_at = excluded.requested_at, requested_by = excluded.requested_by,"
                " runner_id = NULL, updated_at = excluded.updated_at",
-               (nid, source, now_iso(), g.user["id"], now_iso()))
+               (nid, source, now_iso(), by if by is not None else g.user["id"], now_iso()))
     return True
 
 
@@ -1165,11 +1165,11 @@ def projection(scope, extra):
 
 # --- contact before the vote ------------------------------------------------------------------------
 
-def set_contact(nid, status, note=""):
+def set_contact(nid, status, note="", by=None):
     get_db().execute("INSERT INTO war_contact (national_id, status, at, by_user, note) VALUES (?, ?, ?, ?, ?)"
                      " ON CONFLICT(national_id) DO UPDATE SET status = excluded.status, at = excluded.at,"
                      " by_user = excluded.by_user, note = excluded.note",
-                     (nid, status, now_iso(), g.user["id"], note[:300]))
+                     (nid, status, now_iso(), by if by is not None else g.user["id"], note[:300]))
 
 
 @bp.post("/war/contact")

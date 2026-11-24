@@ -100,13 +100,27 @@ def test_agent_dashboard_link(app):
     body = r.get_data(as_text=True)
     assert r.status_code == 200 and "Aminath Alpha" in body and "Moosa Beta" not in body
     assert "For sharu · Do not forward" in body and r.headers["Cache-Control"] == "private, no-store"
-    assert "csrf_token" not in body or "/admin" not in body
+    assert "/admin" not in body
     assert "opened 1 time," in a.get("/admin/agents").get_data(as_text=True)
     assert anon.get(path + "x").status_code == 404
     assert anon.get(path.replace("/a/", "/a/") + "/p/A200002").status_code == 404  # not their voter
 
+    # the agent taps what the voter said: same statuses as the War Room
+    import re as _re2
+    atok = _re2.search(r'name="csrf_token" value="([^"]+)"', body).group(1)
+    r = anon.post(path + "/contact", data={"csrf_token": atok, "national_id": "A200001", "status": "transport"},
+                  headers={"X-Requested-With": "fetch"})
+    assert r.json == {"ok": True, "status": "transport", "label": "Needs transport"}
+    assert tuple(conn.execute("SELECT status, by_user FROM war_contact WHERE national_id = 'A200001'").fetchone()) == ("transport", agent)
+    assert conn.execute("SELECT status FROM war_transport WHERE national_id = 'A200001'").fetchone()[0] == "waiting"
+    assert anon.post(path + "/contact", data={"csrf_token": atok, "national_id": "A200002", "status": "coming"}).status_code == 403
+    assert "Needs transport · " in anon.get(path).get_data(as_text=True)
+    anon.post(path + "/contact", data={"csrf_token": atok, "national_id": "A200001", "status": ""})
+    assert conn.execute("SELECT COUNT(*) FROM war_contact").fetchone()[0] == 0
+
     a.post(f"/admin/agents/{agent}/link/stop", data={"csrf_token": token})
     assert anon.get(path).status_code == 410
+    assert anon.post(path + "/contact", data={"csrf_token": atok, "national_id": "A200001", "status": "coming"}).status_code == 410
 
 
 def test_dashboard_link_owner_only(app):
