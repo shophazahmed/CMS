@@ -1,5 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, pager, avatar %}
+{% from "pledges/_people.html" import agent_cell, connector_cell with context %}
 {% block title %}Pledge sheet{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
 {% block main_class %}page wide{% endblock %}
@@ -78,7 +79,7 @@
     {{ sort_th('house', 'House') }}<th>Phone</th>{{ sort_th('box', 'Box') }}{{ sort_th('no', 'No.') }}
     {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}
     <th class="cand noshow-col">No-show</th>
-    {% if not pledge_only %}<th>Agent</th><th>Connected by</th>{% endif %}
+    {% if not pledge_only %}<th>Agent</th><th>Connector</th>{% endif %}
   </tr></thead>
   <tbody>
   {% for v in rows %}{% set mine = pledges.get(v.national_id, {}) %}
@@ -113,8 +114,8 @@
         <button class="pl {{ 'pl-ns' if away else 'pl-blank' }}" aria-label="No-show for {{ v.full_name }}: {{ 'yes' if away else 'no' }}">{{ 'No-show' if away else '·' }}</button>
       </form>{% endif %}
     </td>
-    {% if not pledge_only %}<td class="small-text">{{ agents.get(v.national_id, '—') }}</td>
-    <td class="small-text connected" data-connected>{{ connected.get(v.national_id, '') }}</td>{% endif %}
+    {% if not pledge_only %}{{ agent_cell(v, agents, agent_cells, agent_choices) }}
+    {{ connector_cell(v, connectors, connected, can_connect) }}{% endif %}
   </tr>
   {% endfor %}
   </tbody>

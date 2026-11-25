@@ -1393,3 +1393,9 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
   .bl-who strong { white-space: normal; }
 }
 .bl-export label { width: auto; }
+
+/* Pledge / super sheets: Agent drop-down and Connector field in the row */
+.pledge-table .agent-col select { min-width: 9rem; padding: .2rem .35rem; font-size: .85rem; }
+.pledge-table .agent-col select.set { border-color: var(--accent, #0f766e); font-weight: 600; }
+.pledge-table .connector-input { width: 9rem; padding: .2rem .35rem; font-size: .85rem; }
+.pledge-table .connector-input.saved { border-color: var(--accent, #0f766e); }

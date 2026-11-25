@@ -1,0 +1,29 @@
+{# The Agent and Connector cells shared by the pledge and super pledge sheets. #}
+{% macro agent_cell(v, agents, agent_cells, agent_choices) -%}
+<td class="small-text agent-col">
+  {%- if agent_choices %}{% set one, house = agent_cells.get(v.national_id, (none, '')) %}
+  <form method="post" action="{{ url_for('agentsheet.set_one') }}" data-agent-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+    <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+    <select name="agent" class="{{ 'set' if one else '' }}" aria-label="Agent for {{ v.full_name }}">
+      <option value="">{{ 'House agent: ' ~ house if house else 'No agent' }}</option>
+      {% for a in agent_choices %}<option value="{{ a.id }}" {{ 'selected' if one == a.id }}>{{ a.username }}</option>{% endfor %}
+    </select>
+    <noscript><button class="small">Save</button></noscript>
+  </form>
+  {%- else %}{{ agents.get(v.national_id, '—') }}{% endif -%}
+</td>
+{%- endmacro %}
+{% macro connector_cell(v, connectors, connected, can_connect) -%}
+<td class="small-text connected" data-connected>
+  {%- set typed = connectors.get(v.national_id, '') %}{% set auto = connected.get(v.national_id, '') %}
+  {%- if can_connect %}
+  <form method="post" action="{{ url_for('pledges.set_connector') }}" data-connector-form>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+    <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+    <input type="text" name="connector" class="connector-input" value="{{ typed }}" maxlength="80" placeholder="{{ auto or 'Connector' }}"
+           aria-label="Connector for {{ v.full_name }}" autocomplete="off">
+  </form>
+  {%- else %}{{ typed or auto }}{% endif -%}
+</td>
+{%- endmacro %}

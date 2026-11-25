@@ -130,7 +130,7 @@ def test_super_export(app):
     assert "/super/export.xlsx" in o.get("/super").get_data(as_text=True)
     r = o.get(f"/super/export.csv?sc={ids['Sofhaz']}")
     rows = list(csv.reader(io.StringIO(r.get_data(as_text=True).lstrip("﻿"))))
-    assert rows[0][9:12] == ["List no.", "Agent", "Connected by"]
+    assert rows[0][9:12] == ["List no.", "Agent", "Connector"]
     assert rows[0][12:] == ["#1 Rayaan", "#2 Sofhaz", "#3 Jawid", "#4 Thalaal", "Super for"]
     assert len(rows) == 2 and rows[1][1] == "A200001" and rows[1][11] == "admin"
     assert rows[1][12:] == ["", "super", "super", "", "Sofhaz, Jawid"]

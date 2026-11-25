@@ -101,10 +101,10 @@ def export(fmt):
     rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {pledges.sheet_order()[2]}", params).fetchall()
     marks = _super_map([r["national_id"] for r in rows])
     listno = pledges.list_numbers([r["national_id"] for r in rows])
-    connected = pledges.connected_by([r["national_id"] for r in rows], "super_votes")
+    connected = pledges.connector_or_auto([r["national_id"] for r in rows], "super_votes")
     agent = pledges.agents_of([r["national_id"] for r in rows])
     headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "List no.", "Agent",
-                "Connected by"]
+                "Connector"]
                + [pledges.label(c) for c in cands] + ["Super for"])
     table = []
     for n, r in enumerate(rows, 1):
@@ -175,8 +175,7 @@ def sheet():
                            can_mark=can_mark_super(), max_votes=pledges.max_votes(), ours=pledges.our_candidate(),
                            label=pledges.label, sort_key=sort_key, sort_dir=sort_dir, owner=is_owner(),
                            listno=pledges.list_numbers([r["national_id"] for r in rows]),
-                           connected=pledges.connected_by([r["national_id"] for r in rows], "super_votes"),
-                           agents=pledges.agents_of([r["national_id"] for r in rows]),
+                           **pledges.sheet_extras([r["national_id"] for r in rows], "super_votes"),
                            agent_list=pledges.agent_options(),
                            query_args={k: v for k, v in request.args.items() if k != "page"},
                            first=(page - 1) * size)

@@ -16,7 +16,7 @@ from datetime import datetime, timedelta, timezone
 from flask import Blueprint, Response, abort, flash, g, redirect, render_template, request, url_for
 
 from . import audit, campaign
-from .auth import (can_mark_pledges, is_owner, pledge_marker_required, pledge_owner_required,
+from .auth import (can_mark_pledges, is_owner, login_required, pledge_marker_required, pledge_owner_required,
                    pledge_viewer_required)
 from .db import get_db, now_iso
 from .normalize import clean_text
@@ -56,6 +56,12 @@ CREATE TABLE IF NOT EXISTS pledge_log (
 CREATE INDEX IF NOT EXISTS ix_pledge_log_user ON pledge_log (by_user, at);
 CREATE TABLE IF NOT EXISTS pledge_noshow (
     national_id TEXT PRIMARY KEY,
+    at          TEXT NOT NULL,
+    by_user     INTEGER
+);
+CREATE TABLE IF NOT EXISTS voter_connector (
+    national_id TEXT PRIMARY KEY,
+    connector   TEXT NOT NULL,
     at          TEXT NOT NULL,
     by_user     INTEGER
 );
@@ -309,6 +315,55 @@ def agents_of(ids):
     return {k: v for k, v in out.items() if v}
 
 
+def connectors(ids):
+    """{national_id: connector}: the person typed into the sheets' Connector field."""
+    out = {}
+    db = get_db()
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        out.update(db.execute(f"SELECT national_id, connector FROM voter_connector WHERE national_id IN"
+                              f" ({','.join('?' * len(chunk))})", chunk).fetchall())
+    return out
+
+
+def connector_or_auto(ids, table="pledges"):
+    """{national_id: connector}: the typed connector, else who marked the voter (for exports)."""
+    out = connected_by(ids, table)
+    out.update(connectors(ids))
+    return out
+
+
+def agent_cells(ids):
+    """{national_id: (one-by-one agent id or None, house agent's name or '')} for the Agent drop-down."""
+    out = {}
+    db = get_db()
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        for nid, one, house in db.execute(
+                "SELECT v.national_id, va.user_id, uh.username FROM voters v"
+                " LEFT JOIN voter_assignments va ON va.national_id = v.national_id"
+                " LEFT JOIN house_assignments ha ON ha.house_name = v.house_name"
+                " LEFT JOIN users uh ON uh.id = ha.user_id AND uh.deleted_at IS NULL"
+                f" WHERE v.national_id IN ({','.join('?' * len(chunk))})", chunk):
+            out[nid] = (one, house or "")
+    return out
+
+
+def can_set_connector():
+    from .auth import can_mark_super, is_pledge_only
+
+    return g.get("user") is not None and not is_pledge_only() and (can_mark_pledges() or can_mark_super())
+
+
+def sheet_extras(ids, table="pledges"):
+    """What the Connector and Agent columns need on the pledge and super sheets."""
+    from .auth import is_admin
+
+    return {"connected": connected_by(ids, table), "connectors": connectors(ids), "agents": agents_of(ids),
+            "agent_cells": agent_cells(ids), "agent_choices": agent_options() if is_admin() else [],
+            "can_connect": can_set_connector()}
+
+
 def _pledge_map(ids):
     out = {}
     for i in range(0, len(ids), 500):
@@ -364,8 +419,7 @@ def sheet():
                            noshow=noshow_ids([r["national_id"] for r in rows]),
                            undecided=undecided_counts(where, params), show_super=can_view_super_pages(),
                            listno=list_numbers([r["national_id"] for r in rows]),
-                           connected=connected_by([r["national_id"] for r in rows]),
-                           agents=agents_of([r["national_id"] for r in rows]),
+                           **sheet_extras([r["national_id"] for r in rows]),
                            noshows=db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN"
                                               f" (SELECT national_id FROM voters{where})", params).fetchone()[0],
                            query_args=query_args, first=(page - 1) * size)
@@ -489,6 +543,35 @@ def set_noshow():
     return redirect(request.form.get("back") if (request.form.get("back") or "").startswith("/") else url_for("pledges.sheet"))
 
 
+@bp.post("/pledges/connector")
+@login_required
+def set_connector():
+    """The Connector field on the pledge / super sheets: who brought this voter in (typed, saved on change)."""
+    from .voters import get_voter_or_404
+
+    if not can_set_connector():
+        abort(403)
+    nid = request.form.get("national_id", "")
+    get_voter_or_404(nid)
+    text = " ".join(request.form.get("connector", "").split())[:80]
+    db = get_db()
+    old = db.execute("SELECT connector FROM voter_connector WHERE national_id = ?", (nid,)).fetchone()
+    old = old[0] if old else ""
+    if text != old:
+        if text:
+            db.execute("INSERT INTO voter_connector (national_id, connector, at, by_user) VALUES (?, ?, ?, ?)"
+                       " ON CONFLICT(national_id) DO UPDATE SET connector = excluded.connector, at = excluded.at,"
+                       " by_user = excluded.by_user", (nid, text, now_iso(), g.user["id"]))
+        else:
+            db.execute("DELETE FROM voter_connector WHERE national_id = ?", (nid,))
+        audit.log("voter_connector", target=nid, detail={"from": old, "to": text}, commit=False)
+        db.commit()
+    if request.headers.get("X-Requested-With") == "fetch":
+        return {"ok": True, "connector": text}
+    back = request.form.get("back") or ""
+    return redirect(back if back.startswith("/") and not back.startswith("//") else url_for("pledges.sheet"))
+
+
 @bp.route("/pledges/colors.css")
 @pledge_viewer_required
 def colors_css():
@@ -583,10 +666,10 @@ def export(fmt):
     marks = _pledge_map([r["national_id"] for r in rows])
     away = noshow_ids([r["national_id"] for r in rows])
     listno = list_numbers([r["national_id"] for r in rows])
-    connected = connected_by([r["national_id"] for r in rows])
+    connected = connector_or_auto([r["national_id"] for r in rows])
     agent = agents_of([r["national_id"] for r in rows])
     headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "List no.", "Agent",
-                "Connected by", "No-show"]
+                "Connector", "No-show"]
                + [c["name"] for c in cands])
     table = []
     for n, r in enumerate(rows, 1):

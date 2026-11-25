@@ -460,17 +460,55 @@ def test_connected_by_column(app):
     login(p, "pledger", "pledger-pass-123")
     mark(p, csrf(p, "/pledges"), "A200001", ids["Rayya"], "yes")
     page = " ".join(a.get("/pledges").get_data(as_text=True).split())
-    assert "Connected by" in page and "pledger, admin" in page                  # latest first
-    assert "Connected by" not in p.get("/pledges").get_data(as_text=True)          # not for pledge-only accounts
+    assert "<th>Connector</th>" in page and 'placeholder="pledger, admin"' in page   # latest first, as a hint
+    assert "<th>Connector</th>" not in p.get("/pledges").get_data(as_text=True)   # not for pledge-only accounts
     import csv as _csv
     rows = list(_csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
-    i = rows[0].index("Connected by")
+    i = rows[0].index("Connector")
     assert {r[1]: r[i] for r in rows[1:]}["A200001"] == "pledger, admin"
     # the agent who looks after the voter
     viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
     conn.execute("INSERT INTO voter_assignments (national_id, user_id, assigned_at) VALUES ('A200002', ?, 'x')", (viewer,))
     conn.commit()
     page = a.get("/pledges").get_data(as_text=True)
-    assert "<th>Agent</th>" in page and ">viewer</td>" in page
+    assert "<th>Agent</th>" in page and f'<option value="{viewer}" selected>viewer</option>' in page  # admins pick it
     rows = list(_csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
     assert {r[1]: r[rows[0].index("Agent")] for r in rows[1:]}["A200002"] == "viewer"
+
+
+def test_connector_field_and_agent_dropdown(app):
+    import csv as _csv
+
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    token, ids = setup(a)
+    mark(a, token, "A200001", ids["Shoppe"], "yes")
+    r = a.post("/pledges/connector", data={"csrf_token": token, "national_id": "A200001", "connector": "  Ali   Moosa "},
+               headers={"X-Requested-With": "fetch"})
+    assert r.get_json() == {"ok": True, "connector": "Ali Moosa"}
+    page = a.get("/pledges").get_data(as_text=True)
+    assert 'value="Ali Moosa"' in page and "data-connector-form" in page
+    assert 'value="Ali Moosa"' in a.get("/super").get_data(as_text=True)            # the same field on the super sheet
+    rows = list(_csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
+    col = {r[1]: r[rows[0].index("Connector")] for r in rows[1:]}
+    assert col["A200001"] == "Ali Moosa"                                            # typed wins over who marked
+    a.post("/pledges/connector", data={"csrf_token": token, "national_id": "A200001", "connector": ""})
+    rows = list(_csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
+    assert {r[1]: r[rows[0].index("Connector")] for r in rows[1:]}["A200001"] == "admin"  # cleared: back to who marked
+    # the Agent drop-down on the pledge sheet saves through the agent sheet
+    conn = connect(app.config["DATABASE"])
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    assert "data-agent-form" in page
+    a.post("/agents/sheet/set", data={"csrf_token": token, "national_id": "A200002", "agent": str(viewer)})
+    assert conn.execute("SELECT user_id FROM voter_assignments WHERE national_id = 'A200002'").fetchone()[0] == viewer
+    # a view-only account sees text, can't save
+    a.post(f"/admin/users/{viewer}", data={"csrf_token": token, "action": "set_pledge_access", "level": "view"})
+    conn.execute("UPDATE users SET must_change_password = 0 WHERE id = ?", (viewer,))
+    conn.commit()
+    v = app.test_client()
+    login(v, "viewer", USER_PW)
+    vpage = v.get("/pledges").get_data(as_text=True)
+    assert "<th>Connector</th>" in vpage and "data-connector-form" not in vpage and "data-agent-form" not in vpage
+    assert v.post("/pledges/connector", data={"csrf_token": csrf(v, "/pledges"), "national_id": "A200001",
+                                              "connector": "x"}).status_code == 403

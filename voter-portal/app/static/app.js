@@ -923,3 +923,33 @@ document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select
     }, 50);
   });
 })();
+
+// Pledge / super sheets: the Connector field saves when it's left (or Enter is pressed).
+(() => {
+  const save = async (input) => {
+    const form = input.form;
+    if (input.value === input.defaultValue) return;
+    try {
+      const r = await fetch(form.getAttribute("action"), { method: "POST", body: new FormData(form), credentials: "same-origin",
+        headers: { "X-Requested-With": "fetch" } });
+      if (!r.ok) throw new Error(r.status);
+      const data = await r.json();
+      input.value = data.connector;
+      input.defaultValue = data.connector;
+      input.classList.add("saved");
+      toast(data.connector ? `Saved: ${data.connector}` : "Connector cleared");
+    } catch (e) {
+      toast("Couldn't save the connector. Try again.");
+    }
+  };
+  document.addEventListener("change", (event) => {
+    const input = event.target.closest("[data-connector-form] input[name=connector]");
+    if (input) save(input);
+  });
+  document.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-connector-form]");
+    if (!form) return;
+    event.preventDefault();
+    save(form.elements.connector);
+  });
+})();
