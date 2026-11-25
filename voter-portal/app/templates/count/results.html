@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Vote count{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
+{% block main_class %}page wide{% endblock %}
+{% macro bar(n, of) -%}
+<svg class="dbar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+  <rect class="dbar-track" x="0" y="0" width="100" height="8"/>
+  {% if of %}<rect class="dbar-fill" x="0" y="0" width="{{ (100 * n / of)|round(2) }}" height="8"/>{% endif %}
+</svg>
+{%- endmacro %}
+{% block content %}
+<div class="count-results" data-autoreload="30">
+<div class="page-head war-head">
+  <div>
+    <h1>Vote count</h1>
+    <p class="muted"><strong>{{ r.final_boxes }}</strong> of {{ r.boxes }} boxes final · {{ r.ballots }} ballots · top {{ r.seats }} win.
+      Live: final boxes use the official sheet, the others the box agents' tally. Refreshes every 30 s.</p>
+  </div>
+  <span class="list-links">
+    <a class="button small" href="{{ url_for('votecount.sheet') }}">Count sheets</a>
+    <a class="button small" href="{{ url_for('votecount.results_xlsx') }}">{{ icon('download', 16) }} Excel</a>
+  </span>
+</div>
+
+<section class="card war-projection">
+  <h2>Result</h2>
+  {% if r.verdict %}<p class="scen-verdict {{ 'win' if r.verdict.wins else 'lose' }}">{% if r.verdict.wins %}Wins · {{ r.verdict.margin }} ahead of {{ r.verdict.vs }}{% else %}Behind · needs {{ r.verdict.margin }} more to pass {{ r.verdict.vs }}{% endif %}</p>{% endif %}
+  <ul class="dist-list">
+    {% for p in r.places %}
+    <li class="cand-{{ p.c.id }} {{ 'win' if p.wins }}"><span class="dist-name">{{ p.place }}. {{ label(p.c) }}{% if p.c.id == r.ours %} <span class="tag ours-tag">ours</span>{% endif %}</span>
+      {{ bar(p.votes, r.top) }}<span class="dist-num"><strong>{{ p.votes }}</strong>
+        <span class="muted small-text">pledged Yes {{ r.expected.get(p.c.id, 0) }}</span></span></li>
+    {% if loop.index == r.seats and not loop.last %}<li class="cut-line" aria-hidden="true"><span>winning line</span></li>{% endif %}
+    {% endfor %}
+  </ul>
+  <p class="muted small-text">Invalid / blank: {{ r.invalid }}.</p>
+</section>
+
+<section class="card">
+  <h2>By box</h2>
+  <div class="table-wrap">
+  <table class="report-table">
+    <thead><tr><th>Box</th><th>Status</th><th class="num">Marked voted</th><th class="num">Ballots</th>
+      {% for c in r.cands %}<th class="num cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}<th class="num">Invalid</th><th></th></tr></thead>
+    <tbody>
+    {% for b in r.rows %}
+    <tr class="{{ 'count-diff' if b.diffs }}">
+      <th><a href="{{ url_for('votecount.sheet', box=b.box) }}">{{ b.box }}</a></th>
+      <td><span class="tag count-st-{{ b.status|replace(' ', '-') }}">{{ b.status|capitalize }}</span>{% if b.diffs %} <span class="tag vo-flag">sheet ≠ tally</span>{% endif %}</td>
+      <td class="num">{{ b.voted }}</td><td class="num">{{ b.ballots }}</td>
+      {% for c in r.cands %}<td class="num">{{ b.votes.get(c.id, 0) }}<span class="muted small-text"> / {{ b.expected.get(c.id, 0) }}</span></td>{% endfor %}
+      <td class="num">{{ b.invalid }}</td>
+      <td>{% if b.photo %}<a class="small-text" href="{{ url_for('votecount.photo', box=b.box) }}" target="_blank" rel="noopener">Sheet photo</a>{% endif %}</td>
+    </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  <p class="muted small-text">Each candidate: votes / Yes pledges in that box (not no-shows). Where votes fall well short of pledges, pledges leaked.</p>
+</section>
+
+<div class="war-grid">
+<section class="card">
+  <h2>Voting pattern</h2>
+  <p class="muted small-text">From the box agents' tally ({{ r.tallied }} ballots).</p>
+  {% if r.tallied %}
+  <ul class="dist-list">
+    {% set pmax = r.pattern.values()|max %}
+    {% for key, text, ids in r.combos %}{% set n = r.pattern.get(key, 0) %}
+    <li class="{{ 'ours-row' if r.ours in ids }}"><span class="dist-name small-text">{{ text }}</span>{{ bar(n, pmax) }}
+      <span class="dist-num"><strong>{{ n }}</strong> <span class="muted small-text">{{ ((100 * n / r.tallied)|round(1)) }}%</span></span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">No ballots tallied yet.</p>{% endif %}
+</section>
+
+{% if r.ours %}
+<section class="card">
+  <h2>Who our voters paired us with</h2>
+  {% set total_ours = r.with_ours.values()|sum + r.pattern.get('s:' ~ r.ours, 0) %}
+  {% if total_ours %}
+  <ul class="dist-list">
+    {% for c in r.cands if c.id != r.ours %}{% set n = r.with_ours.get(c.id, 0) %}
+    <li class="cand-{{ c.id }}"><span class="dist-name">{{ label(c) }}</span>{{ bar(n, total_ours) }}
+      <span class="dist-num"><strong>{{ n }}</strong> <span class="muted small-text">{{ ((100 * n / total_ours)|round(1)) }}%</span></span></li>
+    {% endfor %}
+    {% set n = r.pattern.get('s:' ~ r.ours, 0) %}
+    <li><span class="dist-name">Only us (one vote)</span>{{ bar(n, total_ours) }}
+      <span class="dist-num"><strong>{{ n }}</strong> <span class="muted small-text">{{ ((100 * n / total_ours)|round(1)) }}%</span></span></li>
+  </ul>
+  {% else %}<p class="muted">No ballots for us tallied yet.</p>{% endif %}
+</section>
+{% endif %}
+</div>
+</div>
+{% endblock %}

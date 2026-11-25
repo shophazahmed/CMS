@@ -779,3 +779,83 @@ document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select
     pin.blur();
   });
 })();
+
+// Vote count: tap each ballot; taps queue on the phone and are sent in order (each with a key).
+(() => {
+  const page = document.querySelector("[data-count]");
+  if (!page || page.dataset.final) return;
+  const OUTBOX = "count-outbox";
+  const sync = page.querySelector("[data-war-sync]");
+  const syncText = page.querySelector("[data-war-sync-text]");
+  const load = () => { try { return JSON.parse(localStorage.getItem(OUTBOX) || "[]"); } catch (e) { return []; } };
+  const save = (l) => { try { localStorage.setItem(OUTBOX, JSON.stringify(l)); } catch (e) { /* private mode */ } };
+  const key = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()).replace(/-/g, "").slice(0, 32);
+  let busy = false;
+  const status = (online) => {
+    const waiting = load().length;
+    sync.classList.toggle("off", !online);
+    sync.classList.toggle("wait", waiting > 0);
+    syncText.textContent = !online ? `No signal · ${waiting} waiting` : waiting ? `Sending ${waiting}…` : "Live";
+  };
+  const show = (data) => {
+    page.querySelector("[data-c-ballots]").textContent = data.ballots;
+    const inv = page.querySelector("[data-c-invalid]"); if (inv) inv.textContent = data.invalid;
+    page.querySelectorAll("[data-v]").forEach((e) => { e.textContent = data.votes[e.dataset.v] || 0; });
+    page.querySelectorAll("[data-n]").forEach((e) => { e.textContent = data.tally[e.dataset.n] || 0; });
+  };
+  async function flush() {
+    if (busy) return;
+    busy = true;
+    let list = load();
+    while (list.length) {
+      const body = new URLSearchParams(list[0]);
+      try {
+        const r = await fetch(page.dataset.url, { method: "POST", body, credentials: "same-origin",
+          headers: { "X-Requested-With": "fetch" } });
+        if (r.status >= 500) throw new Error(r.status);
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) toast(data.error || "Not saved (" + r.status + ").");
+        else if (!data.repeat) show(data);
+        list = load().slice(1); save(list);
+      } catch (e) { busy = false; status(false); return; }
+    }
+    busy = false;
+    status(true);
+  }
+  const bump = (combo, d) => {
+    const n = page.querySelector(`[data-n="${CSS.escape(combo)}"]`);
+    if (n) n.textContent = Math.max(0, Number(n.textContent) + d);
+    const b = page.querySelector("[data-c-ballots]"); b.textContent = Math.max(0, Number(b.textContent) + d);
+  };
+  let last = [];
+  const send = (fields) => {
+    fields.csrf_token = page.dataset.csrf; fields.key = key();
+    if (page.dataset.box) fields.box = page.dataset.box;
+    const list = load(); list.push(fields); save(list); status(navigator.onLine); flush();
+  };
+  page.querySelectorAll("[data-combo]").forEach((btn) => btn.addEventListener("click", () => {
+    bump(btn.dataset.combo, 1); last.push(btn.dataset.combo);
+    btn.classList.add("hit"); setTimeout(() => btn.classList.remove("hit"), 180);
+    send({ combo: btn.dataset.combo });
+  }));
+  const undo = page.querySelector("[data-count-undo]");
+  if (undo) undo.addEventListener("click", () => {
+    const combo = last.pop();
+    if (combo) bump(combo, -1);
+    send({ undo: "1" });
+  });
+  window.addEventListener("online", flush);
+  status(navigator.onLine);
+  flush();
+  setInterval(flush, 10000);
+})();
+
+// Pages that refresh themselves (vote count results), unless the user is typing.
+(() => {
+  const el = document.querySelector("[data-autoreload]");
+  if (!el) return;
+  setInterval(() => {
+    if (document.activeElement && document.activeElement.matches("input, select, textarea")) return;
+    location.reload();
+  }, Number(el.dataset.autoreload) * 1000);
+})();
