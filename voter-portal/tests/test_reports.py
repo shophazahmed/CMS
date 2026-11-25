@@ -55,3 +55,28 @@ def test_pledge_reports_for_the_owner(app):
     t = rows_of(o.get(f"/reports/export.csv?rows=p{ids['Shoppe']}"))
     assert {r[0]: r[1] for r in t[1:-1]} == {"Yes": "2", "Not marked": "1"}
     assert "Contact before the vote, by agent" in o.get("/reports").get_data(as_text=True)   # the owner sees War Room ones
+
+
+def test_list_reports(app):
+    from tests.test_super import owner, vote
+
+    o, token, ids = owner(app)
+    conn = connect(app.config["DATABASE"])
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    conn.execute("INSERT INTO voter_assignments (national_id, user_id, assigned_at) VALUES ('A200001', ?, 'x')", (viewer,))
+    conn.commit()
+    vote(o, token, "A200001", ids["Sofhaz"], "1")
+    vote(o, token, "A200001", ids["Jawid"], "1")
+    page = o.get("/reports").get_data(as_text=True)
+    assert "Voters and their agent" in page and "Super pledge voters and their agent" in page
+    t = rows_of(o.get("/reports/list/voters-agents/export.csv"))
+    assert t[0][-2:] == ["Agent", "Given by"] and len(t) == 4
+    mine = {r[1]: r for r in t[1:]}
+    assert mine["A200001"][-2:] == ["viewer", "One by one"] and mine["A200002"][-2] == "No agent"
+    t = rows_of(o.get("/reports/list/super-agents/export.csv"))
+    assert len(t) == 2 and t[1][1] == "A200001" and t[1][8] == "Jawid, Sofhaz" and t[1][9] == "viewer"
+    assert "viewer" in o.get("/reports/list/super-agents").get_data(as_text=True)
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)                                   # no super pledge access
+    assert b.get("/reports/list/super-agents").status_code == 404
+    assert b.get("/reports/list/voters-agents").status_code == 200

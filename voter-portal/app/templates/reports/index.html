@@ -9,6 +9,23 @@
 </div>
 
 <section class="card">
+  <h2>{{ icon('users', 18) }} Lists</h2>
+  <p class="muted small-text">One row per voter, with filters and downloads.</p>
+  <div class="report-grid">
+    {% for key, (title, about) in lists.items() %}
+    <article class="report-card">
+      <h3><a href="{{ url_for('reports.list_view', kind=key) }}">{{ title }}</a></h3>
+      <p class="muted small-text">{{ about }}</p>
+      <p class="report-actions">
+        <a class="button small primary" href="{{ url_for('reports.list_view', kind=key) }}">Open</a>
+        <a class="button small" href="{{ url_for('reports.list_export', kind=key, fmt='xlsx') }}">{{ icon('download', 14) }} Excel</a>
+      </p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="card">
   <h2>{{ icon('clipboard', 18) }} Default reports</h2>
   <div class="report-grid">
     {% for key, title, about, r, c, extra in presets %}

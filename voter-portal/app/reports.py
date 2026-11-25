@@ -153,7 +153,7 @@ def index():
     db = get_db()
     w, p = pledges._scoped_where(" WHERE location != ''")
     boxes = [r[0] for r in db.execute(f"SELECT DISTINCT location FROM voters{w} ORDER BY location COLLATE NOCASE", p)]
-    return render_template("reports/index.html", presets=presets(), dims=dims, f=f, boxes=boxes,
+    return render_template("reports/index.html", presets=presets(), dims=dims, f=f, boxes=boxes, lists=lists(),
                            cands=pledges.candidates(), pc="", pv="", query_args=_filter_args())
 
 
@@ -268,3 +268,107 @@ def heat(n, top):
 def report_heat(n, top):
     return heat(n, top)
 
+
+
+# --- list reports: one row per voter -------------------------------------------------------------
+
+def lists():
+    """The list reports this person may open: key -> (title, about)."""
+    from .auth import can_view_super
+
+    out = {"voters-agents": ("Voters and their agent", "Every voter with the agent who looks after them (one by one, or"
+                                                       " through their house).")}
+    if can_view_super() and can_view_pledges():
+        out["super-agents"] = ("Super pledge voters and their agent", "Every super pledge voter, which candidates"
+                                                                      " they are super for, and their agent.")
+    return out
+
+
+def list_rows(kind):
+    f, where, params, cands, *_ = pledges._filters()
+    db = get_db()
+    names = {c["id"]: c["name"] for c in pledges.candidates(active_only=False)}
+    extra = ""
+    if kind == "super-agents":
+        extra = " AND v.national_id IN (SELECT national_id FROM super_votes)"
+    rows = db.execute(
+        "SELECT v.national_id, v.full_name, v.sex, v.age, v.house_name, v.location, v.phone,"
+        " va.user_id AS one_by_one, COALESCE(ua.username, uh.username) AS agent FROM voters v"
+        " LEFT JOIN voter_assignments va ON va.national_id = v.national_id"
+        " LEFT JOIN house_assignments ha ON ha.house_name = v.house_name"
+        " LEFT JOIN users ua ON ua.id = va.user_id LEFT JOIN users uh ON uh.id = ha.user_id"
+        f" WHERE v.deceased = 0 AND v.national_id IN (SELECT national_id FROM voters{where}){extra}"
+        " ORDER BY agent IS NULL, agent COLLATE NOCASE, v.house_name COLLATE NOCASE, v.full_name COLLATE NOCASE",
+        params).fetchall()
+    supers = {}
+    if kind == "super-agents":
+        for nid, cid in db.execute("SELECT national_id, candidate_id FROM super_votes"):
+            supers.setdefault(nid, []).append(names.get(cid, "?"))
+    head = ["#", "ID", "Name", "Sex", "Age", "House", "Box", "Phone"]
+    if kind == "super-agents":
+        head.append("Super for")
+    head += ["Agent", "Given by"]
+    out = []
+    for n, r in enumerate(rows, 1):
+        line = [n, r["national_id"], r["full_name"], r["sex"], r["age"], r["house_name"], r["location"], r["phone"]]
+        if kind == "super-agents":
+            line.append(", ".join(sorted(supers.get(r["national_id"], []))))
+        line += [r["agent"] or "No agent", ("One by one" if r["one_by_one"] else "House") if r["agent"] else ""]
+        out.append(line)
+    return head, out, f
+
+
+@bp.route("/reports/list/<kind>")
+@admin_required
+def list_view(kind):
+    known = lists()
+    if kind not in known:
+        abort(404)
+    head, rows, f = list_rows(kind)
+    per_agent = {}
+    for line in rows:
+        per_agent[line[-2]] = per_agent.get(line[-2], 0) + 1
+    db = get_db()
+    w, p = pledges._scoped_where(" WHERE location != ''")
+    boxes = [r[0] for r in db.execute(f"SELECT DISTINCT location FROM voters{w} ORDER BY location COLLATE NOCASE", p)]
+    return render_template("reports/list.html", kind=kind, title=known[kind][0], about=known[kind][1], head=head,
+                           rows=rows[:500], total=len(rows), per_agent=sorted(per_agent.items(), key=lambda x: (x[0] == "No agent", -x[1])),
+                           f=f, boxes=boxes, cands=pledges.candidates(), pc="", pv="", query_args=_filter_args())
+
+
+@bp.route("/reports/list/<kind>/export.<fmt>")
+@admin_required
+def list_export(kind, fmt):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    from .voters import _safe_cell
+
+    known = lists()
+    if kind not in known or fmt not in ("csv", "xlsx"):
+        abort(404)
+    head, rows, f = list_rows(kind)
+    rows = [[_safe_cell(x) if isinstance(x, str) else x for x in line] for line in rows]
+    audit.log("report_list_export", target=kind, detail={"fmt": fmt, "rows": len(rows)})
+    name = f"{kind}-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(head)
+        w.writerows(rows)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    wb = Workbook()
+    ws = wb.active
+    ws.title = known[kind][0][:31]
+    ws.append(head)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for line in rows:
+        ws.append(line)
+    ws.freeze_panes = "C2"
+    ws.auto_filter.ref = ws.dimensions
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})

@@ -1,0 +1,47 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ title }}{% endblock %}
+{% block main_class %}page wide{% endblock %}
+{% block content %}
+<a class="backlink" href="{{ url_for('reports.index') }}">{{ icon('back', 18) }} Reports</a>
+<div class="page-head">
+  <div class="house-title">
+    <h1>{{ title }}</h1>
+    <span class="list-links">
+      <a class="button small" href="{{ url_for('reports.list_export', kind=kind, fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
+      <a class="button small" href="{{ url_for('reports.list_export', kind=kind, fmt='csv', **query_args) }}">{{ icon('download', 16) }} CSV</a>
+      <button class="button small" type="button" data-print>Print</button>
+    </span>
+  </div>
+  <p class="muted">{{ about }} <strong>{{ total }}</strong> voter{{ 's' if total != 1 }}{{ ' (filtered)' if query_args }}.</p>
+</div>
+
+<details class="filter-panel card no-print" {{ 'open' if query_args }}>
+  <summary>{{ icon('filter') }} Filters</summary>
+  {% set box_list_options = boxes %}{% set with_pledge_filter = True %}
+  {% include "pledges/_filters.html" %}
+</details>
+
+<section class="pledge-totals no-print" aria-label="Voters per agent">
+  {% for name, n in per_agent %}
+  <div class="pledge-total {{ 'dist-none' if name == 'No agent' else 'agent-total' }}"><span class="pt-name">{{ name }}</span><strong>{{ n }}</strong>
+    <span class="muted small-text">voters</span></div>
+  {% endfor %}
+</section>
+
+{% if rows %}
+<div class="table-wrap card report-wrap">
+<table class="report-table">
+  <thead><tr>{% for h in head %}<th class="{{ 'num' if h in ('#', 'Age') }}">{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for line in rows %}
+  <tr>{% for x in line %}<td class="{{ 'num' if loop.index in (1, 5) }}{{ ' mono' if loop.index == 2 }}">{{ x if x is not none else '' }}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+{% if total > rows|length %}<p class="muted small-text">Showing the first {{ rows|length }} of {{ total }}. Download for the full list.</p>{% endif %}
+{% else %}
+<div class="empty card"><p>No voters with these filters.</p></div>
+{% endif %}
+{% endblock %}
