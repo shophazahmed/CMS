@@ -91,3 +91,48 @@ def test_list_reports(app):
     login(b, "boss", ADMIN_PW)                                   # no super pledge access
     assert b.get("/reports/list/super-agents").status_code == 404
     assert b.get("/reports/list/voters-agents").status_code == 200
+
+
+def test_candidate_reports_and_filters(app):
+    from tests.test_super import owner, vote
+
+    o, token, ids = owner(app)
+    s, r = ids["Sofhaz"], ids["Rayaan"]
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Box A'")
+    conn.execute("UPDATE voters SET location = 'Box B' WHERE national_id = 'A200003'")
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    conn.execute("INSERT INTO voter_assignments (national_id, user_id, assigned_at) VALUES ('A200001', ?, 'x')", (viewer,))
+    conn.commit()
+    mark(o, token, "A200001", s, "yes")
+    mark(o, token, "A200001", r, "yes")                       # shared
+    mark(o, token, "A200002", s, "yes")                       # Sofhaz only
+    mark(o, token, "A200003", r, "maybe")
+    vote(o, token, "A200002", s, "1")
+    page = o.get("/reports").get_data(as_text=True)
+    assert "Candidates overview" in page and "One candidate" in page and 'name="loc"' in page
+    t = rows_of(o.get("/reports/candidates/export.csv"))
+    soph = next(x for x in t if x[0].endswith("Sofhaz"))
+    # Yes, Maybe, No, Not marked, Solid, Shared, Expected, Super
+    assert soph[1:] == ["2", "0", "0", "1", "1", "1", "2", "1"]
+    # filtered by box
+    soph = next(x for x in rows_of(o.get("/reports/candidates/export.csv?loc=Box+B")) if x[0].endswith("Sofhaz"))
+    assert soph[1] == "0" and soph[4] == "1"
+    # one candidate's report
+    view = o.get(f"/reports/view?cand={s}&what=p-box").get_data(as_text=True)
+    assert "Sofhaz: pledges by box" in view
+    t = rows_of(o.get(f"/reports/export.csv?cand={s}&what=p-box"))
+    assert t[0][:2] == ["Box", "Yes"] and t[1][0] == "Box A" and t[1][1] == "2"
+    t = rows_of(o.get(f"/reports/export.csv?cand={s}&what=s-agent"))
+    assert {x[0]: x[1] for x in t[1:-1]}["No agent"] == "1"           # the super voter has no agent
+    # new dimensions
+    t = rows_of(o.get("/reports/export.csv?rows=pattern"))
+    got = {x[0]: x[1] for x in t[1:-1]}
+    shared = [k for k in got if k.startswith("Shared: ")]
+    assert got["Only Sofhaz"] == "1" and got["No Yes"] == "1" and len(shared) == 1 and got[shared[0]] == "1"
+    t = rows_of(o.get("/reports/export.csv?rows=super"))
+    assert {x[0]: x[1] for x in t[1:-1]} == {"Sofhaz": "1", "Not a super voter": "2"}
+    # agent filter on a default report
+    t = rows_of(o.get(f"/reports/export.csv?r=box-sex&ag={viewer}"))
+    assert t[-1][-1] == "1"
+    assert o.get(f"/reports/view?cand={s}&what=bogus").status_code == 400

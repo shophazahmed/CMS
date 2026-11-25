@@ -5,8 +5,9 @@
 <div class="page-head">
   <h1>Reports</h1>
   <p class="muted">Ready-made reports, or build your own from any two things. Every report can be shown as counts or row %,
-    filtered, and downloaded.</p>
+    filtered, and downloaded. Pick a box or an agent here and every report below opens (and downloads) for just that.</p>
 </div>
+{% include "reports/_quick.html" %}
 
 <section class="card">
   <h2>{{ icon('users', 18) }} Lists</h2>
@@ -14,27 +15,51 @@
   <div class="report-grid">
     {% for key, (title, about) in lists.items() %}
     <article class="report-card">
-      <h3><a href="{{ url_for('reports.list_view', kind=key) }}">{{ title }}</a></h3>
+      <h3><a href="{{ url_for('reports.list_view', kind=key, **query_args) }}">{{ title }}</a></h3>
       <p class="muted small-text">{{ about }}</p>
       <p class="report-actions">
-        <a class="button small primary" href="{{ url_for('reports.list_view', kind=key) }}">Open</a>
-        <a class="button small" href="{{ url_for('reports.list_export', kind=key, fmt='xlsx') }}">{{ icon('download', 14) }} Excel</a>
+        <a class="button small primary" href="{{ url_for('reports.list_view', kind=key, **query_args) }}">Open</a>
+        <a class="button small" href="{{ url_for('reports.list_export', kind=key, fmt='xlsx', **query_args) }}">{{ icon('download', 14) }} Excel</a>
       </p>
     </article>
     {% endfor %}
   </div>
 </section>
 
+{% if show_cands and cands %}
+<section class="card">
+  <h2>{{ icon('star', 18) }} Candidate reports</h2>
+  <div class="report-two">
+    <article class="report-card">
+      <h3><a href="{{ url_for('reports.candidates', **query_args) }}">Candidates overview</a></h3>
+      <p class="muted small-text">Every candidate side by side: Yes, Maybe, No, not marked, solid base, shared supporters,
+        expected to vote and super voters.</p>
+      <p class="report-actions">
+        <a class="button small primary" href="{{ url_for('reports.candidates', **query_args) }}">Open</a>
+        <a class="button small" href="{{ url_for('reports.candidates_export', fmt='xlsx', **query_args) }}">{{ icon('download', 14) }} Excel</a>
+      </p>
+    </article>
+    <form class="report-card report-cand" method="get" action="{{ url_for('reports.view') }}">
+      {% for k, v in query_args.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+      <h3>One candidate</h3>
+      <label>Candidate <select name="cand">{% for c in cands %}<option value="{{ c.id }}">{{ c.name }}</option>{% endfor %}</select></label>
+      <label>Report <select name="what">{% for key, label, r, pre in cand_reports %}<option value="{{ key }}">{{ label|capitalize }}</option>{% endfor %}</select></label>
+      <p class="report-actions"><button class="primary small">Open</button></p>
+    </form>
+  </div>
+</section>
+{% endif %}
+
 <section class="card">
   <h2>{{ icon('clipboard', 18) }} Default reports</h2>
   <div class="report-grid">
     {% for key, title, about, r, c, extra in presets %}
     <article class="report-card">
-      <h3><a href="{{ url_for('reports.view', r=key) }}">{{ title }}</a></h3>
+      <h3><a href="{{ url_for('reports.view', r=key, **query_args) }}">{{ title }}</a></h3>
       <p class="muted small-text">{{ about }}</p>
       <p class="report-actions">
-        <a class="button small primary" href="{{ url_for('reports.view', r=key) }}">Open</a>
-        <a class="button small" href="{{ url_for('reports.export', fmt='xlsx', r=key) }}">{{ icon('download', 14) }} Excel</a>
+        <a class="button small primary" href="{{ url_for('reports.view', r=key, **query_args) }}">Open</a>
+        <a class="button small" href="{{ url_for('reports.export', fmt='xlsx', r=key, **query_args) }}">{{ icon('download', 14) }} Excel</a>
       </p>
     </article>
     {% endfor %}
@@ -52,10 +77,7 @@
     <select name="cols"><option value="">— just a count —</option>
       {% for k, d in dims.items() %}<option value="{{ k }}" {{ 'selected' if k == 'sex' }}>{{ d[0] }}</option>{% endfor %}</select>
   </label>
-  <label>Box
-    <select name="loc"><option value="">All boxes</option>
-      {% for b in boxes %}<option value="{{ b }}">{{ b }}</option>{% endfor %}<option value="(none)">No box recorded</option></select>
-  </label>
+  {% for k, v in query_args.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   <label class="check"><input type="checkbox" name="pct" value="1"> Show row %</label>
   <button class="primary">Show the report</button>
 </form>
@@ -68,10 +90,7 @@
     <label class="check"><input type="checkbox" name="many" value="{{ key }}" {{ 'checked' if loop.index <= 4 }}> {{ title }}</label>
     {% endfor %}
   </div>
-  <label>Box
-    <select name="loc"><option value="">All boxes</option>
-      {% for b in boxes %}<option value="{{ b }}">{{ b }}</option>{% endfor %}</select>
-  </label>
+  {% for k, v in query_args.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   <label class="check"><input type="checkbox" name="pct" value="1"> Row % instead of counts</label>
   <button class="primary">{{ icon('download', 16) }} Download Excel</button>
 </form>

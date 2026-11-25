@@ -1,16 +1,16 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
-{% block title %}{{ preset[1] if preset else 'Report' }}{% endblock %}
+{% block title %}{{ title }}{% endblock %}
 {% block head %}{% if t.pledge_rows %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endif %}{% endblock %}
 {% block main_class %}page wide{% endblock %}
 {% block content %}
 <a class="backlink" href="{{ url_for('reports.index') }}">{{ icon('back', 18) }} Reports</a>
 <div class="page-head">
   <div class="house-title">
-    <h1>{{ preset[1] if preset else t.r_label ~ (' by ' ~ t.c_label if t.c_label else '') }}</h1>
+    <h1>{{ title }}</h1>
     <span class="list-links">
-      <a class="button small" href="{{ url_for('reports.export', fmt='xlsx', **dict(query_args, r=key or None, rows=None if key else rows_key, cols=None if key else (cols_key or None), pct=pct or None)) }}">{{ icon('download', 16) }} Excel</a>
-      <a class="button small" href="{{ url_for('reports.export', fmt='csv', **dict(query_args, r=key or None, rows=None if key else rows_key, cols=None if key else (cols_key or None), pct=pct or None)) }}">{{ icon('download', 16) }} CSV</a>
+      <a class="button small" href="{{ url_for('reports.export', fmt='xlsx', **dict(query_args, r=key or None, cand=cand or None, what=what or None, rows=None if key or cand else rows_key, cols=None if key or cand else (cols_key or None), pct=pct or None)) }}">{{ icon('download', 16) }} Excel</a>
+      <a class="button small" href="{{ url_for('reports.export', fmt='csv', **dict(query_args, r=key or None, cand=cand or None, what=what or None, rows=None if key or cand else rows_key, cols=None if key or cand else (cols_key or None), pct=pct or None)) }}">{{ icon('download', 16) }} CSV</a>
       <button class="button small" type="button" data-print>Print</button>
     </span>
   </div>
@@ -18,6 +18,7 @@
     {% if t.pledge_rows and not preset %}A voter with two Yes counts under both.{% endif %}</p>
 </div>
 
+{% include "reports/_quick.html" %}
 <form class="card report-pick no-print" method="get">
   {% for k, v in query_args.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
   <label>Rows <select name="rows" data-autosubmit>{% for k, d in dims.items() %}<option value="{{ k }}" {{ 'selected' if k == rows_key }}>{{ d[0] }}</option>{% endfor %}</select></label>

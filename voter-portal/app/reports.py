@@ -56,6 +56,21 @@ def dimensions():
                                    f"COALESCE((SELECT value FROM pledges WHERE national_id = v.national_id AND candidate_id = {int(c['id'])}), '')",
                                    (), {"yes": "Yes", "maybe": "Maybe", "no": "No", "": "Not marked"},
                                    ["yes", "maybe", "no", ""])
+        dims["pattern"] = ("Pledge pattern",
+                           "(SELECT CASE COUNT(*) WHEN 0 THEN 'No Yes' WHEN 1 THEN 'Only ' || MAX(c.name)"
+                           " ELSE 'Shared: ' || group_concat(c.name, ' & ') END FROM pledges p JOIN candidates c"
+                           " ON c.id = p.candidate_id AND c.active = 1 WHERE p.national_id = v.national_id AND p.value = 'yes')",
+                           (), None, [f"Only {c['name']}" for c in cands])
+        from .auth import can_view_super
+
+        if can_view_super():
+            dims["super"] = ("Super pledge for", "COALESCE(cs.name, 'Not a super voter')", ("super",), None,
+                             [c["name"] for c in cands] + ["Not a super voter"])
+            for c in cands:
+                dims[f"s{c['id']}"] = (f"Super: {c['name']}",
+                                       "CASE WHEN v.national_id IN (SELECT national_id FROM super_votes WHERE candidate_id ="
+                                       f" {int(c['id'])}) THEN 'Super voter' ELSE 'Not super' END", (), None,
+                                       ["Super voter", "Not super"])
         dims["noshow"] = ("No-show", "CASE WHEN v.national_id IN (SELECT national_id FROM pledge_noshow) THEN 'No-show'"
                           " ELSE 'Expected to vote' END", (), None, ["Expected to vote", "No-show"])
     if _war_ok():
@@ -73,7 +88,36 @@ JOINS = {
     "yes": (" LEFT JOIN pledges py ON py.national_id = v.national_id AND py.value = 'yes'"
             " LEFT JOIN candidates cy ON cy.id = py.candidate_id AND cy.active = 1"),
     "contact": " LEFT JOIN war_contact k ON k.national_id = v.national_id",
+    "super": (" LEFT JOIN super_votes sv ON sv.national_id = v.national_id"
+              " LEFT JOIN candidates cs ON cs.id = sv.candidate_id AND cs.active = 1"),
 }
+
+# Candidate reports: (key, title, rows, column prefix) -> e.g. "Sofhaz: pledges by box"
+CAND_REPORTS = [("p-box", "pledges by box", "box", "p"), ("p-agent", "pledges by agent", "agent", "p"),
+                ("p-age", "pledges by age group", "age", "p"), ("p-sex", "pledges by sex", "sex", "p"),
+                ("p-house", "pledges by house", "house", "p"),
+                ("s-box", "super voters by box", "box", "s"), ("s-agent", "super voters by agent", "agent", "s"),
+                ("s-age", "super voters by age group", "age", "s")]
+
+
+def resolve():
+    """(title, rows, cols, preset) for this request: a default report (?r=), a candidate report (?cand=&what=)
+    or your own (?rows=&cols=)."""
+    key = request.args.get("r", "")
+    preset = next((p for p in presets() if p[0] == key), None)
+    if preset:
+        return preset[1], preset[3], preset[4], preset
+    cand, what = request.args.get("cand", ""), request.args.get("what", "")
+    if cand.isdigit() and what:
+        c = next((c for c in pledges.candidates() if str(c["id"]) == cand), None)
+        rep = next((r for r in CAND_REPORTS if r[0] == what), None)
+        if c is None or rep is None or f"{rep[3]}{cand}" not in dimensions():
+            abort(400)
+        return f"{c['name']}: {rep[1]}", rep[2], f"{rep[3]}{cand}", None
+    dims = dimensions()
+    rows_key, cols_key = request.args.get("rows", "box"), request.args.get("cols", "")
+    title = dims.get(rows_key, ("Report",))[0] + (f" by {dims[cols_key][0]}" if cols_key in dims else "")
+    return title, rows_key, cols_key, None
 
 
 def presets():
@@ -117,7 +161,8 @@ def build(rows_key, cols_key, args):
     else:
         c_label, c_sql, c_joins, c_names, c_order = ("", "'Voters'", (), None, ["Voters"])
     joins = "".join(JOINS[j] for j in dict.fromkeys(tuple(r_joins) + tuple(c_joins)))
-    count = "COUNT(*)" if "yes" in (rows_key, cols_key) else "COUNT(DISTINCT v.national_id)"
+    multi = bool({"yes", "super"} & {rows_key, cols_key})  # a voter can be in two columns
+    count = "COUNT(*)" if multi else "COUNT(DISTINCT v.national_id)"
     data = get_db().execute(
         f"SELECT {r_sql} AS r, {c_sql} AS c, {count} FROM voters v{joins}"
         f" WHERE v.deceased = 0 AND v.national_id IN (SELECT national_id FROM voters{where}) GROUP BY r, c",
@@ -138,11 +183,16 @@ def build(rows_key, cols_key, args):
     col_tot = {c: sum(n for (_, cc), n in cells.items() if cc == c) for c, _ in cols}
     return {"rows": rows, "cols": cols, "cells": cells, "row_tot": row_tot, "col_tot": col_tot,
             "total": sum(cells.values()), "r_label": r_label, "c_label": c_label, "f": f,
-            "max": max(cells.values(), default=0), "pledge_rows": "yes" in (rows_key, cols_key)}
+            "max": max(cells.values(), default=0), "pledge_rows": multi}
 
 
 def _filter_args():
-    return {k: v for k, v in request.args.items() if k not in ("rows", "cols", "pct", "r", "page")}
+    return {k: v for k, v in request.args.items() if k not in ("rows", "cols", "pct", "r", "page", "cand", "what")}
+
+
+def _boxes():
+    w, p = pledges._scoped_where(" WHERE location != ''")
+    return [r[0] for r in get_db().execute(f"SELECT DISTINCT location FROM voters{w} ORDER BY location COLLATE NOCASE", p)]
 
 
 @bp.route("/reports")
@@ -150,27 +200,108 @@ def _filter_args():
 def index():
     dims = dimensions()
     f, *_ = pledges._filters()
-    db = get_db()
-    w, p = pledges._scoped_where(" WHERE location != ''")
-    boxes = [r[0] for r in db.execute(f"SELECT DISTINCT location FROM voters{w} ORDER BY location COLLATE NOCASE", p)]
+    boxes = _boxes()
+    from .auth import can_view_super
+
     return render_template("reports/index.html", presets=presets(), dims=dims, f=f, boxes=boxes, lists=lists(),
-                           cands=pledges.candidates(), pc="", pv="", query_args=_filter_args())
+                           cands=pledges.candidates(), pc="", pv="", query_args=_filter_args(),
+                           agents=pledges.agent_options(), cand_reports=[r for r in CAND_REPORTS
+                                                                         if r[3] == "p" or can_view_super()],
+                           show_cands=can_view_pledges())
 
 
 @bp.route("/reports/view")
 @admin_required
 def view():
-    key = request.args.get("r", "")
-    preset = next((p for p in presets() if p[0] == key), None)
-    rows_key = preset[3] if preset else request.args.get("rows", "box")
-    cols_key = preset[4] if preset else request.args.get("cols", "")
+    title, rows_key, cols_key, preset = resolve()
     t = build(rows_key, cols_key, request.args)
+    return render_template("reports/view.html", t=t, preset=preset, title=title, rows_key=rows_key, cols_key=cols_key,
+                           dims=dimensions(), pct=request.args.get("pct", ""), key=request.args.get("r", ""),
+                           cand=request.args.get("cand", ""), what=request.args.get("what", ""), boxes=_boxes(),
+                           agents=pledges.agent_options(), f=t["f"], cands=pledges.candidates(), pc="", pv="",
+                           query_args=_filter_args())
+
+
+def candidate_overview():
+    """Per candidate: Yes / Maybe / No / not marked, solid base, shared, super voters, Yes expected to vote."""
+    f, where, params, cands, *_ = pledges._filters()
     db = get_db()
-    w, p = pledges._scoped_where(" WHERE location != ''")
-    boxes = [r[0] for r in db.execute(f"SELECT DISTINCT location FROM voters{w} ORDER BY location COLLATE NOCASE", p)]
-    return render_template("reports/view.html", t=t, preset=preset, rows_key=rows_key, cols_key=cols_key,
-                           dims=dimensions(), pct=request.args.get("pct", ""), key=key, boxes=boxes,
-                           f=t["f"], cands=pledges.candidates(), pc="", pv="", query_args=_filter_args())
+    sub = f"SELECT national_id FROM voters{where}"
+    total = db.execute(f"SELECT COUNT(*) FROM voters WHERE deceased = 0 AND national_id IN ({sub})", params).fetchone()[0]
+    ids = [c["id"] for c in cands]
+    marks = {}
+    for cid, value, n in db.execute(f"SELECT candidate_id, value, COUNT(*) FROM pledges WHERE national_id IN ({sub})"
+                                    " GROUP BY candidate_id, value", params):
+        marks[(cid, value)] = n
+    solid = dict(db.execute(
+        f"SELECT MAX(candidate_id), COUNT(*) FROM (SELECT national_id, MAX(candidate_id) AS candidate_id FROM pledges"
+        f" WHERE value = 'yes' AND candidate_id IN ({','.join('?' * len(ids)) or 'NULL'}) AND national_id IN ({sub})"
+        " GROUP BY national_id HAVING COUNT(*) = 1) GROUP BY candidate_id", ids + params).fetchall()) if ids else {}
+    from .auth import can_view_super
+
+    supers = dict(db.execute(f"SELECT candidate_id, COUNT(*) FROM super_votes WHERE national_id IN ({sub})"
+                             " GROUP BY candidate_id", params).fetchall()) if can_view_super() else None
+    expected = dict(db.execute(f"SELECT candidate_id, COUNT(*) FROM pledges WHERE value = 'yes' AND national_id IN ({sub})"
+                               " AND national_id NOT IN (SELECT national_id FROM pledge_noshow) GROUP BY candidate_id",
+                               params).fetchall())
+    head = ["Candidate", "Yes", "Maybe", "No", "Not marked", "Solid base (only them)", "Shared (Yes for 2)",
+            "Expected to vote (Yes, not no-show)"] + (["Super voters"] if supers is not None else [])
+    rows = []
+    for c in cands:
+        yes, maybe, no = (marks.get((c["id"], v), 0) for v in ("yes", "maybe", "no"))
+        line = [pledges.label(c), yes, maybe, no, total - yes - maybe - no, solid.get(c["id"], 0),
+                yes - solid.get(c["id"], 0), expected.get(c["id"], 0)]
+        if supers is not None:
+            line.append(supers.get(c["id"], 0))
+        rows.append(line)
+    return head, rows, total, f
+
+
+@bp.route("/reports/candidates")
+@admin_required
+def candidates():
+    if not can_view_pledges():
+        abort(404)
+    head, rows, total, f = candidate_overview()
+    top = max([x for line in rows for x in line[1:]] or [0])
+    return render_template("reports/candidates.html", head=head, rows=rows, total=total, top=top, f=f,
+                           boxes=_boxes(), agents=pledges.agent_options(), cands=pledges.candidates(), pc="", pv="",
+                           query_args=_filter_args(), ours=pledges.our_candidate(), cids=[c["id"] for c in pledges.candidates()])
+
+
+@bp.route("/reports/candidates/export.<fmt>")
+@admin_required
+def candidates_export(fmt):
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    if not can_view_pledges() or fmt not in ("csv", "xlsx"):
+        abort(404)
+    head, rows, total, f = candidate_overview()
+    audit.log("report_export", target=fmt, detail={"reports": ["Candidates overview"]})
+    name = f"candidates-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(head)
+        w.writerows(rows)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Candidates"
+    ws.append([f"Candidates overview · {total} voters"])
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.append(head)
+    for cell in ws[2]:
+        cell.font = Font(bold=True)
+    for line in rows:
+        ws.append(line)
+    ws.column_dimensions["A"].width = 24
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
 
 
 def _sheet(t, pct=""):
@@ -211,14 +342,8 @@ def export(fmt):
         if not jobs:
             abort(400)
     else:
-        key = request.args.get("r", "")
-        if key in known:
-            jobs = [(known[key][1], known[key][3], known[key][4])]
-        else:
-            rows_key, cols_key = request.args.get("rows", "box"), request.args.get("cols", "")
-            dims = dimensions()
-            title = dims.get(rows_key, ("Report",))[0] + (f" by {dims[cols_key][0]}" if cols_key in dims else "")
-            jobs = [(title, rows_key, cols_key)]
+        title, rows_key, cols_key, _ = resolve()
+        jobs = [(title, rows_key, cols_key)]
     tables = [(title, build(r, c, request.args)) for title, r, c in jobs]
     stamp = datetime.now().strftime("%Y%m%d-%H%M")
     audit.log("report_export", target=fmt, detail={"reports": [title for title, _ in tables], "pct": bool(pct)})

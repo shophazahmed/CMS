@@ -1,0 +1,38 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Candidates overview{% endblock %}
+{% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
+{% block main_class %}page wide{% endblock %}
+{% block content %}
+<a class="backlink" href="{{ url_for('reports.index', **query_args) }}">{{ icon('back', 18) }} Reports</a>
+<div class="page-head">
+  <div class="house-title">
+    <h1>Candidates overview</h1>
+    <span class="list-links">
+      <a class="button small" href="{{ url_for('reports.candidates_export', fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
+      <a class="button small" href="{{ url_for('reports.candidates_export', fmt='csv', **query_args) }}">{{ icon('download', 16) }} CSV</a>
+      <button class="button small" type="button" data-print>Print</button>
+    </span>
+  </div>
+  <p class="muted"><strong>{{ total }}</strong> voters{{ ' (filtered)' if query_args }}. A voter can say Yes to two candidates, so
+    Yes columns don't add up to the voters.</p>
+</div>
+{% include "reports/_quick.html" %}
+<details class="filter-panel card no-print" {{ 'open' if query_args }}>
+  <summary>{{ icon('filter') }} Filters</summary>
+  {% set box_list_options = boxes %}{% set with_pledge_filter = True %}
+  {% include "pledges/_filters.html" %}
+</details>
+<div class="table-wrap card report-wrap">
+<table class="report-table">
+  <thead><tr>{% for h in head %}<th class="{{ 'num' if not loop.first }}">{{ h }}</th>{% endfor %}</tr></thead>
+  <tbody>
+  {% for line in rows %}{% set cid = cids[loop.index0] %}
+  <tr class="cand-{{ cid }}"><th><span class="dot cand-{{ cid }}"></span>{{ line[0] }}{% if cid == ours %} <span class="tag ours-tag">ours</span>{% endif %}</th>
+    {% for x in line[1:] %}<td class="num {{ report_heat(x, top) }}">{{ x }}</td>{% endfor %}</tr>
+  {% endfor %}
+  </tbody>
+</table>
+</div>
+<p class="muted small-text no-print">Open one candidate's details: {% for c in cands %}<a href="{{ url_for('reports.view', cand=c.id, what='p-box', **query_args) }}">{{ c.name }}</a>{{ ' · ' if not loop.last }}{% endfor %}</p>
+{% endblock %}

@@ -1311,3 +1311,5 @@ body.nav-open { overflow: hidden; }
 @media print { .report-wrap { box-shadow: none; border: 0; } .report-table thead th { position: static; } .backlink { display: none; } }
 .report-table tbody th, .report-table tfoot th { text-transform: none; letter-spacing: 0; font-size: .92rem; color: var(--text); }
 .report-table thead th { text-transform: none; letter-spacing: 0; }
+.report-quick { margin-bottom: .75rem; }
+.report-cand label { display: grid; gap: .2rem; margin-bottom: .4rem; font-size: .9rem; }
