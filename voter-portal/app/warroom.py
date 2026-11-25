@@ -242,6 +242,20 @@ def _scope_sql(t, user_id, box):
     return "1", []
 
 
+def field_may_see(national_id):
+    """False when a field account (tiers 1-3) asks about a voter who isn't theirs; True for everyone else."""
+    t = tier()
+    if t not in FIELD_TIERS or not is_field():
+        return True
+    db = get_db()
+    if t == "t2" and db.execute("SELECT 1 FROM war_transport WHERE national_id = ? AND status IN ('waiting', 'onway')",
+                                (national_id,)).fetchone():
+        return True  # runners see every ride waiting in the transport queue
+    cond, params = _scope_sql(t, g.user["id"], g.user["war_box"] or "")
+    return db.execute(f"SELECT 1 FROM voters WHERE national_id = ? AND {cond}",
+                      [national_id] + params).fetchone() is not None
+
+
 def _box_of(t):
     if t == "t1":
         return g.user["war_box"] or ""
@@ -319,7 +333,7 @@ def box():
     has_numbers = db.execute("SELECT 1 FROM war_list WHERE box = ? LIMIT 1", (b,)).fetchone() is not None
     # the whole box list: list number, name, house, voted or not (no phone numbers)
     everyone = db.execute(
-        "SELECT v.national_id, v.full_name, v.house_name, v.sex, v.age, l.list_no, w.at AS voted_at FROM voters v"
+        "SELECT v.national_id, v.full_name, v.house_name, v.sex, v.age, v.photo_path, l.list_no, w.at AS voted_at FROM voters v"
         " LEFT JOIN war_list l ON l.national_id = v.national_id LEFT JOIN war_voted w ON w.national_id = v.national_id"
         " WHERE v.location = ? AND v.deceased = 0"
         " ORDER BY l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE", (b,)).fetchall()
@@ -347,7 +361,7 @@ def box_export(fmt):
     show = request.args.get("show", "")
     cond = {"yes": " AND w.national_id IS NOT NULL", "no": " AND w.national_id IS NULL"}.get(show, "")
     rows = get_db().execute(
-        "SELECT v.full_name, v.house_name, v.sex, v.age, l.list_no, w.at AS voted_at FROM voters v"
+        "SELECT v.full_name, v.house_name, v.sex, v.age, v.photo_path, l.list_no, w.at AS voted_at FROM voters v"
         " LEFT JOIN war_list l ON l.national_id = v.national_id LEFT JOIN war_voted w ON w.national_id = v.national_id"
         f" WHERE v.location = ? AND v.deceased = 0{cond}"
         " ORDER BY l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE", (b,)).fetchall()
@@ -367,22 +381,47 @@ def box_export(fmt):
         w.writerows(table)
         return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    import os
+
     from openpyxl import Workbook
-    from openpyxl.styles import Font
+    from openpyxl.drawing.image import Image as XLImage
+    from openpyxl.styles import Alignment, Font
+    from PIL import Image
+
+    from flask import current_app
 
     wb = Workbook()
     ws = wb.active
     ws.title = "Voter list"
     ws.append([f"{b} · {len(table)} voters ({label.replace('-', ' ')}) · {(datetime.now(timezone.utc) + LOCAL).strftime('%-d %b %Y %H:%M')}"])
     ws["A1"].font = Font(bold=True, size=13)
-    ws.append(head)
+    ws.append(["Photo"] + head)
     for cell in ws[2]:
         cell.font = Font(bold=True)
-    for line in table:
-        ws.append(line)
-    ws.freeze_panes = "C3"
-    ws.column_dimensions["B"].width = 30
-    ws.column_dimensions["C"].width = 22
+    photos_dir = current_app.config["PHOTOS_DIR"]
+    for i, (line, r) in enumerate(zip(table, rows), start=3):
+        ws.append([""] + line)
+        ws.row_dimensions[i].height = 48
+        for cell in ws[i]:
+            cell.alignment = Alignment(vertical="center")
+        if r["photo_path"]:
+            try:  # a small thumbnail in the row (keeps the file light)
+                with Image.open(os.path.join(photos_dir, r["photo_path"])) as im:
+                    im = im.convert("RGB")
+                    im.thumbnail((120, 120))
+                    buf = io.BytesIO()
+                    im.save(buf, "JPEG", quality=70)
+                buf.seek(0)
+                pic = XLImage(buf)
+                scale = 60 / max(pic.width, pic.height)
+                pic.width, pic.height = int(pic.width * scale), int(pic.height * scale)
+                ws.add_image(pic, f"A{i}")
+            except Exception:
+                pass
+    ws.freeze_panes = "D3"
+    ws.column_dimensions["A"].width = 10
+    ws.column_dimensions["C"].width = 30
+    ws.column_dimensions["D"].width = 22
     out = io.BytesIO()
     wb.save(out)
     return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},

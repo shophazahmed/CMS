@@ -447,6 +447,10 @@ def photo(national_id):
     voter = get_voter_or_404(national_id)
     if not voter["photo_path"]:
         abort(404)
+    from .warroom import field_may_see
+
+    if not field_may_see(national_id):  # field accounts: only their own voters' photos
+        abort(404)
     resp = send_from_directory(current_app.config["PHOTOS_DIR"], voter["photo_path"], max_age=3600)
     resp.headers["Cache-Control"] = "private, max-age=3600"
     return resp

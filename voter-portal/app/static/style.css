@@ -1380,3 +1380,16 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
 .bl-export { display: flex; flex-wrap: wrap; gap: .4rem .6rem; align-items: end; margin: 0 0 .75rem; }
 .bl-export label { display: flex; align-items: center; gap: .4rem; }
 .bl-export select { width: auto; min-height: 36px; }
+.bl-row .avatar { flex: none; }
+.bl-row { display: grid; grid-template-columns: 2.4rem auto minmax(0, 1fr) auto auto; align-items: center; gap: .3rem .65rem; }
+.bl-no { min-width: 0; }
+@media (max-width: 560px) {
+  .bl-row { grid-template-columns: 2.2rem auto minmax(0, 1fr); grid-template-areas: "no pic who" "no pic state"; }
+  .bl-row .bl-no { grid-area: no; }
+  .bl-row .avatar { grid-area: pic; }
+  .bl-row .bl-who { grid-area: who; }
+  .bl-row .bl-state { grid-area: state; display: flex; align-items: center; justify-content: space-between; gap: .5rem; }
+  .bl-row .bl-mark { grid-area: state; justify-self: end; }
+  .bl-who strong { white-space: normal; }
+}
+.bl-export label { width: auto; }

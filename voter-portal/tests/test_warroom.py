@@ -95,6 +95,20 @@ def test_marking_clears_the_call_list(app):
     assert [r[5] for r in rows[1:] if r[1] == "Aminath Alpha"] == ["Voted"]
     assert len(list(_csv.reader(io.StringIO(t1.get("/war/box/export.csv?show=no").get_data(as_text=True))))) == 2
     assert "HYPERLINK" not in t1.get("/war/box/export.csv?box=Box+B").get_data(as_text=True)     # always their own box
+    # photos: on the list and in the Excel; only their own box's voters
+    import os
+    from PIL import Image
+    for nid in ("A200001", "A200003"):
+        Image.new("RGB", (200, 260), "gray").save(os.path.join(app.config["PHOTOS_DIR"], f"{nid}.jpg"))
+        conn.execute("UPDATE voters SET photo_path = ? WHERE national_id = ?", (f"{nid}.jpg", nid))
+    conn.commit()
+    assert "/photos/A200001" in t1.get("/war/box").get_data(as_text=True)
+    assert t1.get("/photos/A200001").status_code == 200
+    assert t1.get("/photos/A200003").status_code == 404                     # Box B: not theirs
+    assert o.get("/photos/A200003").status_code == 200                      # the owner: any
+    from openpyxl import load_workbook
+    ws = load_workbook(io.BytesIO(t1.get("/war/box/export.xlsx").data)).active
+    assert ws["A2"].value == "Photo" and len(ws._images) == 1
     # tier 1 can't mark at another box
     assert t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200003", "value": "1"}).status_code == 403
     # call outcomes

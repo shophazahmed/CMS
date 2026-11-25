@@ -1,5 +1,5 @@
 {% extends "base.html" %}
-{% from "_macros.html" import icon %}
+{% from "_macros.html" import icon, avatar %}
 {% block title %}Box · {{ box or 'War Room' }}{% endblock %}
 {% block content %}
 <div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes', box=box if t != 't1' else None) }}" data-mode="box">
@@ -47,13 +47,14 @@
     {% if t != 't1' %}<input type="hidden" name="box" value="{{ box }}">{% endif %}
     <label class="small-text">Download
       <select name="show"><option value="">All voters</option><option value="no">Not voted</option><option value="yes">Voted</option></select></label>
-    <button class="small" formaction="{{ url_for('warroom.box_export', fmt='xlsx') }}">{{ icon('download', 14) }} Excel</button>
+    <button class="small" formaction="{{ url_for('warroom.box_export', fmt='xlsx') }}">{{ icon('download', 14) }} Excel (with photos)</button>
     <button class="small" formaction="{{ url_for('warroom.box_export', fmt='csv') }}">{{ icon('download', 14) }} CSV</button>
   </form>
   <ol class="bl-rows">
     {% for v in everyone %}
     <li class="bl-row {{ 'is-voted' if v.voted_at }}" data-nid="{{ v.national_id }}" data-text="{{ v.list_no or '' }} {{ v.full_name|lower }} {{ v.house_name|lower }}">
       <span class="bl-no mono">{{ v.list_no or '—' }}</span>
+      {{ avatar(v, 'sm') }}
       <span class="bl-who"><strong>{{ v.full_name }}</strong><span class="muted small-text">{{ v.house_name }}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}</span></span>
       <span class="bl-state" data-bl-state>{% if v.voted_at %}✓ Voted {{ hm(v.voted_at) }}{% else %}Not yet{% endif %}</span>
       <button type="button" class="small bl-mark" data-bl-mark {{ 'hidden' if v.voted_at }}>Mark voted</button>
