@@ -1313,3 +1313,8 @@ body.nav-open { overflow: hidden; }
 .report-table thead th { text-transform: none; letter-spacing: 0; }
 .report-quick { margin-bottom: .75rem; }
 .report-cand label { display: grid; gap: .2rem; margin-bottom: .4rem; font-size: .9rem; }
+.report-table a { color: inherit; }
+.report-table a.cell-link { text-decoration: none; display: block; }
+.report-table a.cell-link:hover { text-decoration: underline; color: var(--accent-ink); }
+.report-table tbody th a, .report-table thead th a { text-decoration: none; }
+.report-table tbody th a:hover, .report-table thead th a:hover { text-decoration: underline; }

@@ -136,3 +136,34 @@ def test_candidate_reports_and_filters(app):
     t = rows_of(o.get(f"/reports/export.csv?r=box-sex&ag={viewer}"))
     assert t[-1][-1] == "1"
     assert o.get(f"/reports/view?cand={s}&what=bogus").status_code == 400
+
+
+def test_voters_list_and_drill_down(app):
+    from tests.test_super import owner, vote
+
+    o, token, ids = owner(app)
+    s = ids["Sofhaz"]
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Box A'")
+    conn.execute("UPDATE voters SET location = 'Box B' WHERE national_id = 'A200003'")
+    conn.commit()
+    mark(o, token, "A200001", s, "yes")
+    vote(o, token, "A200001", s, "1")
+    assert "Voters list" in o.get("/reports").get_data(as_text=True)
+    t = rows_of(o.get("/reports/list/voters/export.csv"))
+    head = t[0]
+    assert "Canvassing" in head and "Sofhaz" in head and "Super for" in head and head[-2:] == ["Agent", "Given by"]
+    row = {r[1]: r for r in t[1:]}["A200001"]
+    assert row[head.index("Sofhaz")] == "Yes" and row[head.index("Super for")] == "Sofhaz"
+    # any filter: box + pledge
+    t = rows_of(o.get(f"/reports/list/voters/export.csv?loc=Box+A&pc={s}&pv=yes"))
+    assert [r[1] for r in t[1:]] == ["A200001"]
+    # report cells link to the voters behind them
+    view = o.get("/reports/view?rows=box&cols=sex").get_data(as_text=True)
+    assert "/reports/list/voters?loc=Box+B&amp;sex=" in view
+    view = o.get(f"/reports/view?cand={s}&what=p-box").get_data(as_text=True)
+    assert f"pc={s}" in view and "pv=yes" in view
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)                     # no pledge access: no pledge columns
+    head = rows_of(b.get("/reports/list/voters/export.csv"))[0]
+    assert "Sofhaz" not in head and "Super for" not in head and "Canvassing" in head

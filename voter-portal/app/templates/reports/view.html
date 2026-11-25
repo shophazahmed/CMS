@@ -15,7 +15,8 @@
     </span>
   </div>
   <p class="muted">{{ preset[2] if preset else '' }} <strong>{{ t.total }}</strong> {{ 'pledges' if t.pledge_rows else 'voters' }}{{ ' (filtered)' if query_args }}.
-    {% if t.pledge_rows and not preset %}A voter with two Yes counts under both.{% endif %}</p>
+    {% if t.pledge_rows and not preset %}A voter with two Yes counts under both.{% endif %}
+    <span class="no-print">Click a number to see those voters.</span></p>
 </div>
 
 {% include "reports/_quick.html" %}
@@ -38,15 +39,15 @@
 <div class="table-wrap card report-wrap">
 <table class="report-table">
   <thead><tr><th>{{ t.r_label }}</th>
-    {% for c, label in t.cols %}<th class="num">{{ label }}</th>{% endfor %}
+    {% for c, label in t.cols %}<th class="num">{% if col_links[c] and t.cols|length > 1 %}<a href="{{ col_links[c] }}">{{ label }}</a>{% else %}{{ label }}{% endif %}</th>{% endfor %}
     {% if t.cols|length > 1 %}<th class="num">Total</th>{% endif %}</tr></thead>
   <tbody>
   {% for r, label in t.rows %}{% set rt = t.row_tot[r] %}
-  <tr><th>{{ label }}</th>
-    {% for c, _ in t.cols %}{% set n = t.cells.get((r, c), 0) %}
-    <td class="num {{ report_heat(n, t.max) }}">{% if pct %}{{ ((100 * n / rt)|round(1)) if rt else 0 }}%{% else %}{{ n }}{% endif %}</td>
+  <tr><th>{% if row_links[r] %}<a href="{{ row_links[r] }}" title="See these voters">{{ label }}</a>{% else %}{{ label }}{% endif %}</th>
+    {% for c, _ in t.cols %}{% set n = t.cells.get((r, c), 0) %}{% set link = cell_links[(r, c)] %}
+    <td class="num {{ report_heat(n, t.max) }}">{% if link and n %}<a class="cell-link" href="{{ link }}" title="See these voters">{% endif %}{% if pct %}{{ ((100 * n / rt)|round(1)) if rt else 0 }}%{% else %}{{ n }}{% endif %}{% if link and n %}</a>{% endif %}</td>
     {% endfor %}
-    {% if t.cols|length > 1 %}<td class="num tot">{{ '100%' if pct else rt }}</td>{% endif %}</tr>
+    {% if t.cols|length > 1 %}<td class="num tot">{% if row_links[r] %}<a class="cell-link" href="{{ row_links[r] }}">{{ '100%' if pct else rt }}</a>{% else %}{{ '100%' if pct else rt }}{% endif %}</td>{% endif %}</tr>
   {% endfor %}
   </tbody>
   <tfoot><tr><th>Total</th>

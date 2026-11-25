@@ -210,12 +210,69 @@ def index():
                            show_cands=can_view_pledges())
 
 
+def drill(dim, value, agent_ids):
+    """The Voters list filters for one value of a report column / row, or None when there's no such filter."""
+    if dim == "box":
+        return {"loc": "(none)" if value == NONE else value}
+    if dim == "house":
+        return None if value == NONE else {"h": value}
+    if dim == "sex":
+        return {"sex": {"Men": "M", "Women": "F"}.get(value, "unknown")}
+    if dim == "agent":
+        return {"ag": "none"} if value == "No agent" else ({"ag": str(agent_ids[value])} if value in agent_ids else None)
+    if dim.startswith("p") and dim[1:].isdigit():
+        return {"pc": dim[1:], "pv": value or "none"}
+    if dim == "noshow":
+        return {"ns": "1" if value == "No-show" else "0"}
+    if dim == "yes":
+        cands = {c["name"]: c["id"] for c in pledges.candidates()}
+        return {"pc": "any", "pv": "none"} if value == "No Yes" else (
+            {"pc": str(cands[value]), "pv": "yes"} if value in cands else None)
+    if dim == "pattern":
+        cands = {c["name"]: c["id"] for c in pledges.candidates()}
+        if value == "No Yes":
+            return {"pc": "any", "pv": "none"}
+        if value.startswith("Only ") and value[5:] in cands:
+            return {"pp": f"only:{cands[value[5:]]}"}
+        if value.startswith("Shared: "):
+            pair = value[8:].split(" & ")
+            if len(pair) == 2 and all(n in cands for n in pair):
+                a, b = sorted(cands[n] for n in pair)
+                return {"pp": f"both:{a}-{b}"}
+    return None
+
+
+def drill_links(t, rows_key, cols_key):
+    """URLs to the Voters list for each cell, row and column of a report (where filters exist for them)."""
+    from flask import url_for
+
+    agent_ids = {a["username"]: a["id"] for a in pledges.agent_options()}
+    base = _filter_args()
+    rd = {r: drill(rows_key, r, agent_ids) for r, _ in t["rows"]}
+    cd = {c: drill(cols_key, c, agent_ids) if cols_key else {} for c, _ in t["cols"]}
+
+    def url(*parts):
+        merged = dict(base)
+        keys = set()
+        for part in parts:
+            if part is None or keys & set(part):
+                return None
+            keys |= set(part)
+            merged.update(part)
+        return url_for("reports.list_view", kind="voters", **merged)
+
+    return ({(r, c): url(rd[r], cd[c]) for r, _ in t["rows"] for c, _ in t["cols"]},
+            {r: url(rd[r]) for r, _ in t["rows"]}, {c: url(cd[c]) for c, _ in t["cols"]})
+
+
 @bp.route("/reports/view")
 @admin_required
 def view():
     title, rows_key, cols_key, preset = resolve()
     t = build(rows_key, cols_key, request.args)
+    cell_links, row_links, col_links = drill_links(t, rows_key, cols_key)
     return render_template("reports/view.html", t=t, preset=preset, title=title, rows_key=rows_key, cols_key=cols_key,
+                           cell_links=cell_links, row_links=row_links, col_links=col_links,
                            dims=dimensions(), pct=request.args.get("pct", ""), key=request.args.get("r", ""),
                            cand=request.args.get("cand", ""), what=request.args.get("what", ""), boxes=_boxes(),
                            agents=pledges.agent_options(), f=t["f"], cands=pledges.candidates(), pc="", pv="",
@@ -401,7 +458,9 @@ def lists():
     """The list reports this person may open: key -> (title, about)."""
     from .auth import can_view_super
 
-    out = {"voters-agents": ("Voters and their agent", "Every voter with the agent who looks after them (one by one, or"
+    out = {"voters": ("Voters list", "Every voter matching the filters, with their canvassing status, pledges,"
+                                     " super pledge and contact before the vote (as far as you may see them) and agent."),
+           "voters-agents": ("Voters and their agent", "Every voter with the agent who looks after them (one by one, or"
                                                        " through their house).")}
     if can_view_super() and can_view_pledges():
         out["super-agents"] = ("Super pledge voters and their agent", "Every super pledge voter, which candidates"
@@ -425,19 +484,49 @@ def list_rows(kind):
         f" WHERE v.deceased = 0 AND v.national_id IN (SELECT national_id FROM voters{where}){extra}"
         " ORDER BY agent IS NULL, agent COLLATE NOCASE, v.house_name COLLATE NOCASE, v.full_name COLLATE NOCASE",
         params).fetchall()
-    supers = {}
-    if kind == "super-agents":
+    from .auth import can_view_super
+    from .warroom import CONTACT
+
+    full = kind == "voters"
+    show_pledges = full and can_view_pledges()
+    show_super = kind == "super-agents" or (full and can_view_super() and can_view_pledges())
+    show_contact = full and _war_ok()
+    supers, marks, noshow, contact, status = {}, {}, set(), {}, {}
+    if show_super:
         for nid, cid in db.execute("SELECT national_id, candidate_id FROM super_votes"):
             supers.setdefault(nid, []).append(names.get(cid, "?"))
+    if show_pledges:
+        for nid, cid, value in db.execute("SELECT national_id, candidate_id, value FROM pledges"):
+            marks[(nid, cid)] = value
+        noshow = {r[0] for r in db.execute("SELECT national_id FROM pledge_noshow")}
+    if show_contact:
+        contact = dict(db.execute("SELECT national_id, status FROM war_contact").fetchall())
+    if full:
+        status = dict(db.execute(f"SELECT national_id, status FROM voters WHERE national_id IN (SELECT national_id FROM voters{where})",
+                                 params).fetchall())
     head = ["#", "ID", "Name", "Sex", "Age", "House", "Box", "Phone"]
-    if kind == "super-agents":
+    if full:
+        head.append("Canvassing")
+    if show_pledges:
+        head += [c["name"] for c in cands] + ["No-show"]
+    if show_super:
         head.append("Super for")
+    if show_contact:
+        head.append("Said before the vote")
     head += ["Agent", "Given by"]
+    values = {"yes": "Yes", "maybe": "Maybe", "no": "No"}
     out = []
     for n, r in enumerate(rows, 1):
-        line = [n, r["national_id"], r["full_name"], r["sex"], r["age"], r["house_name"], r["location"], r["phone"]]
-        if kind == "super-agents":
-            line.append(", ".join(sorted(supers.get(r["national_id"], []))))
+        nid = r["national_id"]
+        line = [n, nid, r["full_name"], r["sex"], r["age"], r["house_name"], r["location"], r["phone"]]
+        if full:
+            line.append(STATUSES.get(status.get(nid), ""))
+        if show_pledges:
+            line += [values.get(marks.get((nid, c["id"])), "") for c in cands] + ["No-show" if nid in noshow else ""]
+        if show_super:
+            line.append(", ".join(sorted(supers.get(nid, []))))
+        if show_contact:
+            line.append(CONTACT.get(contact.get(nid), "Not reached yet"))
         line += [r["agent"] or "No agent", ("One by one" if r["one_by_one"] else "House") if r["agent"] else ""]
         out.append(line)
     return head, out, f
