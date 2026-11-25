@@ -1377,3 +1377,6 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
 .bl-mark[hidden] { display: none; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bl-row.is-voted .bl-state { color: #86efac; } }
 :root[data-theme="dark"] .bl-row.is-voted .bl-state { color: #86efac; }
+.bl-export { display: flex; flex-wrap: wrap; gap: .4rem .6rem; align-items: end; margin: 0 0 .75rem; }
+.bl-export label { display: flex; align-items: center; gap: .4rem; }
+.bl-export select { width: auto; min-height: 36px; }

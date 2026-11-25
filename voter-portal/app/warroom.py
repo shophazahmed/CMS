@@ -127,7 +127,8 @@ FIELD_ENDPOINTS = {
     "warroom.home", "warroom.box", "warroom.lookup", "warroom.mark", "warroom.calls", "warroom.call",
     "warroom.field", "warroom.changes", "warroom.transport", "warroom.transport_action", "warroom.contact",
     "warroom.link_open", "warroom.field_export", "warroom.calls_export", "voters.photo",
-    "votecount.sheet", "votecount.tap", "votecount.final", "votecount.photo", "votecount.export", "theme.theme_css", "theme.set_appearance",
+    "votecount.sheet", "votecount.tap", "votecount.final", "votecount.photo", "votecount.export",
+    "warroom.box_export", "theme.theme_css", "theme.set_appearance",
     "fonts.stylesheet", "fonts.serve", "auth.login", "auth.logout", "auth.change_password", "static",
 }
 
@@ -326,6 +327,66 @@ def box():
                            recent=recent, everyone=everyone, has_numbers=has_numbers, t=t, cursor=_cursor(), is_open=is_open(),
                            undo_minutes=UNDO_MINUTES, hm=_hm, me=g.user["id"],
                            undo_after=(datetime.now(timezone.utc) - timedelta(minutes=UNDO_MINUTES)).isoformat(timespec="seconds"))
+
+
+@bp.route("/war/box/export.<fmt>")
+@login_required
+def box_export(fmt):
+    """The box's voter list as CSV / Excel: list number, name, house, age, sex, voted (time) or not yet.
+    ?show=no / yes for only the voters who haven't voted / have. Box agents: their own box, while open."""
+    from flask import Response
+
+    from .voters import _safe_cell
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    t = _need("t1")
+    b = _box_of(t)
+    if not b:
+        abort(400)
+    show = request.args.get("show", "")
+    cond = {"yes": " AND w.national_id IS NOT NULL", "no": " AND w.national_id IS NULL"}.get(show, "")
+    rows = get_db().execute(
+        "SELECT v.full_name, v.house_name, v.sex, v.age, l.list_no, w.at AS voted_at FROM voters v"
+        " LEFT JOIN war_list l ON l.national_id = v.national_id LEFT JOIN war_voted w ON w.national_id = v.national_id"
+        f" WHERE v.location = ? AND v.deceased = 0{cond}"
+        " ORDER BY l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE", (b,)).fetchall()
+    head = ["No.", "Name", "House", "Age", "Sex", "Voted", "Time"]
+    table = [[r["list_no"], _safe_cell(r["full_name"]), _safe_cell(r["house_name"]), r["age"], r["sex"],
+              "Voted" if r["voted_at"] else "Not yet", _hm(r["voted_at"]) if r["voted_at"] else ""] for r in rows]
+    audit.log("war_box_export", target=b, detail={"fmt": fmt, "show": show, "rows": len(table)})
+    label = {"yes": "voted", "no": "not-voted"}.get(show, "all")
+    safe = "".join(ch if ch.isalnum() else "-" for ch in b)[:40]
+    name = f"box-{safe}-{label}-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "csv":
+        import csv
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(head)
+        w.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Voter list"
+    ws.append([f"{b} · {len(table)} voters ({label.replace('-', ' ')}) · {(datetime.now(timezone.utc) + LOCAL).strftime('%-d %b %Y %H:%M')}"])
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.append(head)
+    for cell in ws[2]:
+        cell.font = Font(bold=True)
+    for line in table:
+        ws.append(line)
+    ws.freeze_panes = "C3"
+    ws.column_dimensions["B"].width = 30
+    ws.column_dimensions["C"].width = 22
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 @bp.route("/war/lookup")

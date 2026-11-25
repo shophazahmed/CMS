@@ -43,6 +43,13 @@
     </nav>
     <input type="search" placeholder="Search number, name or house" aria-label="Search the list" data-bl-search>
   </div>
+  <form class="bl-export" method="get" action="{{ url_for('warroom.box_export', fmt='xlsx') }}">
+    {% if t != 't1' %}<input type="hidden" name="box" value="{{ box }}">{% endif %}
+    <label class="small-text">Download
+      <select name="show"><option value="">All voters</option><option value="no">Not voted</option><option value="yes">Voted</option></select></label>
+    <button class="small" formaction="{{ url_for('warroom.box_export', fmt='xlsx') }}">{{ icon('download', 14) }} Excel</button>
+    <button class="small" formaction="{{ url_for('warroom.box_export', fmt='csv') }}">{{ icon('download', 14) }} CSV</button>
+  </form>
   <ol class="bl-rows">
     {% for v in everyone %}
     <li class="bl-row {{ 'is-voted' if v.voted_at }}" data-nid="{{ v.national_id }}" data-text="{{ v.list_no or '' }} {{ v.full_name|lower }} {{ v.house_name|lower }}">

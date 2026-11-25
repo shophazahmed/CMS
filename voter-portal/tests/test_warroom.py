@@ -89,6 +89,12 @@ def test_marking_clears_the_call_list(app):
     assert ch["voted"] == ["A200001"]
     assert "Aminath Alpha" not in t3.get("/war/calls").get_data(as_text=True)
     assert "✓ Voted" in t1.get("/war/box").get_data(as_text=True)       # the list shows who voted
+    import csv as _csv
+    rows = list(_csv.reader(io.StringIO(t1.get("/war/box/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
+    assert rows[0] == ["No.", "Name", "House", "Age", "Sex", "Voted", "Time"] and len(rows) == 3   # Box A: 2 voters
+    assert [r[5] for r in rows[1:] if r[1] == "Aminath Alpha"] == ["Voted"]
+    assert len(list(_csv.reader(io.StringIO(t1.get("/war/box/export.csv?show=no").get_data(as_text=True))))) == 2
+    assert "HYPERLINK" not in t1.get("/war/box/export.csv?box=Box+B").get_data(as_text=True)     # always their own box
     # tier 1 can't mark at another box
     assert t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200003", "value": "1"}).status_code == 403
     # call outcomes
