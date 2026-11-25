@@ -16,6 +16,19 @@
   <p class="muted">{{ about }} <strong>{{ total }}</strong> voter{{ 's' if total != 1 }}{{ ' (filtered)' if query_args }}.</p>
 </div>
 
+<form class="card report-pick no-print" method="get">
+  {% for k, v in query_args.items() if k != 'ag' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <label>Agent
+    <select name="ag" data-autosubmit>
+      <option value="">All agents</option>
+      <option value="none" {{ 'selected' if f.ag == 'none' }}>No agent</option>
+      {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if f.ag == a.id|string }}>{{ a.username }}</option>{% endfor %}
+    </select>
+  </label>
+  {% if f.ag %}<a class="small-text" href="{{ url_for('reports.list_view', kind=kind, **dict(query_args, ag=None)) }}">Show all agents</a>{% endif %}
+  <noscript><button class="small">Show</button></noscript>
+</form>
+
 <details class="filter-panel card no-print" {{ 'open' if query_args }}>
   <summary>{{ icon('filter') }} Filters</summary>
   {% set box_list_options = boxes %}{% set with_pledge_filter = True %}
@@ -23,9 +36,10 @@
 </details>
 
 <section class="pledge-totals no-print" aria-label="Voters per agent">
-  {% for name, n in per_agent %}
-  <div class="pledge-total {{ 'dist-none' if name == 'No agent' else 'agent-total' }}"><span class="pt-name">{{ name }}</span><strong>{{ n }}</strong>
-    <span class="muted small-text">voters</span></div>
+  {% for name, n in per_agent %}{% set aid = 'none' if name == 'No agent' else agent_ids.get(name)|string %}
+  <a class="pledge-total {{ 'dist-none' if name == 'No agent' else 'agent-total' }} {{ 'on' if f.ag == aid }}"
+     href="{{ url_for('reports.list_view', kind=kind, **dict(query_args, ag=(None if f.ag == aid else aid))) }}"><span class="pt-name">{{ name }}</span><strong>{{ n }}</strong>
+    <span class="muted small-text">{{ 'tap to show all' if f.ag == aid else 'voters' }}</span></a>
   {% endfor %}
 </section>
 

@@ -81,6 +81,6 @@
   </label>
   <div class="actions">
     <button class="primary">Apply</button>
-    {% if request.args %}<a class="button" href="{{ url_for(request.endpoint) }}">Clear</a>{% endif %}
+    {% if request.args %}<a class="button" href="{{ url_for(request.endpoint, **(request.view_args or {})) }}">Clear</a>{% endif %}
   </div>
 </form>

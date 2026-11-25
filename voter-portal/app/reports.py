@@ -328,12 +328,14 @@ def list_view(kind):
     per_agent = {}
     for line in rows:
         per_agent[line[-2]] = per_agent.get(line[-2], 0) + 1
+    ids = {a["username"]: a["id"] for a in pledges.agent_options()}
     db = get_db()
     w, p = pledges._scoped_where(" WHERE location != ''")
     boxes = [r[0] for r in db.execute(f"SELECT DISTINCT location FROM voters{w} ORDER BY location COLLATE NOCASE", p)]
     return render_template("reports/list.html", kind=kind, title=known[kind][0], about=known[kind][1], head=head,
                            rows=rows[:500], total=len(rows), per_agent=sorted(per_agent.items(), key=lambda x: (x[0] == "No agent", -x[1])),
-                           f=f, boxes=boxes, cands=pledges.candidates(), pc="", pv="", query_args=_filter_args())
+                           f=f, boxes=boxes, cands=pledges.candidates(), pc="", pv="", query_args=_filter_args(),
+                           agent_ids=ids, agents=pledges.agent_options())
 
 
 @bp.route("/reports/list/<kind>/export.<fmt>")

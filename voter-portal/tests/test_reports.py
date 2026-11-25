@@ -76,6 +76,12 @@ def test_list_reports(app):
     t = rows_of(o.get("/reports/list/super-agents/export.csv"))
     assert len(t) == 2 and t[1][1] == "A200001" and t[1][8] == "Jawid, Sofhaz" and t[1][9] == "viewer"
     assert "viewer" in o.get("/reports/list/super-agents").get_data(as_text=True)
+    # the agent filter: on the page and in the downloads
+    page = o.get(f"/reports/list/voters-agents?ag={viewer}").get_data(as_text=True)
+    assert 'name="ag"' in page and f'value="{viewer}" selected' in page
+    t = rows_of(o.get(f"/reports/list/voters-agents/export.csv?ag={viewer}"))
+    assert [r[1] for r in t[1:]] == ["A200001"]
+    assert len(rows_of(o.get("/reports/list/voters-agents/export.csv?ag=none"))) == 3
     b = app.test_client()
     login(b, "boss", ADMIN_PW)                                   # no super pledge access
     assert b.get("/reports/list/super-agents").status_code == 404
