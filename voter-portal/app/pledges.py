@@ -108,6 +108,21 @@ def agent_options():
                             " ORDER BY username COLLATE NOCASE").fetchall()
 
 
+def connector_options():
+    """Names for the Connector filter: typed connectors and everyone who marked a pledge (none for pledge-only)."""
+    from .auth import is_pledge_only
+
+    if is_pledge_only():
+        return []
+    rows = get_db().execute(
+        "SELECT connector FROM voter_connector UNION SELECT u.username FROM users u WHERE u.id IN"
+        " (SELECT DISTINCT by_user FROM pledges WHERE by_user IS NOT NULL)").fetchall()
+    seen = {}
+    for (name,) in rows:
+        seen.setdefault(name.casefold(), name)
+    return sorted(seen.values(), key=str.casefold)
+
+
 def pattern_condition(pp, cands):
     """SQL for ?pp=only:<id> (Yes for that candidate and nobody else) or both:<a>-<b> (Yes for both, as on the
     distribution's shared supporters); (None, []) when it doesn't apply."""
@@ -225,6 +240,21 @@ def _filters():
         where = f"{where} AND {cond}" if where else f" WHERE {cond}"
         params = list(params) + ([] if ag == "none" else [int(ag), int(ag)])
         f["ag"] = ag
+    # ?cn=<name> / none: the voter's connector (the typed one, else who marked their pledges). Not for pledge-only.
+    cn, f["cn"] = " ".join(request.args.get("cn", "").split())[:80], ""
+    if cn and not is_pledge_only():
+        if cn == "none":
+            cond = ("national_id NOT IN (SELECT national_id FROM voter_connector)"
+                    " AND national_id NOT IN (SELECT national_id FROM pledges WHERE by_user IS NOT NULL)")
+            extra = []
+        else:
+            cond = ("(national_id IN (SELECT national_id FROM voter_connector WHERE connector = ? COLLATE NOCASE)"
+                    " OR (national_id NOT IN (SELECT national_id FROM voter_connector) AND national_id IN"
+                    " (SELECT p.national_id FROM pledges p JOIN users u ON u.id = p.by_user WHERE u.username = ? COLLATE NOCASE)))")
+            extra = [cn, cn]
+        where = f"{where} AND {cond}" if where else f" WHERE {cond}"
+        params = list(params) + extra
+        f["cn"] = cn
     # ?sp=<candidate id> / any / none: super pledge voters (for that candidate). Needs super pledge access.
     from .auth import can_view_super
 

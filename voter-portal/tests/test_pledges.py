@@ -512,3 +512,22 @@ def test_connector_field_and_agent_dropdown(app):
     assert "<th>Connector</th>" in vpage and "data-connector-form" not in vpage and "data-agent-form" not in vpage
     assert v.post("/pledges/connector", data={"csrf_token": csrf(v, "/pledges"), "national_id": "A200001",
                                               "connector": "x"}).status_code == 403
+
+
+def test_connector_filter(app):
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    token, ids = setup(a)
+    mark(a, token, "A200001", ids["Shoppe"], "yes")
+    mark(a, token, "A200002", ids["Shoppe"], "yes")
+    a.post("/pledges/connector", data={"csrf_token": token, "national_id": "A200002", "connector": "Ali Moosa"})
+    page = a.get("/pledges").get_data(as_text=True)
+    assert '<select name="cn">' in page and ">Ali Moosa</option>" in page and ">admin</option>" in page
+    rows = lambda q: a.get(f"/pledges/export.csv?{q}").get_data(as_text=True).strip().splitlines()[1:]
+    ali = rows("cn=ali+moosa")
+    assert len(ali) == 1 and "A200002" in ali[0]                     # the typed connector (any case)
+    adm = rows("cn=admin")
+    assert len(adm) == 1 and "A200001" in adm[0]                     # who marked, when nothing is typed
+    assert all("A200001" not in r and "A200002" not in r for r in rows("cn=none"))
+    assert "selected>Ali Moosa</option>" in a.get("/pledges?cn=ali+moosa").get_data(as_text=True)

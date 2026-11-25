@@ -82,6 +82,16 @@
     </select>
   </label>
   {% endif %}
+  {% set cn_list = connector_options() %}
+  {% if cn_list or f.cn %}
+  <label>Connector
+    <select name="cn">
+      <option value="">Any connector</option>
+      <option value="none" {{ 'selected' if f.cn == 'none' }}>No connector</option>
+      {% for n in cn_list %}<option value="{{ n }}" {{ 'selected' if f.cn|lower == n|lower }}>{{ n }}</option>{% endfor %}
+    </select>
+  </label>
+  {% endif %}
   <label>No-show
     <select name="ns">
       <option value="">Everyone</option>
