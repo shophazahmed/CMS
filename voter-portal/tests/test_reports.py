@@ -167,3 +167,24 @@ def test_voters_list_and_drill_down(app):
     login(b, "boss", ADMIN_PW)                     # no pledge access: no pledge columns
     head = rows_of(b.get("/reports/list/voters/export.csv"))[0]
     assert "Sofhaz" not in head and "Super for" not in head and "Canvassing" in head
+
+
+def test_super_pledge_filter_and_cells(app):
+    from tests.test_super import owner, vote
+
+    o, token, ids = owner(app)
+    s, j = ids["Sofhaz"], ids["Jawid"]
+    vote(o, token, "A200001", s, "1")
+    vote(o, token, "A200002", j, "1")
+    assert 'name="sp"' in o.get("/reports/list/voters").get_data(as_text=True)
+    ids_of = lambda q: [r[1] for r in rows_of(o.get("/reports/list/voters/export.csv" + q))[1:]]  # noqa: E731
+    assert ids_of(f"?sp={s}") == ["A200001"]
+    assert sorted(ids_of("?sp=any")) == ["A200001", "A200002"] and ids_of("?sp=none") == ["A200003"]
+    assert "Aminath Alpha" in o.get(f"/pledges?sp={s}").get_data(as_text=True)          # the pledge sheet too
+    view = o.get("/reports/view?rows=super&cols=sex").get_data(as_text=True)
+    assert f"sp={s}" in view and "sp=none" in view                                       # super cells link
+    assert f"sp={s}" in o.get(f"/reports/view?cand={s}&what=s-box").get_data(as_text=True)
+    assert "age_min=46" in o.get("/reports/view?rows=age").get_data(as_text=True)       # age cells link
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)                                                          # no super access: ignored
+    assert len(rows_of(b.get(f"/reports/list/voters/export.csv?sp={s}"))) == 4

@@ -222,6 +222,17 @@ def drill(dim, value, agent_ids):
         return {"ag": "none"} if value == "No agent" else ({"ag": str(agent_ids[value])} if value in agent_ids else None)
     if dim.startswith("p") and dim[1:].isdigit():
         return {"pc": dim[1:], "pv": value or "none"}
+    if dim == "super":
+        cands = {c["name"]: c["id"] for c in pledges.candidates()}
+        return {"sp": "none"} if value == "Not a super voter" else ({"sp": str(cands[value])} if value in cands else None)
+    if dim.startswith("s") and dim[1:].isdigit():
+        return {"sp": dim[1:]} if value == "Super voter" else None
+    if dim == "age":
+        bands = {"18–30": (None, 30), "31–45": (31, 45), "46–60": (46, 60), "61+": (61, None)}
+        if value in bands:
+            lo, hi = bands[value]
+            return {k: str(v) for k, v in (("age_min", lo), ("age_max", hi)) if v is not None}
+        return None
     if dim == "noshow":
         return {"ns": "1" if value == "No-show" else "0"}
     if dim == "yes":

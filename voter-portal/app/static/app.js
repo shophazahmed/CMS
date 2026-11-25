@@ -765,3 +765,17 @@ document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select
   const here = document.querySelector(".side-link[aria-current]");
   if (here) here.scrollIntoView({ block: "nearest" });
 })();
+
+// Pin / unpin the left menu on big screens; remembered in a cookie so the page opens the same way.
+(() => {
+  const pin = document.querySelector("[data-nav-pin]");
+  if (!pin) return;
+  pin.addEventListener("click", () => {
+    const rail = !document.body.classList.contains("nav-rail");
+    document.body.classList.toggle("nav-rail", rail);
+    pin.setAttribute("aria-pressed", rail ? "false" : "true");
+    pin.title = rail ? "Pin the menu open" : "Unpin: shrink the menu to icons";
+    document.cookie = "nav=" + (rail ? "rail" : "pinned") + "; path=/; max-age=31536000; SameSite=Lax; Secure";
+    pin.blur();
+  });
+})();

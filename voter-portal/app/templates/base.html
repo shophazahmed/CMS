@@ -18,9 +18,9 @@
 </head>
 {% set role = current_user.role if current_user else '' %}
 {% macro nav(href, label, ic, on=false, cls='') -%}
-<a class="side-link {{ cls }}" href="{{ href }}" {{ 'aria-current=page' if on }}>{{ icon(ic, 18) }}<span>{{ label }}</span></a>
+<a class="side-link {{ cls }}" href="{{ href }}" title="{{ label }}" {{ 'aria-current=page' if on }}>{{ icon(ic, 18) }}<span>{{ label }}</span></a>
 {%- endmacro %}
-<body class="{{ 'shell has-tabbar' if current_user }}">
+<body class="{{ 'shell has-tabbar' if current_user }}{{ ' nav-rail' if current_user and request.cookies.get('nav') == 'rail' }}">
   {% if current_user %}
   {% set ep = request.endpoint or '' %}
   {% set home = url_for('warroom.home') if war_field else url_for('pledges.sheet') if pledge_only
@@ -31,6 +31,8 @@
         <span class="brand-mark">{{ icon('logo', 18) }}</span>
         <span class="brand-name">GM <b>CAMPAIGN</b></span>
       </a>
+      <button class="side-pin icon-btn" type="button" data-nav-pin aria-pressed="{{ 'false' if request.cookies.get('nav') == 'rail' else 'true' }}"
+              title="{{ 'Pin the menu open' if request.cookies.get('nav') == 'rail' else 'Unpin: shrink the menu to icons' }}" aria-label="Pin the menu">{{ icon('pin', 18) }}</button>
       <button class="side-close icon-btn" type="button" data-nav-close aria-label="Close menu">{{ icon('x', 20) }}</button>
     </div>
     <nav class="side-nav" aria-label="Main">

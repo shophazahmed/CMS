@@ -1318,3 +1318,23 @@ body.nav-open { overflow: hidden; }
 .report-table a.cell-link:hover { text-decoration: underline; color: var(--accent-ink); }
 .report-table tbody th a, .report-table thead th a { text-decoration: none; }
 .report-table tbody th a:hover, .report-table thead th a:hover { text-decoration: underline; }
+/* pin-style menu */
+.side-pin { display: none; }
+.side-pin[aria-pressed="true"] { color: var(--accent-ink); background: var(--accent-soft); }
+.side-head { gap: .25rem; }
+.side-head .brand { margin-right: auto; min-width: 0; }
+@media (min-width: 1024px) {
+  .side-pin { display: inline-grid; }
+  body.shell.nav-rail { grid-template-columns: 72px minmax(0, 1fr); }
+  body.shell.nav-rail .sidebar { position: fixed; top: 0; bottom: 0; left: 0; height: auto; width: 72px; z-index: 45;
+    transition: width .18s ease, box-shadow .18s ease; overflow: hidden; }
+  body.shell.nav-rail .sidebar:hover, body.shell.nav-rail .sidebar:focus-within { width: 264px; box-shadow: 0 10px 40px rgba(0, 0, 0, .22); }
+  body.shell.nav-rail .sidebar:not(:hover):not(:focus-within) :is(.brand-name, .side-label, .side-link span, .side-who, .side-account summary > .icon, .side-pin) { display: none; }
+  body.shell.nav-rail .sidebar:not(:hover):not(:focus-within) .side-link { justify-content: center; padding-left: 0; padding-right: 0; }
+  body.shell.nav-rail .sidebar:not(:hover):not(:focus-within) .side-head { justify-content: center; padding-left: .5rem; padding-right: .5rem; }
+  body.shell.nav-rail .sidebar:not(:hover):not(:focus-within) .side-account summary { justify-content: center; }
+  body.shell.nav-rail .sidebar:not(:hover):not(:focus-within) .side-account-menu { display: none; }
+  body.shell.nav-rail .sidebar:not(:hover):not(:focus-within) .side-nav { padding-left: .5rem; padding-right: .5rem; }
+  body.shell.nav-rail .sidebar:not(:hover):not(:focus-within) .side-link[aria-current]::before { left: -.5rem; }
+  body.shell.nav-rail > main { grid-column: 2; }
+}

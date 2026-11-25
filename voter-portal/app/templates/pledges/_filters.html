@@ -62,6 +62,16 @@
     </select>
   </label>
   {% endif %}
+  {% if can_view_super %}
+  <label>Super pledge
+    <select name="sp">
+      <option value="">Anyone</option>
+      <option value="any" {{ 'selected' if f.sp == 'any' }}>Super voters (any candidate)</option>
+      {% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if f.sp == c.id|string }}>Super for {{ c.name }}</option>{% endfor %}
+      <option value="none" {{ 'selected' if f.sp == 'none' }}>Not super voters</option>
+    </select>
+  </label>
+  {% endif %}
   {% set ag_list = agent_options() %}
   {% if ag_list %}
   <label>Agent

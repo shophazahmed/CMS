@@ -219,6 +219,17 @@ def _filters():
         where = f"{where} AND {cond}" if where else f" WHERE {cond}"
         params = list(params) + ([] if ag == "none" else [int(ag), int(ag)])
         f["ag"] = ag
+    # ?sp=<candidate id> / any / none: super pledge voters (for that candidate). Needs super pledge access.
+    from .auth import can_view_super
+
+    sp, f["sp"] = request.args.get("sp", ""), ""
+    if can_view_super() and (sp in ("any", "none") or sp in {str(c["id"]) for c in cands}):
+        cond = {"any": "national_id IN (SELECT national_id FROM super_votes)",
+                "none": "national_id NOT IN (SELECT national_id FROM super_votes)"}.get(
+            sp, "national_id IN (SELECT national_id FROM super_votes WHERE candidate_id = ?)")
+        where = f"{where} AND {cond}" if where else f" WHERE {cond}"
+        params = list(params) + ([int(sp)] if sp.isdigit() else [])
+        f["sp"] = sp
     pb = request.args.get("pb", "")
     f["pb"], f["pb_name"] = "", ""
     if pb.isdigit() and g.user["role"] == "admin":
