@@ -59,3 +59,22 @@ def test_official_lists(app):
     u = app.test_client()
     login(u, "viewer", USER_PW)
     assert u.get("/war/official").status_code == 403
+
+
+def test_list_numbers_on_the_pledge_sheets(app):
+    from tests.test_super import owner
+
+    o, token, ids = owner(app)
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Box A'")
+    conn.executemany("INSERT INTO war_list (national_id, list_no, box) VALUES (?, ?, 'Box A')",
+                     [("A200001", 7), ("A200002", 3), ("A200003", 5)])
+    conn.commit()
+    page = o.get("/pledges?sort=no").get_data(as_text=True)
+    assert "No." in page and page.index("Moosa Beta") < page.index("HYPERLINK") < page.index("Aminath Alpha")  # 3, 5, 7
+    assert "No." in o.get("/super?sort=no").get_data(as_text=True)
+    import csv as _csv
+    rows = list(_csv.reader(io.StringIO(o.get("/pledges/export.csv?sort=no").get_data(as_text=True).lstrip("﻿"))))
+    i = rows[0].index("List no.")
+    assert [r[i] for r in rows[1:]] == ["3", "5", "7"]
+    assert o.get("/agents/sheet?sort=name").status_code == 200

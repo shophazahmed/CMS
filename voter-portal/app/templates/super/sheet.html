@@ -62,7 +62,7 @@
 <table class="pledge-table">
   <thead><tr>
     <th class="num">#</th>{{ sort_th('name', 'Name', 'sticky') }}{{ sort_th('id', 'ID') }}<th>Sex</th>{{ sort_th('age', 'Age') }}
-    {{ sort_th('house', 'House') }}<th>Phone</th>{{ sort_th('box', 'Box') }}
+    {{ sort_th('house', 'House') }}<th>Phone</th>{{ sort_th('box', 'Box') }}{{ sort_th('no', 'No.') }}
     {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ label(c) }}</th>{% endfor %}
   </tr></thead>
   <tbody>
@@ -73,6 +73,7 @@
     <td class="mono">{{ v.national_id }}</td><td>{{ v.sex }}</td><td>{{ v.age if v.age is not none }}</td>
     <td class="trunc" title="{{ v.house_name }}">{{ v.house_name }}</td><td class="mono">{{ v.phone }}</td>
     <td class="small-text trunc" title="{{ v.location }}">{{ v.location }}</td>
+    <td class="mono num">{{ listno.get(v.national_id, '') }}</td>
     {% for c in cands %}{% set on = c.id in mine %}
     <td class="cand cand-{{ c.id }}">
       {% if not can_mark %}<span class="pl {{ 'pl-yes' if on else 'pl-blank' }}">{{ 'Super' if on else '·' }}</span>{% else %}

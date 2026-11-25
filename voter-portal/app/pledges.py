@@ -243,6 +243,20 @@ def _filters():
 
 
 # Sortable columns on the sheet: (A to Z, Z to A); empty values always go last
+_LISTNO = "(SELECT list_no FROM war_list WHERE war_list.national_id = voters.national_id)"
+
+
+def list_numbers(ids):
+    """{national_id: official list number} for these voters."""
+    out = {}
+    db = get_db()
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        out.update(db.execute(f"SELECT national_id, list_no FROM war_list WHERE national_id IN ({','.join('?' * len(chunk))})",
+                              chunk).fetchall())
+    return out
+
+
 SHEET_SORTS = {
     "name": ("full_name COLLATE NOCASE, national_id", "full_name COLLATE NOCASE DESC, national_id"),
     "house": ("house_name = '', house_name COLLATE NOCASE, full_name COLLATE NOCASE",
@@ -251,6 +265,9 @@ SHEET_SORTS = {
             "location = '', location COLLATE NOCASE DESC, house_name COLLATE NOCASE, full_name COLLATE NOCASE"),
     "age": ("age IS NULL, age, full_name COLLATE NOCASE", "age IS NULL, age DESC, full_name COLLATE NOCASE"),
     "id": ("national_id", "national_id DESC"),
+    # the official list number, box by box (voters without one last)
+    "no": ("location = '', location COLLATE NOCASE, " + _LISTNO + " IS NULL, " + _LISTNO + ", full_name COLLATE NOCASE",
+           "location = '', location COLLATE NOCASE, " + _LISTNO + " IS NULL, " + _LISTNO + " DESC, full_name COLLATE NOCASE"),
 }
 
 
@@ -316,6 +333,7 @@ def sheet():
                            sort_key=sort_key, sort_dir=sort_dir,
                            noshow=noshow_ids([r["national_id"] for r in rows]),
                            undecided=undecided_counts(where, params), show_super=can_view_super_pages(),
+                           listno=list_numbers([r["national_id"] for r in rows]),
                            noshows=db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN"
                                               f" (SELECT national_id FROM voters{where})", params).fetchone()[0],
                            query_args=query_args, first=(page - 1) * size)
@@ -532,13 +550,14 @@ def export(fmt):
     rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {sheet_order()[2]}", params).fetchall()
     marks = _pledge_map([r["national_id"] for r in rows])
     away = noshow_ids([r["national_id"] for r in rows])
-    headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "No-show"]
+    listno = list_numbers([r["national_id"] for r in rows])
+    headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "List no.", "No-show"]
                + [c["name"] for c in cands])
     table = []
     for n, r in enumerate(rows, 1):
         mine = marks.get(r["national_id"], {})
         table.append([n, r["national_id"], _safe_cell(r["full_name"]), r["sex"], r["age"], _safe_cell(r["house_name"]),
-                      _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"]),
+                      _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"]), listno.get(r["national_id"], ""),
                       "yes" if r["national_id"] in away else ""]
                      + [VALUES.get(mine.get(c["id"]), "").lower() for c in cands])
     audit.log("pledges_export", target=fmt, detail={"rows": len(table)})

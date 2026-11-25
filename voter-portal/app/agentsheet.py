@@ -46,7 +46,7 @@ def sheet():
         "SELECT * FROM (SELECT v.*, va.user_id AS one_by_one, ha.user_id AS house_agent FROM voters v"
         " LEFT JOIN voter_assignments va ON va.national_id = v.national_id"
         " LEFT JOIN house_assignments ha ON ha.house_name = v.house_name"
-        f" WHERE v.national_id IN (SELECT national_id FROM voters{where})) ORDER BY {order} LIMIT ? OFFSET ?",
+        f" WHERE v.national_id IN (SELECT national_id FROM voters{where})) AS voters ORDER BY {order} LIMIT ? OFFSET ?",
         params + [size, (page - 1) * size]).fetchall()
     # how many voters each agent has in this list (one by one first, else the house's agent)
     counts = dict(db.execute(
@@ -122,7 +122,7 @@ def export(fmt):
         "SELECT * FROM (SELECT v.*, va.user_id AS one_by_one, ha.user_id AS house_agent FROM voters v"
         " LEFT JOIN voter_assignments va ON va.national_id = v.national_id"
         " LEFT JOIN house_assignments ha ON ha.house_name = v.house_name"
-        f" WHERE v.national_id IN (SELECT national_id FROM voters{where})) ORDER BY {order}", params).fetchall()
+        f" WHERE v.national_id IN (SELECT national_id FROM voters{where})) AS voters ORDER BY {order}", params).fetchall()
     names = {a["id"]: a["username"] for a in _agents()}
     headers = ["#", "ID", "Full name", "Sex", "Age", "House name", "Phone", "Box", "Agent", "Given by", "House agent"]
     table = []
