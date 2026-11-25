@@ -17,7 +17,14 @@
 </div>
 
 <form class="card report-pick no-print" method="get">
-  {% for k, v in query_args.items() if k != 'ag' %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  {% for k, v in query_args.items() if k not in ('ag', 'loc') %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <label>Box
+    <select name="loc" data-autosubmit>
+      <option value="">All boxes</option>
+      {% for b in boxes %}<option value="{{ b }}" {{ 'selected' if f.loc == b }}>{{ b }}</option>{% endfor %}
+      <option value="(none)" {{ 'selected' if f.loc == '(none)' }}>No box recorded</option>
+    </select>
+  </label>
   <label>Agent
     <select name="ag" data-autosubmit>
       <option value="">All agents</option>
@@ -25,7 +32,7 @@
       {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if f.ag == a.id|string }}>{{ a.username }}</option>{% endfor %}
     </select>
   </label>
-  {% if f.ag %}<a class="small-text" href="{{ url_for('reports.list_view', kind=kind, **dict(query_args, ag=None)) }}">Show all agents</a>{% endif %}
+  {% if f.ag or f.loc %}<a class="small-text" href="{{ url_for('reports.list_view', kind=kind, **dict(query_args, ag=None, loc=None)) }}">Show everyone</a>{% endif %}
   <noscript><button class="small">Show</button></noscript>
 </form>
 

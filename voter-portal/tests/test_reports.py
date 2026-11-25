@@ -82,6 +82,11 @@ def test_list_reports(app):
     t = rows_of(o.get(f"/reports/list/voters-agents/export.csv?ag={viewer}"))
     assert [r[1] for r in t[1:]] == ["A200001"]
     assert len(rows_of(o.get("/reports/list/voters-agents/export.csv?ag=none"))) == 3
+    conn.execute("UPDATE voters SET location = 'Box A' WHERE national_id = 'A200002'")
+    conn.commit()
+    page = o.get("/reports/list/voters-agents?loc=Box+A").get_data(as_text=True)
+    assert 'name="loc"' in page and 'selected>Box A<' in page and "<strong>1</strong> voter" in " ".join(page.split())
+    assert [r[1] for r in rows_of(o.get("/reports/list/voters-agents/export.csv?loc=Box+A"))[1:]] == ["A200002"]
     b = app.test_client()
     login(b, "boss", ADMIN_PW)                                   # no super pledge access
     assert b.get("/reports/list/super-agents").status_code == 404
