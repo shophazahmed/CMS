@@ -1,0 +1,66 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Official voter lists{% endblock %}
+{% block content %}
+<a class="backlink" href="{{ url_for('warroom.team') }}">{{ icon('back', 18) }} War Room team</a>
+<div class="page-head">
+  <h1>Official voter lists</h1>
+  <p class="muted">The Elections Commission's list for each ballot box, as Excel (.xls or .xlsx), one file per box. The portal
+    matches every row to a voter by name and house, saves their <strong>list number</strong> (so box agents can type the number
+    the official calls out) and, if you tick it, sets their <strong>box</strong> from the list. Check first: nothing is saved.</p>
+</div>
+
+<form class="card form" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>List files <input type="file" name="lists" accept=".xls,.xlsx,.csv" multiple required></label>
+  <label class="check"><input type="checkbox" name="set_box" value="1" checked> Set each matched voter's box from the list (the box name in the file)</label>
+  <div class="actions">
+    <button class="primary" name="apply" value="0">Check only</button>
+    <button name="apply" value="1" data-confirm="Save the list numbers (and boxes) for every matched voter?">Check and save</button>
+  </div>
+</form>
+{% if error %}<p class="flash flash-error">{{ error }}</p>{% endif %}
+
+{% if result %}
+{% for e in result.errors %}<p class="flash flash-error">{{ e }}</p>{% endfor %}
+<section class="card">
+  <h2>{{ 'Saved' if result.applied else 'Check (nothing saved yet)' }}</h2>
+  <div class="table-wrap">
+  <table class="report-table">
+    <thead><tr><th>Box</th><th>Code</th><th class="num">In the file</th><th class="num">List says</th><th class="num">Matched</th><th>How</th></tr></thead>
+    <tbody>
+    {% for b in result.boxes %}
+    <tr><th>{{ b.box }}</th><td class="small-text mono">{{ b.code }}</td><td class="num">{{ b.rows }}</td>
+      <td class="num {{ 'count-diff' if not b.complete }}">{{ b.expected if b.expected is not none else '—' }}</td>
+      <td class="num"><strong>{{ b.matched }}</strong> <span class="muted small-text">({{ ((100 * b.matched / b.rows)|round|int) if b.rows else 0 }}%)</span></td>
+      <td class="small-text">{% for how, n in b.hows.items() %}{{ how }}: {{ n }}{{ ' · ' if not loop.last }}{% endfor %}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  </div>
+  {% for b in result.boxes if not b.complete %}
+  <p class="flash flash-error">{{ b.box }}: the file has {{ b.rows }} voters but the list says {{ b.expected }}. Some pages are missing
+    from this file: get the full list and upload it again.</p>
+  {% endfor %}
+  {% if result.applied %}<p class="small-text">List numbers saved{{ ' and boxes set' if result.set_box }} for every matched voter.
+    Give box agents their box on the War Room team page (the box names above).</p>
+  {% else %}<p class="small-text">Looks right? Choose the same files again and press <strong>Check and save</strong>.</p>{% endif %}
+</section>
+
+{% if result.unmatched %}
+<section class="card">
+  <div class="list-head"><h2>Not matched ({{ result.unmatched|length }})</h2>
+    <a class="button small" href="{{ url_for('officiallist.unmatched_csv') }}">{{ icon('download', 16) }} CSV</a></div>
+  <p class="muted small-text">Not in the portal, or the name or house is spelled differently. Fix the voter in the portal (or add
+    them) and upload again; matched voters are just updated.</p>
+  <div class="table-wrap">
+  <table class="report-table">
+    <thead><tr><th>Box</th><th class="num">No.</th><th>Name</th><th>House</th></tr></thead>
+    <tbody>{% for box, no, name, island, house in result.unmatched[:300] %}<tr><td class="small-text">{{ box }}</td><td class="num">{{ no }}</td><td>{{ name }}</td><td>{{ house }}</td></tr>{% endfor %}</tbody>
+  </table>
+  </div>
+  {% if result.unmatched|length > 300 %}<p class="muted small-text">Showing 300; the CSV has all.</p>{% endif %}
+</section>
+{% endif %}
+{% endif %}
+{% endblock %}

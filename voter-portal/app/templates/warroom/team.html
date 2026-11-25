@@ -116,6 +116,8 @@
 <form class="card form" method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <h2>Official list numbers</h2>
+  <p><a class="button primary" href="{{ url_for('officiallist.official') }}">{{ icon('upload', 16) }} Import the Elections Commission lists (.xls, one per box)</a></p>
+  <p class="muted small-text">Or, if you have a simple sheet with ID card numbers:</p>
   <p class="muted small-text">So box agents can type the number the official calls out. Excel or CSV with an <strong>ID</strong>
     column and a <strong>No.</strong> column (the voter's number on their box's list). {{ numbered }} voters have a number now.</p>
   <label>Official list <input type="file" name="sheet" accept=".xlsx,.xlsm,.csv" required></label>
