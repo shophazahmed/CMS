@@ -45,7 +45,10 @@ def test_field_accounts_see_only_their_page(app):
     assert t1.get("/war/box").status_code == 423                # closed until the owner opens it
     o.post("/war/team", data={"csrf_token": token, "action": "open"})
     page = t1.get("/war/box").get_data(as_text=True)
-    assert "Box A" in page and "Aminath Alpha" not in page      # no list of everyone
+    assert "Box A" in page and "Voter list" in page and "Aminath Alpha" in page      # their box's list
+    assert "HYPERLINK" not in page                               # A200003 is at Box B: not on it
+    assert "7771234" not in page                                 # no phone numbers for box agents
+    assert "Not yet" in page
     for path in ("/", "/pledges", "/visits", "/voters/A200001", "/dashboard", "/war", "/war/team"):
         r = t1.get(path)
         assert r.status_code in (302, 403), path
@@ -85,6 +88,7 @@ def test_marking_clears_the_call_list(app):
     ch = t3.get(f"/war/changes?since={cursor}").json
     assert ch["voted"] == ["A200001"]
     assert "Aminath Alpha" not in t3.get("/war/calls").get_data(as_text=True)
+    assert "✓ Voted" in t1.get("/war/box").get_data(as_text=True)       # the list shows who voted
     # tier 1 can't mark at another box
     assert t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200003", "value": "1"}).status_code == 403
     # call outcomes

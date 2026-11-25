@@ -316,8 +316,14 @@ def box():
         " ON v.national_id = w.national_id LEFT JOIN war_list l ON l.national_id = v.national_id"
         " WHERE v.location = ? ORDER BY w.at DESC LIMIT 15", (b,)).fetchall()
     has_numbers = db.execute("SELECT 1 FROM war_list WHERE box = ? LIMIT 1", (b,)).fetchone() is not None
+    # the whole box list: list number, name, house, voted or not (no phone numbers)
+    everyone = db.execute(
+        "SELECT v.national_id, v.full_name, v.house_name, v.sex, v.age, l.list_no, w.at AS voted_at FROM voters v"
+        " LEFT JOIN war_list l ON l.national_id = v.national_id LEFT JOIN war_voted w ON w.national_id = v.national_id"
+        " WHERE v.location = ? AND v.deceased = 0"
+        " ORDER BY l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE", (b,)).fetchall()
     return render_template("warroom/box.html", box=b, boxes=boxes if t != "t1" else [], total=total, voted=voted,
-                           recent=recent, has_numbers=has_numbers, t=t, cursor=_cursor(), is_open=is_open(),
+                           recent=recent, everyone=everyone, has_numbers=has_numbers, t=t, cursor=_cursor(), is_open=is_open(),
                            undo_minutes=UNDO_MINUTES, hm=_hm, me=g.user["id"],
                            undo_after=(datetime.now(timezone.utc) - timedelta(minutes=UNDO_MINUTES)).isoformat(timespec="seconds"))
 

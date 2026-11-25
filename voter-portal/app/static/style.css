@@ -1360,3 +1360,20 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
 .count-st-not-started { background: var(--surface-2); color: var(--muted); }
 .ours-row .dist-name { font-weight: 700; }
 .count-results .dbar-fill { fill: var(--cand, var(--accent)); }
+/* box agent's voter list */
+.bl-tools { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: center; margin: .25rem 0 .75rem; }
+.bl-tools .chips { margin: 0; }
+.bl-tools input[type=search] { flex: 1 1 14rem; }
+.bl-rows { list-style: none; padding: 0; margin: 0; max-height: 70vh; overflow: auto; border: 1px solid var(--border); border-radius: 12px; }
+.bl-row { display: flex; align-items: center; gap: .75rem; padding: .55rem .75rem; border-bottom: 1px solid var(--border); }
+.bl-row:last-child { border-bottom: 0; }
+.bl-row[hidden] { display: none; }
+.bl-no { min-width: 2.6rem; font-weight: 700; color: var(--accent-ink); }
+.bl-who { flex: 1; min-width: 0; display: grid; }
+.bl-who strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bl-state { font-size: .85rem; color: var(--muted); white-space: nowrap; }
+.bl-row.is-voted { background: color-mix(in srgb, #1baf7a 8%, var(--surface)); }
+.bl-row.is-voted .bl-state { color: #14532d; font-weight: 600; }
+.bl-mark[hidden] { display: none; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .bl-row.is-voted .bl-state { color: #86efac; } }
+:root[data-theme="dark"] .bl-row.is-voted .bl-state { color: #86efac; }

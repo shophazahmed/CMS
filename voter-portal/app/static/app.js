@@ -531,6 +531,7 @@ document.addEventListener("submit", async (event) => {
     status();
   }
 
+  window.warQueue = (url, fields) => queue(url, fields);
   function queue(url, fields) {
     fields.key = fields.key || key();
     const list = load();
@@ -634,6 +635,7 @@ document.addEventListener("submit", async (event) => {
       const data = await r.json();
       since = data.cursor;
       (data.voted || []).forEach(gone);
+      document.dispatchEvent(new CustomEvent("war:changes", { detail: data }));
       if (data.stats) {
         Object.entries(data.stats).forEach(([k, v]) => {
           page.querySelectorAll(`[data-k="${k}"]`).forEach((e) => { e.textContent = String(v); });
@@ -858,4 +860,66 @@ document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select
     if (document.activeElement && document.activeElement.matches("input, select, textarea")) return;
     location.reload();
   }, Number(el.dataset.autoreload) * 1000);
+})();
+
+// Box agent's voter list: voted / not voted, live; search; mark voted from the list.
+(() => {
+  const list = document.querySelector("[data-box-list]");
+  if (!list) return;
+  const rows = [...list.querySelectorAll(".bl-row")];
+  const votedEl = list.querySelector("[data-bl-voted]");
+  const leftEl = list.querySelector("[data-bl-left]");
+  const search = list.querySelector("[data-bl-search]");
+  const page = document.querySelector("[data-war-poll]");
+  const card = document.getElementById("war-card");
+  let show = "all";
+  const counts = () => {
+    const v = rows.filter((r) => r.classList.contains("is-voted")).length;
+    votedEl.textContent = v; leftEl.textContent = rows.length - v;
+  };
+  const filter = () => {
+    const q = (search.value || "").trim().toLowerCase();
+    rows.forEach((r) => {
+      const voted = r.classList.contains("is-voted");
+      const ok = (show === "all" || (show === "yes") === voted) && (!q || r.dataset.text.includes(q));
+      r.hidden = !ok;
+    });
+  };
+  const setVoted = (nid, on, when) => {
+    const r = list.querySelector(`.bl-row[data-nid="${CSS.escape(nid)}"]`);
+    if (!r) return;
+    r.classList.toggle("is-voted", on);
+    r.querySelector("[data-bl-state]").textContent = on ? "✓ Voted " + (when || new Date().toTimeString().slice(0, 5)) : "Not yet";
+    r.querySelector("[data-bl-mark]").hidden = on;
+  };
+  list.querySelectorAll("[data-bl-show]").forEach((b) => b.addEventListener("click", () => {
+    show = b.dataset.blShow;
+    list.querySelectorAll("[data-bl-show]").forEach((x) => x.classList.toggle("on", x === b));
+    filter();
+  }));
+  search.addEventListener("input", filter);
+  list.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-bl-mark]");
+    if (!btn) return;
+    const r = btn.closest(".bl-row");
+    const name = r.querySelector("strong").textContent;
+    if (!confirm(`Mark ${name} as voted?`)) return;
+    const fields = { csrf_token: (card && card.dataset.csrf) || (document.querySelector("input[name=csrf_token]") || {}).value,
+                     national_id: r.dataset.nid, value: "1" };
+    if (card && card.dataset.box) fields.box = card.dataset.box;
+    setVoted(r.dataset.nid, true); counts(); filter();
+    if (window.warQueue) window.warQueue(list.dataset.markUrl, fields);
+  });
+  document.addEventListener("war:changes", (e) => {
+    (e.detail.voted || []).forEach((nid) => setVoted(nid, true));
+    (e.detail.undone || []).forEach((nid) => setVoted(nid, false));
+    counts(); filter();
+  });
+  // a voter marked from the lookup card above
+  if (card) card.addEventListener("click", (e) => {
+    if (e.target.closest(".war-voted-btn")) setTimeout(() => {
+      const voted = document.querySelectorAll(".war-recent li[data-nid]");
+      if (voted[0]) { setVoted(voted[0].dataset.nid, true); counts(); filter(); }
+    }, 50);
+  });
 })();

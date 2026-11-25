@@ -32,6 +32,29 @@
 </form>
 <div id="war-card" class="war-card-slot" data-mark-url="{{ url_for('warroom.mark') }}" data-csrf="{{ csrf_token() }}" data-box="{{ box if t != 't1' else '' }}"></div>
 
+<section class="card box-list" data-box-list data-mark-url="{{ url_for('warroom.mark') }}">
+  <div class="list-head"><h2>Voter list</h2>
+    <span class="muted small-text"><strong data-bl-voted>{{ voted }}</strong> voted · <strong data-bl-left>{{ total - voted }}</strong> not yet</span></div>
+  <div class="bl-tools">
+    <nav class="chips" aria-label="Show">
+      <button type="button" class="chip on" data-bl-show="all">All</button>
+      <button type="button" class="chip" data-bl-show="no">Not voted</button>
+      <button type="button" class="chip" data-bl-show="yes">Voted</button>
+    </nav>
+    <input type="search" placeholder="Search number, name or house" aria-label="Search the list" data-bl-search>
+  </div>
+  <ol class="bl-rows">
+    {% for v in everyone %}
+    <li class="bl-row {{ 'is-voted' if v.voted_at }}" data-nid="{{ v.national_id }}" data-text="{{ v.list_no or '' }} {{ v.full_name|lower }} {{ v.house_name|lower }}">
+      <span class="bl-no mono">{{ v.list_no or '—' }}</span>
+      <span class="bl-who"><strong>{{ v.full_name }}</strong><span class="muted small-text">{{ v.house_name }}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}</span></span>
+      <span class="bl-state" data-bl-state>{% if v.voted_at %}✓ Voted {{ hm(v.voted_at) }}{% else %}Not yet{% endif %}</span>
+      <button type="button" class="small bl-mark" data-bl-mark {{ 'hidden' if v.voted_at }}>Mark voted</button>
+    </li>
+    {% else %}<li class="muted">No voters at this box.</li>{% endfor %}
+  </ol>
+</section>
+
 <section class="card">
   <h2>Marked voted at this box</h2>
   <ul class="war-recent" id="war-recent">
