@@ -441,7 +441,8 @@ def test_agent_filter_on_the_pledge_sheet(app):
     assert "Aminath Alpha" in none and "Moosa Beta</span>" not in none
     rows = a.get(f"/pledges/export.csv?ag={viewer}").get_data(as_text=True).strip().splitlines()
     assert len(rows) == 2                                                  # the export follows it
-    assert "Yes pledges among 1 voter" in a.get(f"/pledges/distribution?ag={viewer}").get_data(as_text=True)
+    dist = a.get(f"/pledges/distribution?ag={viewer}").get_data(as_text=True)
+    assert "Yes pledges among 1 voter" in dist and "report-quick" in dist and f'value="{viewer}" selected' in dist
 
 
 

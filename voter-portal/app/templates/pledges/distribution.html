@@ -28,6 +28,8 @@
 <div class="empty card"><p>No candidates yet.</p></div>
 {% else %}
 {% set box_list_options = box_options %}{% set with_pledge_filter = False %}
+{% set ag_opts = agent_options() %}
+{% with boxes = box_options, agents = ag_opts %}{% include "reports/_quick.html" %}{% endwith %}
 <details class="filter-panel card" {{ 'open' if query_args }}>
   <summary>{{ icon('filter') }} Filters (box, house, sex, age)</summary>
   {% include "pledges/_filters.html" %}
