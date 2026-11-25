@@ -101,13 +101,15 @@ def export(fmt):
     rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {pledges.sheet_order()[2]}", params).fetchall()
     marks = _super_map([r["national_id"] for r in rows])
     listno = pledges.list_numbers([r["national_id"] for r in rows])
-    headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "List no."]
+    connected = pledges.connected_by([r["national_id"] for r in rows], "super_votes")
+    headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "List no.", "Connected by"]
                + [pledges.label(c) for c in cands] + ["Super for"])
     table = []
     for n, r in enumerate(rows, 1):
         mine = marks.get(r["national_id"], set())
         table.append([n, r["national_id"], _safe_cell(r["full_name"]), r["sex"], r["age"], _safe_cell(r["house_name"]),
-                      _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"]), listno.get(r["national_id"], "")]
+                      _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"]), listno.get(r["national_id"], ""),
+                      connected.get(r["national_id"], "")]
                      + ["super" if c["id"] in mine else "" for c in cands]
                      + [", ".join(c["name"] for c in cands if c["id"] in mine)])
     audit.log("super_export", target=fmt, detail={"rows": len(table)})
@@ -128,7 +130,7 @@ def export(fmt):
     for cell in ws[1]:
         cell.font = Font(bold=True)
     for i, c in enumerate(cands):
-        cell = ws.cell(row=1, column=11 + i)
+        cell = ws.cell(row=1, column=12 + i)
         cell.fill = PatternFill("solid", fgColor=c["color"].lstrip("#"))
         cell.font = Font(bold=True, color="FFFFFF")
     for row in table:
@@ -171,6 +173,7 @@ def sheet():
                            can_mark=can_mark_super(), max_votes=pledges.max_votes(), ours=pledges.our_candidate(),
                            label=pledges.label, sort_key=sort_key, sort_dir=sort_dir, owner=is_owner(),
                            listno=pledges.list_numbers([r["national_id"] for r in rows]),
+                           connected=pledges.connected_by([r["national_id"] for r in rows], "super_votes"),
                            query_args={k: v for k, v in request.args.items() if k != "page"},
                            first=(page - 1) * size)
 

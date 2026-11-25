@@ -442,3 +442,26 @@ def test_agent_filter_on_the_pledge_sheet(app):
     rows = a.get(f"/pledges/export.csv?ag={viewer}").get_data(as_text=True).strip().splitlines()
     assert len(rows) == 2                                                  # the export follows it
     assert "Yes pledges among 1 voter" in a.get(f"/pledges/distribution?ag={viewer}").get_data(as_text=True)
+
+
+
+def test_connected_by_column(app):
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    token, ids = setup(a)
+    mark(a, token, "A200001", ids["Shoppe"], "yes")
+    a.post("/admin/users", data={"csrf_token": token, "username": "pledger", "role": "pledge", "password": "pledger-pass-123"})
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE users SET must_change_password = 0 WHERE username = 'pledger'")
+    conn.commit()
+    p = app.test_client()
+    login(p, "pledger", "pledger-pass-123")
+    mark(p, csrf(p, "/pledges"), "A200001", ids["Rayya"], "yes")
+    page = " ".join(a.get("/pledges").get_data(as_text=True).split())
+    assert "Connected by" in page and "pledger, admin" in page                  # latest first
+    assert "Connected by" not in p.get("/pledges").get_data(as_text=True)          # not for pledge-only accounts
+    import csv as _csv
+    rows = list(_csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
+    i = rows[0].index("Connected by")
+    assert {r[1]: r[i] for r in rows[1:]}["A200001"] == "pledger, admin"
