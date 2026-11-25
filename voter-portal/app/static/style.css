@@ -1284,3 +1284,30 @@ body.nav-open { overflow: hidden; }
 :root[data-theme="dark"] .cs-tag-later { background: #142640; color: #93c5fd; }
 :root[data-theme="dark"] .cs-tag-noanswer { background: #22282e; color: #cbd5e1; }
 :root[data-theme="dark"] .cs-tag-notcoming { background: #3a1714; color: #fca5a5; }
+/* reports */
+.report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: .75rem; }
+.report-card { border: 1px solid var(--border); border-radius: 12px; padding: .8rem .9rem; background: var(--surface-2);
+  display: flex; flex-direction: column; }
+.report-card h3 { font-size: .98rem; margin: 0 0 .25rem; }
+.report-card h3 a { color: var(--text); text-decoration: none; }
+.report-card h3 a:hover { text-decoration: underline; }
+.report-card .report-actions { margin: auto 0 0; display: flex; gap: .35rem; padding-top: .5rem; }
+.report-two { display: grid; grid-template-columns: repeat(auto-fit, minmax(20rem, 1fr)); gap: 0 1rem; }
+.report-ticks { display: grid; grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr)); gap: .15rem .75rem; margin-bottom: .5rem; }
+.report-pick { display: flex; flex-wrap: wrap; gap: .5rem 1rem; align-items: end; padding: .75rem 1rem; }
+.report-pick label { flex: 1 1 12rem; }
+.report-wrap { padding: 0; overflow: auto; }
+.report-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.report-table th, .report-table td { padding: .5rem .7rem; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+.report-table thead th { position: sticky; top: 0; background: var(--surface-2); font-size: .8rem; color: var(--muted); }
+.report-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.report-table tbody th { font-weight: 600; }
+.report-table tfoot th, .report-table tfoot td, .report-table .tot { font-weight: 700; background: var(--surface-2); }
+.report-table td.h1 { background: color-mix(in srgb, var(--accent) 8%, transparent); }
+.report-table td.h2 { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.report-table td.h3 { background: color-mix(in srgb, var(--accent) 26%, transparent); }
+.report-table td.h4 { background: color-mix(in srgb, var(--accent) 38%, transparent); }
+.report-table td.h5 { background: color-mix(in srgb, var(--accent) 52%, transparent); font-weight: 700; }
+@media print { .report-wrap { box-shadow: none; border: 0; } .report-table thead th { position: static; } .backlink { display: none; } }
+.report-table tbody th, .report-table tfoot th { text-transform: none; letter-spacing: 0; font-size: .92rem; color: var(--text); }
+.report-table thead th { text-transform: none; letter-spacing: 0; }

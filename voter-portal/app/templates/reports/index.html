@@ -1,0 +1,62 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="page-head">
+  <h1>Reports</h1>
+  <p class="muted">Ready-made reports, or build your own from any two things. Every report can be shown as counts or row %,
+    filtered, and downloaded.</p>
+</div>
+
+<section class="card">
+  <h2>{{ icon('clipboard', 18) }} Default reports</h2>
+  <div class="report-grid">
+    {% for key, title, about, r, c, extra in presets %}
+    <article class="report-card">
+      <h3><a href="{{ url_for('reports.view', r=key) }}">{{ title }}</a></h3>
+      <p class="muted small-text">{{ about }}</p>
+      <p class="report-actions">
+        <a class="button small primary" href="{{ url_for('reports.view', r=key) }}">Open</a>
+        <a class="button small" href="{{ url_for('reports.export', fmt='xlsx', r=key) }}">{{ icon('download', 14) }} Excel</a>
+      </p>
+    </article>
+    {% endfor %}
+  </div>
+</section>
+
+<div class="report-two">
+<form class="card form report-build" method="get" action="{{ url_for('reports.view') }}">
+  <h2>{{ icon('layers', 18) }} Build a report</h2>
+  <p class="muted small-text">Pick what goes down the side and (optionally) across the top. You can add filters on the next page.</p>
+  <label>Down the side (rows)
+    <select name="rows">{% for k, d in dims.items() %}<option value="{{ k }}" {{ 'selected' if k == 'box' }}>{{ d[0] }}</option>{% endfor %}</select>
+  </label>
+  <label>Across the top (columns)
+    <select name="cols"><option value="">— just a count —</option>
+      {% for k, d in dims.items() %}<option value="{{ k }}" {{ 'selected' if k == 'sex' }}>{{ d[0] }}</option>{% endfor %}</select>
+  </label>
+  <label>Box
+    <select name="loc"><option value="">All boxes</option>
+      {% for b in boxes %}<option value="{{ b }}">{{ b }}</option>{% endfor %}<option value="(none)">No box recorded</option></select>
+  </label>
+  <label class="check"><input type="checkbox" name="pct" value="1"> Show row %</label>
+  <button class="primary">Show the report</button>
+</form>
+
+<form class="card form report-many" method="get" action="{{ url_for('reports.export', fmt='xlsx') }}">
+  <h2>{{ icon('download', 18) }} Download several reports</h2>
+  <p class="muted small-text">Tick the reports you want: one Excel file, one tab per report.</p>
+  <div class="report-ticks">
+    {% for key, title, about, r, c, extra in presets %}
+    <label class="check"><input type="checkbox" name="many" value="{{ key }}" {{ 'checked' if loop.index <= 4 }}> {{ title }}</label>
+    {% endfor %}
+  </div>
+  <label>Box
+    <select name="loc"><option value="">All boxes</option>
+      {% for b in boxes %}<option value="{{ b }}">{{ b }}</option>{% endfor %}</select>
+  </label>
+  <label class="check"><input type="checkbox" name="pct" value="1"> Row % instead of counts</label>
+  <button class="primary">{{ icon('download', 16) }} Download Excel</button>
+</form>
+</div>
+{% endblock %}

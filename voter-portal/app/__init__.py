@@ -8,7 +8,7 @@ from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from . import (admin, agentlink, agentsheet, announce, auth, campaign, canvass, confirmed, fonts, imports, islandmap,
-               personal, pledges, share, superpledge, visits, voters, warroom)
+               personal, pledges, reports, share, superpledge, visits, voters, warroom)
 from .db import close_db, connect, init_schema, now_iso
 
 CSP = (
@@ -79,6 +79,7 @@ def create_app(test_config=None):
     app.register_blueprint(superpledge.bp)
     app.register_blueprint(warroom.bp)
     app.register_blueprint(agentsheet.bp)
+    app.register_blueprint(reports.bp)
     app.jinja_env.globals["dhivehi_font"] = fonts.font_file
     app.jinja_env.globals["dhivehi_font_name"] = fonts.font_name
     app.jinja_env.globals["share_people"] = share.people

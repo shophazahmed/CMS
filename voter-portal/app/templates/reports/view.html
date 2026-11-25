@@ -1,0 +1,59 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ preset[1] if preset else 'Report' }}{% endblock %}
+{% block head %}{% if t.pledge_rows %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endif %}{% endblock %}
+{% block main_class %}page wide{% endblock %}
+{% block content %}
+<a class="backlink" href="{{ url_for('reports.index') }}">{{ icon('back', 18) }} Reports</a>
+<div class="page-head">
+  <div class="house-title">
+    <h1>{{ preset[1] if preset else t.r_label ~ (' by ' ~ t.c_label if t.c_label else '') }}</h1>
+    <span class="list-links">
+      <a class="button small" href="{{ url_for('reports.export', fmt='xlsx', **dict(query_args, r=key or None, rows=None if key else rows_key, cols=None if key else (cols_key or None), pct=pct or None)) }}">{{ icon('download', 16) }} Excel</a>
+      <a class="button small" href="{{ url_for('reports.export', fmt='csv', **dict(query_args, r=key or None, rows=None if key else rows_key, cols=None if key else (cols_key or None), pct=pct or None)) }}">{{ icon('download', 16) }} CSV</a>
+      <button class="button small" type="button" data-print>Print</button>
+    </span>
+  </div>
+  <p class="muted">{{ preset[2] if preset else '' }} <strong>{{ t.total }}</strong> {{ 'pledges' if t.pledge_rows else 'voters' }}{{ ' (filtered)' if query_args }}.
+    {% if t.pledge_rows and not preset %}A voter with two Yes counts under both.{% endif %}</p>
+</div>
+
+<form class="card report-pick no-print" method="get">
+  {% for k, v in query_args.items() %}<input type="hidden" name="{{ k }}" value="{{ v }}">{% endfor %}
+  <label>Rows <select name="rows" data-autosubmit>{% for k, d in dims.items() %}<option value="{{ k }}" {{ 'selected' if k == rows_key }}>{{ d[0] }}</option>{% endfor %}</select></label>
+  <label>Columns <select name="cols" data-autosubmit><option value="">— just a count —</option>
+    {% for k, d in dims.items() if k != rows_key %}<option value="{{ k }}" {{ 'selected' if k == cols_key }}>{{ d[0] }}</option>{% endfor %}</select></label>
+  <label>Show <select name="pct" data-autosubmit><option value="">Counts</option><option value="1" {{ 'selected' if pct }}>Row %</option></select></label>
+  <noscript><button class="small">Show</button></noscript>
+</form>
+
+<details class="filter-panel card no-print" {{ 'open' if query_args }}>
+  <summary>{{ icon('filter') }} Filters</summary>
+  {% set box_list_options = boxes %}{% set with_pledge_filter = True %}
+  {% include "pledges/_filters.html" %}
+</details>
+
+{% if t.rows %}
+<div class="table-wrap card report-wrap">
+<table class="report-table">
+  <thead><tr><th>{{ t.r_label }}</th>
+    {% for c, label in t.cols %}<th class="num">{{ label }}</th>{% endfor %}
+    {% if t.cols|length > 1 %}<th class="num">Total</th>{% endif %}</tr></thead>
+  <tbody>
+  {% for r, label in t.rows %}{% set rt = t.row_tot[r] %}
+  <tr><th>{{ label }}</th>
+    {% for c, _ in t.cols %}{% set n = t.cells.get((r, c), 0) %}
+    <td class="num {{ report_heat(n, t.max) }}">{% if pct %}{{ ((100 * n / rt)|round(1)) if rt else 0 }}%{% else %}{{ n }}{% endif %}</td>
+    {% endfor %}
+    {% if t.cols|length > 1 %}<td class="num tot">{{ '100%' if pct else rt }}</td>{% endif %}</tr>
+  {% endfor %}
+  </tbody>
+  <tfoot><tr><th>Total</th>
+    {% for c, _ in t.cols %}<td class="num">{% if pct %}{{ ((100 * t.col_tot[c] / t.total)|round(1)) if t.total else 0 }}%{% else %}{{ t.col_tot[c] }}{% endif %}</td>{% endfor %}
+    {% if t.cols|length > 1 %}<td class="num tot">{{ '100%' if pct else t.total }}</td>{% endif %}</tr></tfoot>
+</table>
+</div>
+{% else %}
+<div class="empty card"><p>Nothing to show with these filters.</p></div>
+{% endif %}
+{% endblock %}

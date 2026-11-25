@@ -48,6 +48,7 @@
       <p class="side-label">Overview</p>
       {% if role == 'admin' %}{{ nav(url_for('canvass.dashboard'), 'Dashboard', 'chart', ep == 'canvass.dashboard') }}
       {% else %}{{ nav(url_for('canvass.my_houses'), 'My dashboard', 'chart', ep == 'canvass.my_houses') }}{% endif %}
+      {% if is_admin %}{{ nav(url_for('reports.index'), 'Reports', 'clipboard', ep.startswith('reports.')) }}{% endif %}
       {{ nav(url_for('announce.index'), 'Announcements', 'megaphone', ep.startswith('announce.')) }}
 
       <p class="side-label">Voters</p>
