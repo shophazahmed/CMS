@@ -267,6 +267,79 @@ def final():
     return redirect(url_for("votecount.sheet", box=box if _watch() else None))
 
 
+@bp.route("/count/export.<fmt>")
+@login_required
+def export(fmt):
+    """One box's count as CSV / Excel: every ballot type, the votes per candidate, and the official sheet once
+    the box is final. Box agents get their own box; the War Room any box."""
+    import csv
+
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    box = _my_box()
+    if not box:
+        abort(400)
+    cands = candidates()
+    tal = tally(box).get(box, {})
+    votes, invalid, ballots = totals_from(tal)
+    row, official = box_state(box)
+    final = bool(row and row["status"] == "final")
+    tallied = sum(tal.values())
+    pattern = [["Ballot", "Ballots", "% of tallied"]] + [
+        [text, tal.get(key, 0), round(100 * tal.get(key, 0) / tallied, 1) if tallied else 0]
+        for key, text, _ in combos(cands)] + [["Total", tallied, 100 if tallied else 0]]
+    summary = [["Candidate", "Votes (tally)"] + (["Official sheet", "Difference"] if final else [])]
+    for c in cands:
+        line = [pledges.label(c), votes.get(c["id"], 0)]
+        if final:
+            o = official.get(str(c["id"]))
+            line += [o, (o - votes.get(c["id"], 0)) if o is not None else ""]
+        summary.append(line)
+    for name, t_val, o_key in (("Invalid / blank", invalid, "invalid"), ("Ballots", ballots, "ballots")):
+        line = [name, t_val]
+        if final:
+            o = official.get(o_key)
+            line += [o if o is not None else "", (o - t_val) if o is not None else ""]
+        summary.append(line)
+    audit.log("count_export", target=box, detail={"fmt": fmt})
+    stamp = datetime.now().strftime("%Y%m%d-%H%M")
+    safe = "".join(ch if ch.isalnum() else "-" for ch in box)[:40]
+    name = f"count-{safe}-{stamp}.{fmt}"
+    title = f"Vote count · {box} · {'final' if final else 'counting'} · {datetime.now().strftime('%-d %b %Y %H:%M')}"
+    if fmt == "csv":
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow([title])
+        w.writerow([])
+        w.writerows(summary)
+        w.writerow([])
+        w.writerows(pattern)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Count"
+    ws.append([title])
+    ws["A1"].font = Font(bold=True, size=13)
+    ws.append([])
+    for line in summary:
+        ws.append(line)
+    ws.append([])
+    for line in pattern:
+        ws.append(line)
+    for r in (3, 3 + len(summary) + 1):
+        for cell in ws[r]:
+            cell.font = Font(bold=True)
+    ws.column_dimensions["A"].width = 34
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
 @bp.post("/count/reopen")
 @login_required
 def reopen():

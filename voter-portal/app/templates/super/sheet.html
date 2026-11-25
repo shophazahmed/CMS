@@ -52,7 +52,7 @@
 
 <div class="resultbar">
   <p><strong>{{ total }}</strong> voter{{ 's' if total != 1 }}{% if sc %} · <a href="{{ url_for('superpledge.sheet', **dict(query_args, sc=None)) }}">show everyone</a>{% endif %}</p>
-  {% if owner %}<div class="export">
+  {% if not pledge_only %}<div class="export">
     <a class="button small" href="{{ url_for('superpledge.export', fmt='csv', **query_args) }}">{{ icon('download', 16) }} CSV</a>
     <a class="button small" href="{{ url_for('superpledge.export', fmt='xlsx', **query_args) }}">{{ icon('download', 16) }} Excel</a>
   </div>{% endif %}

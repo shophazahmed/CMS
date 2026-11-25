@@ -12,6 +12,13 @@
   </div>
   <p class="war-sync" data-war-sync aria-live="polite"><span class="war-dot"></span><span data-war-sync-text>Live</span></p>
 </div>
+<div class="resultbar war-export">
+  <p class="muted small-text">Download this box's count:</p>
+  <div class="export">
+    <a class="button small" href="{{ url_for('votecount.export', fmt='xlsx', box=box if watch else None) }}">{{ icon('download', 16) }} Excel</a>
+    <a class="button small" href="{{ url_for('votecount.export', fmt='csv', box=box if watch else None) }}">{{ icon('download', 16) }} CSV</a>
+  </div>
+</div>
 {% if watch and boxes %}
 <form class="war-boxpick" method="get"><label>Box
   <select name="box" data-autosubmit>{% for b in boxes %}<option {{ 'selected' if b == box }}>{{ b }}</option>{% endfor %}</select></label></form>

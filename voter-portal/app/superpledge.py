@@ -89,16 +89,14 @@ def _sheet_filters():
 @bp.route("/super/export.<fmt>")
 @super_viewer_required
 def export(fmt):
-    """The super pledge sheet as CSV or Excel, with the same filters and order. Owner only, like the pledge sheet."""
+    """The super pledge sheet as CSV or Excel, with the same filters and order. Anyone with super pledge
+    access (logged)."""
     from openpyxl.styles import Font, PatternFill
 
     from .voters import _safe_cell
 
     if fmt not in ("csv", "xlsx"):
         abort(404)
-    if not is_owner():
-        audit.log("access_denied", target=request.path)
-        abort(403)
     f, where, params, cands, pc, pv, sc = _sheet_filters()
     rows = get_db().execute(f"SELECT * FROM voters{where} ORDER BY {pledges.sheet_order()[2]}", params).fetchall()
     marks = _super_map([r["national_id"] for r in rows])

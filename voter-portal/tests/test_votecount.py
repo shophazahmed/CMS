@@ -51,6 +51,13 @@ def test_tally_final_and_results(app):
     page = t1.post("/count/final", data=data, content_type="multipart/form-data", follow_redirects=True).get_data(as_text=True)
     assert "differ" in page and "count-diff" in page and "Photo of the sheet" in page
     assert tap(t1, tok, "x").status_code == 409                       # final: no more taps
+    csv_text = t1.get("/count/export.csv").get_data(as_text=True)
+    assert "Vote count · Box A · final" in csv_text and "Official sheet" in csv_text and "Invalid / blank,1,1,0" in csv_text
+    assert t1.get("/count/export.csv?box=Box+B").get_data(as_text=True).count("Box A") >= 1   # always their own box
+    from openpyxl import load_workbook
+    ws = load_workbook(io.BytesIO(t1.get("/count/export.xlsx").data)).active
+    assert ws["A1"].value.startswith("Vote count · Box A")
+    assert "Vote count · Box B" in o.get("/count/export.csv?box=Box+B").get_data(as_text=True)
     assert t1.get("/count/photo/Box A").status_code == 200
     assert t1.get("/count/photo/Box B").status_code == 403
     assert t1.get("/count/results").status_code in (302, 403)         # results: War Room only

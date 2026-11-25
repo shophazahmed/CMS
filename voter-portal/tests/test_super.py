@@ -135,8 +135,11 @@ def test_super_export(app):
         o.post(f"/admin/users/{viewer}", data={"csrf_token": token, "action": action, "level": "mark"})
     v = app.test_client()
     login(v, "viewer", USER_PW)
-    assert v.get("/super").status_code == 200 and "/super/export" not in v.get("/super").get_data(as_text=True)
-    assert v.get("/super/export.csv").status_code == 403
+    assert "/super/export" in v.get("/super").get_data(as_text=True)                 # anyone with super access
+    assert v.get("/super/export.csv").status_code == 200
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)                                                         # no super access
+    assert b.get("/super/export.csv").status_code == 403
 
 
 def test_more_scenario_options(app):
