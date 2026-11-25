@@ -294,6 +294,21 @@ def connected_by(ids, table="pledges"):
     return {k: ", ".join(v) for k, v in out.items()}
 
 
+def agents_of(ids):
+    """{national_id: agent's name}: who looks after these voters (one by one, else the house's agent)."""
+    out = {}
+    db = get_db()
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        out.update(db.execute(
+            "SELECT v.national_id, COALESCE(ua.username, uh.username) FROM voters v"
+            " LEFT JOIN voter_assignments va ON va.national_id = v.national_id"
+            " LEFT JOIN house_assignments ha ON ha.house_name = v.house_name"
+            " LEFT JOIN users ua ON ua.id = va.user_id LEFT JOIN users uh ON uh.id = ha.user_id"
+            f" WHERE v.national_id IN ({','.join('?' * len(chunk))})", chunk).fetchall())
+    return {k: v for k, v in out.items() if v}
+
+
 def _pledge_map(ids):
     out = {}
     for i in range(0, len(ids), 500):
@@ -350,6 +365,7 @@ def sheet():
                            undecided=undecided_counts(where, params), show_super=can_view_super_pages(),
                            listno=list_numbers([r["national_id"] for r in rows]),
                            connected=connected_by([r["national_id"] for r in rows]),
+                           agents=agents_of([r["national_id"] for r in rows]),
                            noshows=db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN"
                                               f" (SELECT national_id FROM voters{where})", params).fetchone()[0],
                            query_args=query_args, first=(page - 1) * size)
@@ -568,14 +584,17 @@ def export(fmt):
     away = noshow_ids([r["national_id"] for r in rows])
     listno = list_numbers([r["national_id"] for r in rows])
     connected = connected_by([r["national_id"] for r in rows])
-    headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "List no.", "Connected by", "No-show"]
+    agent = agents_of([r["national_id"] for r in rows])
+    headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "List no.", "Agent",
+                "Connected by", "No-show"]
                + [c["name"] for c in cands])
     table = []
     for n, r in enumerate(rows, 1):
         mine = marks.get(r["national_id"], {})
         table.append([n, r["national_id"], _safe_cell(r["full_name"]), r["sex"], r["age"], _safe_cell(r["house_name"]),
                       _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"]), listno.get(r["national_id"], ""),
-                      connected.get(r["national_id"], ""), "yes" if r["national_id"] in away else ""]
+                      agent.get(r["national_id"], ""), connected.get(r["national_id"], ""),
+                      "yes" if r["national_id"] in away else ""]
                      + [VALUES.get(mine.get(c["id"]), "").lower() for c in cands])
     audit.log("pledges_export", target=fmt, detail={"rows": len(table)})
     name = f"pledge-sheet-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"

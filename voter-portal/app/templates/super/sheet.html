@@ -64,7 +64,7 @@
     <th class="num">#</th>{{ sort_th('name', 'Name', 'sticky') }}{{ sort_th('id', 'ID') }}<th>Sex</th>{{ sort_th('age', 'Age') }}
     {{ sort_th('house', 'House') }}<th>Phone</th>{{ sort_th('box', 'Box') }}{{ sort_th('no', 'No.') }}
     {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ label(c) }}</th>{% endfor %}
-    {% if not pledge_only %}<th>Connected by</th>{% endif %}
+    {% if not pledge_only %}<th>Agent</th><th>Connected by</th>{% endif %}
   </tr></thead>
   <tbody>
   {% for v in rows %}{% set mine = votes.get(v.national_id, []) %}
@@ -88,7 +88,8 @@
       </form>{% endif %}
     </td>
     {% endfor %}
-    {% if not pledge_only %}<td class="small-text connected">{{ connected.get(v.national_id, '') }}</td>{% endif %}
+    {% if not pledge_only %}<td class="small-text">{{ agents.get(v.national_id, '—') }}</td>
+    <td class="small-text connected">{{ connected.get(v.national_id, '') }}</td>{% endif %}
   </tr>
   {% endfor %}
   </tbody>

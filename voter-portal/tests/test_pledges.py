@@ -465,3 +465,11 @@ def test_connected_by_column(app):
     rows = list(_csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
     i = rows[0].index("Connected by")
     assert {r[1]: r[i] for r in rows[1:]}["A200001"] == "pledger, admin"
+    # the agent who looks after the voter
+    viewer = conn.execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    conn.execute("INSERT INTO voter_assignments (national_id, user_id, assigned_at) VALUES ('A200002', ?, 'x')", (viewer,))
+    conn.commit()
+    page = a.get("/pledges").get_data(as_text=True)
+    assert "<th>Agent</th>" in page and ">viewer</td>" in page
+    rows = list(_csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
+    assert {r[1]: r[rows[0].index("Agent")] for r in rows[1:]}["A200002"] == "viewer"
