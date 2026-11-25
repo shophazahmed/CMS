@@ -40,6 +40,13 @@ def test_super_pledge_sheet(app):
     assert "Aminath Alpha" in only and "Moosa Beta" not in only
     assert "Moosa Beta" in o.get("/super?sc=none").get_data(as_text=True)
     assert "Aminath Alpha" in o.get("/super?sc=any&sort=age&dir=desc").get_data(as_text=True)
+    viewer = connect(app.config["DATABASE"]).execute("SELECT id FROM users WHERE username = 'viewer'").fetchone()[0]
+    c = connect(app.config["DATABASE"])
+    c.execute("INSERT INTO voter_assignments (national_id, user_id, assigned_at) VALUES ('A200002', ?, 'x')", (viewer,))
+    c.commit()
+    page = o.get(f"/super?ag={viewer}").get_data(as_text=True)
+    assert 'class="card report-pick report-quick' in page and f'value="{viewer}" selected' in page
+    assert "Moosa Beta" in page and "Aminath Alpha</span>" not in page
     vote(o, token, "A200001", ids["Jawid"], "0")
     assert connect(app.config["DATABASE"]).execute("SELECT COUNT(*) FROM super_votes").fetchone()[0] == 1
 

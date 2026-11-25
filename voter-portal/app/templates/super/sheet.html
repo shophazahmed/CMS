@@ -27,6 +27,7 @@
 {% if not cands %}
 <div class="empty card"><p>No candidates yet.</p></div>
 {% else %}
+{% if agent_list %}{% with agents = agent_list %}{% include "reports/_quick.html" %}{% endwith %}{% endif %}
 <details class="filter-panel card" {{ 'open' if request.args }}>
   <summary>{{ icon('filter') }} Filters</summary>
   {% set box_list_options = boxes %}{% set with_pledge_filter = True %}

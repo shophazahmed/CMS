@@ -177,6 +177,7 @@ def sheet():
                            listno=pledges.list_numbers([r["national_id"] for r in rows]),
                            connected=pledges.connected_by([r["national_id"] for r in rows], "super_votes"),
                            agents=pledges.agents_of([r["national_id"] for r in rows]),
+                           agent_list=pledges.agent_options(),
                            query_args={k: v for k, v in request.args.items() if k != "page"},
                            first=(page - 1) * size)
 
