@@ -126,6 +126,7 @@ def create_user():
     generated = not password
     if generated:
         password = generate_password()
+    must_change = 1 if request.form.get("must_change") == "1" else 0
     problem = None
     if not USERNAME_RE.match(username):
         problem = "Username: 3-32 letters, digits, dot, dash or underscore."
@@ -142,16 +143,17 @@ def create_user():
     pledge_only = role == "pledge"  # a read-only account that sees only the pledge sheet (view and mark)
     db.execute(
         "INSERT INTO users (username, password_hash, role, is_active, must_change_password,"
-        " password_changed_at, created_at, pledge_only, pledge_access) VALUES (?, ?, ?, 1, 1, ?, ?, ?, ?)",
-        (username, hash_password(password), "user" if pledge_only else role, stamp, stamp,
+        " password_changed_at, created_at, pledge_only, pledge_access) VALUES (?, ?, ?, 1, ?, ?, ?, ?, ?)",
+        (username, hash_password(password), "user" if pledge_only else role, must_change, stamp, stamp,
          1 if pledge_only else 0, "mark" if pledge_only else ""),
     )
     audit.log("user_create", target=username, detail={"role": role}, commit=False)
     db.commit()
+    then = " They choose their own at first sign-in." if must_change else ""
     if generated:
-        flash(f"User {username} created. Temporary password (shown once): {password}", "secret")
+        flash(f"User {username} created.{then} Password (shown once): {password}", "secret")
     else:
-        flash(f"User {username} created. They must change the password at first sign-in.", "success")
+        flash(f"User {username} created with the password you set.{then}", "success")
     return redirect(url_for("admin.users"))
 
 
@@ -164,7 +166,7 @@ def update_user(user_id):
     is_self = user["id"] == g.user["id"]
     last_admin = user["role"] == "admin" and user["is_active"] and _active_admins() <= 1
     # The owner account holds the confirmed-voter list: other admins can't take it over
-    if is_owner(user) and not is_self and action in ("toggle_active", "set_role", "reset_password", "rename"):
+    if is_owner(user) and not is_self and action in ("toggle_active", "set_role", "reset_password", "set_password", "rename"):
         audit.log("access_denied", target=f"user {user['username']}", detail={"action": action})
         flash(f"Only {user['username']} can change the {user['username']} account.", "error")
         return redirect(url_for("admin.users"))
@@ -297,15 +299,22 @@ def update_user(user_id):
                 flash("To sign in, pick a username: 3-32 letters, digits, dot, dash or underscore (no spaces).", "error")
             elif db.execute("SELECT 1 FROM users WHERE username = ? AND id != ?", (new, user_id)).fetchone():
                 flash(f"Username '{new}' is taken.", "error")
+            elif request.form.get("password") and password_problem(request.form["password"], new):
+                flash(password_problem(request.form["password"], new), "error")
             else:
-                password = generate_password()
+                chosen = request.form.get("password") or ""
+                password = chosen or generate_password()
+                must_change = 1 if request.form.get("must_change") == "1" else 0
                 db.execute(
                     "UPDATE users SET can_login = 1, username = ?, role = CASE role WHEN 'agent' THEN 'user' ELSE role END,"
-                    " password_hash = ?, must_change_password = 1, password_changed_at = ?,"
+                    " password_hash = ?, must_change_password = ?, password_changed_at = ?,"
                     " failed_logins = 0, locked_until = NULL WHERE id = ?",
-                    (new, hash_password(password), now_iso(precise=True), user_id))
+                    (new, hash_password(password), must_change, now_iso(precise=True), user_id))
                 audit.log("user_login_on", target=new, detail={"from": user["username"]} if new != user["username"] else None)
-                flash(f"{user['username']} can now sign in as {new}. Temporary password (shown once): {password}", "secret")
+                if chosen:
+                    flash(f"{user['username']} can now sign in as {new} with the password you set.", "success")
+                else:
+                    flash(f"{user['username']} can now sign in as {new}. Password (shown once): {password}", "secret")
 
     elif action == "toggle_active":
         if is_self or last_admin:
@@ -326,6 +335,26 @@ def update_user(user_id):
             db.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
             audit.log("user_role", target=user["username"], detail={"from": user["role"], "to": role})
             flash(f"{user['username']} is now {role}.", "success")
+
+    elif action == "set_password":
+        # the admin chooses the password and gives it to the person; they keep it unless asked to change it
+        password = request.form.get("password", "")
+        problem = password_problem(password, user["username"])
+        if is_self:
+            flash("Change your own password from 'Change password' instead.", "error")
+        elif not user["can_login"]:
+            flash("Allow sign-in first.", "error")
+        elif problem:
+            flash(problem, "error")
+        else:
+            must_change = 1 if request.form.get("must_change") == "1" else 0
+            db.execute(
+                "UPDATE users SET password_hash = ?, must_change_password = ?, password_changed_at = ?,"
+                " failed_logins = 0, locked_until = NULL WHERE id = ?",
+                (hash_password(password), must_change, now_iso(precise=True), user_id))
+            audit.log("user_password_set", target=user["username"], detail={"must_change": bool(must_change)})
+            flash(f"Password set for {user['username']}." + (" They choose their own at first sign-in." if must_change else "")
+                  + " Their other sessions end.", "success")
 
     elif action == "reset_password":
         if is_self:

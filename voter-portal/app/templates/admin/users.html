@@ -66,10 +66,10 @@
             <select name="role">{% for r in roles %}<option value="{{ r }}">{{ role_labels[r] }}</option>{% endfor %}</select>
           </label>
         </div>
-        <label>Temporary password <span class="muted">(leave blank to generate one)</span>
-          <input name="password" type="password" minlength="10" autocomplete="new-password">
+        <label>Password <span class="muted">(at least 10 characters; leave blank to generate one)</span>
+          <input name="password" type="text" minlength="10" autocomplete="off" spellcheck="false">
         </label>
-        <p class="muted small-text">They must choose a new password the first time they sign in.</p>
+        <label class="check small-text"><input type="checkbox" name="must_change" value="1"> Ask them to choose their own password at first sign-in</label>
         <button class="primary">Create account</button>
       </form>
     </details>
@@ -115,8 +115,19 @@
         {% if u.can_login %}
           <span class="small-text">Signs in with a password</span>
           {% if not is_me %}
+          <details class="inline-details">
+            <summary class="button small">Set password</summary>
+            <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="form">
+              {{ hidden('set_password') }}
+              <label>New password for {{ u.username }} <span class="muted">(at least 10 characters)</span>
+                <input name="password" type="text" minlength="10" required autocomplete="off" spellcheck="false"></label>
+              <label class="check small-text"><input type="checkbox" name="must_change" value="1"> Ask them to choose their own password at first sign-in</label>
+              <p class="muted small-text">They sign in with it straight away. Their other sessions end.</p>
+              <button class="primary small">Save password</button>
+            </form>
+          </details>
           <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline"
-                data-confirm="Reset the password for {{ u.username }}? Their sessions end.">{{ hidden('reset_password') }}<button class="small">Reset password</button></form>
+                data-confirm="Make a random password for {{ u.username }}? Their sessions end, and they choose their own at sign-in.">{{ hidden('reset_password') }}<button class="small">Random password</button></form>
           {% if u.role != 'admin' and not is_own %}
           <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline"
                 data-confirm="{{ u.username }} will be listed as an agent without sign-in. Continue?">{{ hidden('toggle_login') }}<button class="small">Turn off sign-in</button></form>
@@ -130,7 +141,10 @@
             <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="form">
               {{ hidden('toggle_login') }}
               <label>Username <input name="username" value="{{ slug(u.username) }}" required pattern="[A-Za-z0-9._\-]{3,32}" maxlength="32"></label>
-              <p class="muted small-text">Same person: their houses, voters and history stay. You get a temporary password to send them.</p>
+              <label>Password <span class="muted">(at least 10 characters; leave blank to generate one)</span>
+                <input name="password" type="text" minlength="10" autocomplete="off" spellcheck="false"></label>
+              <label class="check small-text"><input type="checkbox" name="must_change" value="1"> Ask them to choose their own password at first sign-in</label>
+              <p class="muted small-text">Same person: their houses, voters and history stay.</p>
               <button class="primary small">Allow sign-in</button>
             </form>
           </details>

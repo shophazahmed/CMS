@@ -129,7 +129,8 @@ def test_user_management(app):
     c = app.test_client()
     login(c, "boss", ADMIN_PW)
     token = csrf(c, "/admin/users")
-    r = c.post("/admin/users", data={"csrf_token": token, "username": "newbie", "role": "user", "password": ""},
+    r = c.post("/admin/users", data={"csrf_token": token, "username": "newbie", "role": "user", "password": "",
+                                       "must_change": "1"},
                follow_redirects=True)
     temp = re.search(r"shown once\): (\S+)<", r.get_data(as_text=True)).group(1)
     # first sign-in forces a password change
@@ -676,3 +677,49 @@ def test_users_page_agent_to_sign_in_and_election_day(app):
                                   "back": "/admin/users"})
     assert r.headers["Location"].endswith("/admin/users")
     assert conn.execute("SELECT war_tier FROM users WHERE id = ?", (uid,)).fetchone()[0] == "room,t2"
+
+
+def test_admin_sets_passwords_without_forced_change(app):
+    from tests.test_canvass import add_agent
+    from tests.test_confirmed import OWNER_PW, add_owner
+
+    add_owner(app)
+    c = app.test_client()
+    login(c, "admin", OWNER_PW)
+    token = csrf(c, "/admin/users")
+    conn = connect(app.config["DATABASE"])
+    # a new account with the password the admin chose: signs in, no forced change
+    c.post("/admin/users", data={"csrf_token": token, "username": "reader", "role": "user", "password": "given-pass-123"})
+    assert conn.execute("SELECT must_change_password FROM users WHERE username = 'reader'").fetchone()[0] == 0
+    r = app.test_client()
+    login(r, "reader", "given-pass-123")
+    assert r.get("/").status_code in (200, 302) and "/change-password" not in (r.get("/").headers.get("Location") or "")
+    # set a password later; ticking the box asks them to change it
+    uid = conn.execute("SELECT id FROM users WHERE username = 'reader'").fetchone()[0]
+    r0 = c.post(f"/admin/users/{uid}", data={"csrf_token": token, "action": "set_password", "password": "short"},
+                follow_redirects=True)
+    assert "at least 10 characters" in r0.get_data(as_text=True)
+    c.post(f"/admin/users/{uid}", data={"csrf_token": token, "action": "set_password", "password": "another-pass-456"})
+    assert conn.execute("SELECT must_change_password FROM users WHERE id = ?", (uid,)).fetchone()[0] == 0
+    r2 = app.test_client()
+    login(r2, "reader", "another-pass-456")
+    assert r.get("/").status_code == 302                                         # the old session ended
+    c.post(f"/admin/users/{uid}", data={"csrf_token": token, "action": "set_password", "password": "third-pass-789",
+                                        "must_change": "1"})
+    assert conn.execute("SELECT must_change_password FROM users WHERE id = ?", (uid,)).fetchone()[0] == 1
+    # an agent gets sign-in with a chosen password
+    add_agent(app, "Ilham Vatey")
+    ali = conn.execute("SELECT id FROM users WHERE username = 'Ilham Vatey'").fetchone()[0]
+    conn.execute("UPDATE users SET can_login = 0 WHERE id = ?", (ali,))
+    conn.commit()
+    c.post(f"/admin/users/{ali}", data={"csrf_token": token, "action": "toggle_login", "username": "ilham",
+                                        "password": "ilham-pass-123"})
+    row = conn.execute("SELECT username, can_login, must_change_password FROM users WHERE id = ?", (ali,)).fetchone()
+    assert tuple(row) == ("ilham", 1, 0)
+    i = app.test_client()
+    login(i, "ilham", "ilham-pass-123")
+    assert i.get("/").status_code == 200
+    # deactivate still works
+    c.post(f"/admin/users/{ali}", data={"csrf_token": token, "action": "toggle_active"})
+    assert conn.execute("SELECT is_active FROM users WHERE id = ?", (ali,)).fetchone()[0] == 0
+    assert i.get("/").status_code == 302
