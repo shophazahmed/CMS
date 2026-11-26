@@ -902,8 +902,7 @@ document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select
     const btn = e.target.closest("[data-bl-mark]");
     if (!btn) return;
     const r = btn.closest(".bl-row");
-    const name = r.querySelector("strong").textContent;
-    if (!confirm(`Mark ${name} as voted?`)) return;
+    // one tap marks it (no pop-up); a wrong mark is undone from "Marked voted at this box"
     const fields = { csrf_token: (card && card.dataset.csrf) || (document.querySelector("input[name=csrf_token]") || {}).value,
                      national_id: r.dataset.nid, value: "1" };
     if (card && card.dataset.box) fields.box = card.dataset.box;

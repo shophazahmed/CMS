@@ -60,6 +60,69 @@ def _slug(name):
     return out if len(out) >= 3 else ""
 
 
+@bp.route("/users/export.<fmt>")
+@admin_required
+def users_export(fmt):
+    """Everyone on the Users page as CSV or Excel: one row a person. Never passwords. Access levels only for the owner."""
+    import csv
+    import io
+    from datetime import datetime
+
+    from flask import Response
+
+    from . import warroom
+    from .voters import _safe_cell
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    rows = get_db().execute(f"SELECT *, {WORK} FROM users WHERE deleted_at IS NULL"
+                            " ORDER BY is_active DESC, can_login DESC, username COLLATE NOCASE").fetchall()
+    owner = is_owner()
+    level = lambda v: CONFIRMED_ACCESS.get(v or "", v or "")
+    headers = ["#", "Name", "Sign-in", "Role", "Status", "Phone", "Note", "Last sign-in", "Houses", "One by one",
+               "Election day", "Box (tier 1)"]
+    if owner:
+        headers += ["Sees", "Pledge sheet", "Super pledge & scenarios", "100% confirmed list"]
+    table = []
+    for n, u in enumerate(rows, 1):
+        tiers = " + ".join(warroom.TIERS[t] for t in warroom.stored_tiers(u))
+        line = [n, _safe_cell(u["username"]), "yes" if u["can_login"] else "no (agent)",
+                "owner" if is_owner(u) else u["role"], "active" if u["is_active"] else "deactivated",
+                u["phone"] or "", _safe_cell(u["note"] or ""),
+                (u["last_login_at"] or "")[:16].replace("T", " "), u["houses"], u["singles"], tiers,
+                _safe_cell(u["war_box"] or "") if "t1" in warroom.stored_tiers(u) else ""]
+        if owner:
+            line += ["owner" if is_owner(u) else ("pledge sheet only" if u["pledge_only"] else "whole portal"),
+                     level(u["pledge_access"]), level(u["super_access"]), level(u["confirmed_access"])]
+        table.append(line)
+    audit.log("users_export", target=fmt, detail={"rows": len(table)})
+    name = f"users-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "csv":
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(headers)
+        writer.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Users"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for line in table:
+        ws.append(line)
+    ws.freeze_panes = "C2"
+    ws.auto_filter.ref = ws.dimensions
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 def _clean_name(value):
     return clean_text(value)[:60]
 

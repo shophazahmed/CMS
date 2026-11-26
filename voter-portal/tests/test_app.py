@@ -723,3 +723,25 @@ def test_admin_sets_passwords_without_forced_change(app):
     c.post(f"/admin/users/{ali}", data={"csrf_token": token, "action": "toggle_active"})
     assert conn.execute("SELECT is_active FROM users WHERE id = ?", (ali,)).fetchone()[0] == 0
     assert i.get("/").status_code == 302
+
+
+def test_users_list_download(app):
+    from tests.test_canvass import add_agent
+    from tests.test_confirmed import OWNER_PW, add_owner
+
+    add_owner(app)
+    c = app.test_client()
+    login(c, "admin", OWNER_PW)
+    add_agent(app, "Ali Ahmed")
+    assert "/admin/users/export.xlsx" in c.get("/admin/users").get_data(as_text=True)
+    text = c.get("/admin/users/export.csv").get_data(as_text=True)
+    rows = text.strip().splitlines()
+    assert rows[0].lstrip("﻿").startswith("#,Name,Sign-in,Role") and "100% confirmed list" in rows[0]
+    assert any("Ali Ahmed" in r for r in rows) and "hash" not in text.lower() and "$argon2" not in text
+    from openpyxl import load_workbook
+    import io as _io
+    assert load_workbook(_io.BytesIO(c.get("/admin/users/export.xlsx").data)).active["B1"].value == "Name"
+    # another admin gets the list without the access levels
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert "100% confirmed list" not in b.get("/admin/users/export.csv").get_data(as_text=True)

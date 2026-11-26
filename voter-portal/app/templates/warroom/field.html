@@ -57,7 +57,7 @@
         <button class="small cs-btn cs-{{ k }} {{ 'on' if v.contact == k }}" aria-pressed="{{ 'true' if v.contact == k else 'false' }}">{{ label }}</button></form>
       {% endfor %}
     </div>
-    <form class="war-voted-row" method="post" action="{{ url_for('warroom.mark') }}" data-war-mark data-confirm="Mark {{ v.full_name }} as voted?">
+    <form class="war-voted-row" method="post" action="{{ url_for('warroom.mark') }}" data-war-mark>
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
       <input type="hidden" name="value" value="1"><button class="small">{{ icon('check', 14) }} Already voted</button></form>
   </li>

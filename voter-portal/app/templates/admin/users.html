@@ -43,6 +43,8 @@
     <button type="button" class="chip" data-people-show="war">Election day</button>
   </div>
   <div class="people-add">
+    <a class="button small" href="{{ url_for('admin.users_export', fmt='xlsx') }}">{{ icon('download', 16) }} Users list (Excel)</a>
+    <a class="button small" href="{{ url_for('admin.users_export', fmt='csv') }}">{{ icon('download', 16) }} CSV</a>
     <details>
       <summary class="button small">{{ icon('plus', 16) }} Add agent</summary>
       <form class="form" method="post" action="{{ url_for('admin.create_agent') }}">

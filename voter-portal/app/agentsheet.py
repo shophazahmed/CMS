@@ -110,10 +110,10 @@ def assign_many():
 @bp.route("/agents/sheet/export.<fmt>")
 @admin_required
 def export(fmt):
-    """The sheet as CSV or Excel: same filters and order, with each voter's agents."""
+    """The sheet as CSV, Excel or PDF: same filters and order, with each voter's agents."""
     from .voters import _safe_cell
 
-    if fmt not in ("csv", "xlsx"):
+    if fmt not in ("csv", "xlsx", "pdf"):
         abort(404)
     f, where, params, *_ = _where()
     order = pledges.sheet_order()[2]
@@ -133,6 +133,20 @@ def export(fmt):
                       ("One by one" if r["one_by_one"] else "House") if who else "", names.get(r["house_agent"], "")])
     audit.log("agents_sheet_export", target=fmt, detail={"rows": len(table), "agent": f.get("ag", "")})
     name = f"agents-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "pdf":
+        from .pdfexport import table_pdf
+
+        shown = [k for k in ("q", "box", "house", "ag", "pc", "pv", "pp", "sp", "cn") if f.get(k)]
+        agent_name = names.get(int(f["ag"])) if str(f.get("ag", "")).isdigit() else ("No agent" if f.get("ag") == "none" else "")
+        sub = (f"{len(table)} voter{'s' if len(table) != 1 else ''} · printed {datetime.now().strftime('%d %b %Y %H:%M')}"
+               + (f" · agent: {agent_name}" if agent_name else "") + (" · filtered" if shown else "")
+               + " · confidential")
+        # the PDF leaves out the formula guard: it's for reading, not for opening in a spreadsheet
+        plain = [[c[1:] if isinstance(c, str) and c[:1] == "'" and c[1:2] and c[1:2] in "=+-@\t\r" else c for c in row] for row in table]
+        cols = [1, 5, 7, 6, 8, 9, 10]           # ID, house, box, phone, agent, given by, house agent
+        pdf = table_pdf("Agents and their voters", sub, ["#  Name"] + [headers[i] for i in cols],
+                        [[f"{r[0]}.  {r[2]}"] + [r[i] for i in cols] for r in plain])
+        return Response(pdf, mimetype="application/pdf", headers={"Content-Disposition": f'attachment; filename="{name}"'})
     if fmt == "csv":
         buf = io.StringIO()
         writer = csv.writer(buf)

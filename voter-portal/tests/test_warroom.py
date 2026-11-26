@@ -437,3 +437,16 @@ def test_voted_list_and_hidden_alerts(app):
     assert len(rows) == 3 and "Marked by" in rows[0]
     assert t1.get("/war/voted").status_code in (302, 403)                             # not for field accounts
     assert t1.get("/war/voted/export.csv").status_code in (302, 403)
+
+
+def test_agent_sheet_pdf_and_no_mark_popup(app):
+    o, token, ids = setup(app)
+    r = o.get("/agents/sheet/export.pdf")
+    assert r.status_code == 200 and r.mimetype == "application/pdf" and r.data[:4] == b"%PDF"
+    from app.pdfexport import _mupdf
+    text = _mupdf().open("pdf", r.data)[0].get_text()
+    assert "Agents and their voters" in text and "Aminath Alpha" in text
+    assert "/agents/sheet/export.pdf" in o.get("/agents/sheet").get_data(as_text=True)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    _, runner = make(app, o, token, "runner", "t2")
+    assert "as voted?" not in o.get(f"/war/field?u={runner}").get_data(as_text=True)
