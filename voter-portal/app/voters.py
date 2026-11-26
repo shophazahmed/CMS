@@ -448,11 +448,18 @@ def delete_note(national_id, note_id):
 @bp.route("/photos/<national_id>")
 @login_required
 def photo(national_id):
-    voter = get_voter_or_404(national_id)
+    from .warroom import field_may_see, tiers
+
+    if tiers():
+        # election-day roles see photos by their War Room scope (a box agent: everyone at the box), not by
+        # the houses an agent canvasses
+        voter = get_db().execute("SELECT photo_path FROM voters WHERE national_id = ?", (national_id,)).fetchone()
+        if voter is None:
+            abort(404)
+    else:
+        voter = get_voter_or_404(national_id)
     if not voter["photo_path"]:
         abort(404)
-    from .warroom import field_may_see
-
     if not field_may_see(national_id):  # field accounts: only their own voters' photos
         abort(404)
     resp = send_from_directory(current_app.config["PHOTOS_DIR"], voter["photo_path"], max_age=3600)

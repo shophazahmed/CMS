@@ -450,3 +450,26 @@ def test_agent_sheet_pdf_and_no_mark_popup(app):
     o.post("/war/team", data={"csrf_token": token, "action": "open"})
     _, runner = make(app, o, token, "runner", "t2")
     assert "as voted?" not in o.get(f"/war/field?u={runner}").get_data(as_text=True)
+
+
+def test_box_agent_on_a_link_sees_the_box_photos(app):
+    from tests.test_canvass import add_agent
+
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    add_agent(app, "boxali")
+    conn = connect(app.config["DATABASE"])
+    ali = conn.execute("SELECT id FROM users WHERE username = 'boxali'").fetchone()[0]
+    conn.execute("UPDATE users SET can_login = 0 WHERE id = ?", (ali,))
+    conn.execute("UPDATE voters SET photo_path = 'p.jpg'")
+    conn.commit()
+    import os
+    with open(os.path.join(app.config["PHOTOS_DIR"], "p.jpg"), "wb") as fh:
+        fh.write(b"\xff\xd8\xff\xd9")
+    o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": ali, "tiers": ["t1"], "war_box": "Box A"})
+    o.post("/war/team", data={"csrf_token": token, "action": "link", "user_id": ali, "days": "7"})
+    link = conn.execute("SELECT token FROM war_links WHERE user_id = ?", (ali,)).fetchone()[0]
+    a = app.test_client()
+    a.get(f"/w/{link}")
+    assert a.get("/photos/A200001").status_code == 200        # at their box, though not in houses they canvass
+    assert a.get("/photos/A200003").status_code == 404        # Box B: not theirs
