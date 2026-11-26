@@ -48,14 +48,28 @@
   {% endif %}
 </section>
 {% else %}
-<p class="muted small-text">Tap each ballot as it is read out. Wrong tap? <strong>Undo last</strong>. Works without signal: taps wait on the phone and are sent when it's back.</p>
-<div class="count-grid">
-  {% for key, text, ids in combos %}
-  <button type="button" class="count-btn {{ 'pair' if key.startswith('p:') else 'single' if key.startswith('s:') else 'invalid' }}" data-combo="{{ key }}">
-    <span class="count-label">{{ text }}</span><strong class="count-n" data-n="{{ key }}">{{ tal.get(key, 0) }}</strong></button>
+<p class="muted small-text">For each ballot read out: tap the candidate{{ 's' if max_votes != 1 }} marked on it (up to {{ max_votes }}),
+  then <strong>Count ballot</strong>. Wrong one? <strong>Undo last</strong>. Works without signal: ballots wait on the phone and are sent later.</p>
+<ol class="ballot-cards" data-ballot data-max="{{ max_votes }}">
+  {% for c in cands %}
+  <li><button type="button" class="ballot-card cand-{{ c.id }}" data-pick="{{ c.id }}" data-order="{{ loop.index0 }}" aria-pressed="false">
+    <span class="bc-no">{{ c.ballot_no or loop.index }}</span>
+    {% if c.photo_path %}<img class="bc-photo" src="{{ url_for('pledges.candidate_photo', cid=c.id) }}" alt="">
+    {% else %}<span class="bc-photo bc-initial" aria-hidden="true">{{ (c.full_name or c.name)[:1] }}</span>{% endif %}
+    <span class="bc-who"><strong>{{ c.full_name or c.name }}</strong>{% if c.place %}<span class="muted">{{ c.place }}</span>{% endif %}
+      <span class="bc-count"><b data-v="{{ c.id }}">{{ votes.get(c.id, 0) }}</b> votes</span></span>
+    <span class="bc-tick" aria-hidden="true">✓</span>
+  </button></li>
   {% endfor %}
+</ol>
+<div class="ballot-bar">
+  <p class="ballot-picked" data-picked aria-live="polite">Tap the candidates on this ballot</p>
+  <div class="ballot-actions">
+    <button type="button" class="primary big" data-ballot-save disabled>Count ballot</button>
+    <button type="button" class="big" data-combo="x">Invalid / blank <strong class="count-n" data-n="x">{{ tal.get('x', 0) }}</strong></button>
+    <button type="button" class="big" data-count-undo>{{ icon('back', 18) }} Undo last</button>
+  </div>
 </div>
-<p class="count-undo"><button type="button" class="big" data-count-undo>{{ icon('back', 18) }} Undo last</button></p>
 
 <section class="card">
   <h2>Votes so far</h2>

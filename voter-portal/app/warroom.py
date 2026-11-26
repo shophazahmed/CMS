@@ -128,7 +128,7 @@ FIELD_ENDPOINTS = {
     "warroom.home", "warroom.box", "warroom.lookup", "warroom.mark", "warroom.calls", "warroom.call",
     "warroom.field", "warroom.changes", "warroom.transport", "warroom.transport_action", "warroom.contact",
     "warroom.link_open", "warroom.field_export", "warroom.calls_export", "voters.photo",
-    "votecount.sheet", "votecount.tap", "votecount.final", "votecount.photo", "votecount.export",
+    "votecount.sheet", "votecount.tap", "votecount.final", "votecount.photo", "votecount.export", "pledges.candidate_photo",
     "warroom.box_export", "theme.theme_css", "theme.set_appearance",
     "fonts.stylesheet", "fonts.serve", "auth.login", "auth.logout", "auth.change_password", "static",
 }

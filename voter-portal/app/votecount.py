@@ -157,7 +157,7 @@ def sheet():
     registered = db.execute("SELECT COUNT(*) FROM voters WHERE location = ? AND deceased = 0", (box,)).fetchone()[0]
     return render_template("count/sheet.html", box=box, boxes=boxes, cands=cands, combos=combos(cands), tal=tal,
                            votes=votes, invalid=invalid, ballots=ballots, row=row, official=official, voted=voted,
-                           registered=registered, watch=_watch(), label=pledges.label,
+                           registered=registered, watch=_watch(), label=pledges.label, max_votes=pledges.max_votes() or 2,
                            diffs=differences(votes, invalid, ballots, official, cands) if row and row["status"] == "final" else [])
 
 

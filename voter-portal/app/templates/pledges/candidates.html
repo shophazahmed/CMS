@@ -16,7 +16,9 @@
         <input type="hidden" name="id" value="{{ c.id }}">
         <input type="color" name="color" value="{{ c.color }}" aria-label="Colour for {{ c.name }}">
         <input class="ballot-no" name="ballot_no" value="{{ c.ballot_no or '' }}" inputmode="numeric" maxlength="2" placeholder="No." aria-label="Ballot number for {{ c.name }}">
-        <input name="name" value="{{ c.name }}" maxlength="60" aria-label="Name">
+        <input name="name" value="{{ c.name }}" maxlength="60" aria-label="Short name">
+        <input name="full_name" value="{{ c.full_name or '' }}" maxlength="80" placeholder="Full name (vote count)" aria-label="Full name for {{ c.name }}">
+        <input name="place" value="{{ c.place or '' }}" maxlength="80" placeholder="Island, house" aria-label="Island and house for {{ c.name }}">
         {% if c.id == ours %}<span class="tag ours-tag">Our candidate</span>{% endif %}
         <span class="muted small-text">{{ counts.get(c.id, 0) }} yes</span>
         <button name="action" value="rename" class="small">Save</button>
@@ -24,6 +26,13 @@
         <button name="action" value="down" class="small" aria-label="Move down" {{ 'disabled' if loop.last }}>↓</button>
         {% if c.active %}<button name="action" value="retire" class="small">Hide</button>
         {% else %}<button name="action" value="restore" class="small">Show again</button>{% endif %}
+      </form>
+      <form class="cand-photo" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="id" value="{{ c.id }}">
+        {% if c.photo_path %}<img class="cand-thumb" src="{{ url_for('pledges.candidate_photo', cid=c.id) }}" alt="">{% endif %}
+        <label class="small-text">Photo for the vote count <input type="file" name="photo" accept="image/*"></label>
+        <button name="action" value="photo" class="small">Upload</button>
+        {% if c.photo_path %}<button name="action" value="photo_remove" class="small">Remove photo</button>{% endif %}
       </form>
     </li>
     {% else %}

@@ -1523,3 +1523,40 @@ body.public-board { background: var(--bg, #f4f6f7); margin: 0; }
 .pb-tabs a { padding: .5rem 1rem; border-radius: 999px; border: 1px solid var(--border, #dde3e6); background: var(--surface, #fff);
   text-decoration: none; color: inherit; font-weight: 600; }
 .pb-tabs a[aria-current=page] { background: var(--accent, #0f766e); border-color: var(--accent, #0f766e); color: #fff; }
+
+/* Vote count: ballot cards (tap the candidates marked on the ballot, then Count ballot) */
+.ballot-cards { list-style: none; margin: 0 0 1rem; padding: 0; display: grid; gap: .7rem; }
+.ballot-card { width: 100%; display: grid; grid-template-columns: 2.6rem 4.6rem 1fr 2.2rem; align-items: center; gap: .9rem;
+  padding: .8rem 1rem; border-radius: 18px; border: 2px solid var(--border); background: var(--surface); color: var(--text, inherit);
+  text-align: left; min-height: 0; box-shadow: none; }
+.ballot-card:hover { border-color: var(--cand, var(--accent)); }
+.ballot-card[aria-pressed="true"] { border-color: var(--cand, var(--accent)); background: color-mix(in srgb, var(--cand, var(--accent)) 12%, var(--surface)); }
+.bc-no { font-size: 2rem; font-weight: 800; text-align: center; }
+.bc-photo { width: 4.6rem; height: 5.8rem; border-radius: 12px; object-fit: cover; background: var(--surface-2); }
+.bc-initial { display: grid; place-items: center; font-size: 1.8rem; font-weight: 700; color: var(--muted); }
+.bc-who { display: grid; gap: .15rem; min-width: 0; }
+.bc-who strong { font-size: 1.15rem; }
+.bc-who .muted { font-size: .9rem; }
+.bc-count { font-size: .85rem; color: var(--muted); }
+.bc-count b { font-size: 1.05rem; color: var(--text, inherit); }
+.bc-tick { width: 2.2rem; height: 2.2rem; border-radius: 50%; display: grid; place-items: center; font-weight: 800;
+  border: 2px solid var(--border); color: transparent; }
+.ballot-card[aria-pressed="true"] .bc-tick { background: var(--cand, var(--accent)); border-color: var(--cand, var(--accent)); color: #fff; }
+.ballot-bar { position: sticky; bottom: .5rem; z-index: 25; margin: 0 0 1rem; padding: .7rem .8rem;
+  border-radius: 16px; border: 1px solid var(--border); background: var(--surface); box-shadow: 0 6px 24px rgba(0, 0, 0, .14); }
+body.has-tabbar .ballot-bar { bottom: calc(76px + env(safe-area-inset-bottom)); }
+@media (min-width: 720px) { body.has-tabbar .ballot-bar { bottom: .5rem; } }
+.ballot-picked { margin: 0 0 .5rem; font-weight: 600; min-height: 1.4em; }
+.ballot-actions { display: flex; flex-wrap: wrap; gap: .5rem; }
+.ballot-actions button { flex: 1 1 auto; }
+.ballot-actions [data-ballot-save] { flex: 1 1 100%; }
+.ballot-actions [data-ballot-save]:disabled { opacity: .5; }
+.ballot-actions .count-n { margin-left: .35rem; }
+.ballot-actions button.hit { transform: scale(.98); }
+@media (max-width: 520px) {
+  .ballot-card { grid-template-columns: 1.8rem 3.6rem 1fr 1.9rem; gap: .6rem; padding: .6rem .7rem; }
+  .bc-no { font-size: 1.5rem; } .bc-photo { width: 3.6rem; height: 4.6rem; } .bc-who strong { font-size: 1rem; }
+  .bc-tick { width: 1.9rem; height: 1.9rem; }
+}
+.cand-photo { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .4rem; }
+.cand-thumb { width: 2.6rem; height: 3.3rem; object-fit: cover; border-radius: 6px; }

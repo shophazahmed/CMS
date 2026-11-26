@@ -79,12 +79,15 @@ DEFAULT_MAX_VOTES = 2  # how many of these candidates one voter can vote for (0 
 def init_schema(conn):
     fresh = not conn.execute("SELECT 1 FROM sqlite_master WHERE name = 'pledge_log'").fetchone()
     conn.executescript(SCHEMA)
-    if "ballot_no" not in {r[1] for r in conn.execute("PRAGMA table_info(candidates)")}:
-        try:
-            conn.execute("ALTER TABLE candidates ADD COLUMN ballot_no INTEGER")  # the number on the ballot paper
-        except Exception as exc:  # another worker added it first
-            if "duplicate column" not in str(exc):
-                raise
+    # the number on the ballot paper; the full name, place and photo shown on the vote count
+    for col, ddl in (("ballot_no", "ballot_no INTEGER"), ("full_name", "full_name TEXT NOT NULL DEFAULT ''"),
+                     ("place", "place TEXT NOT NULL DEFAULT ''"), ("photo_path", "photo_path TEXT")):
+        if col not in {r[1] for r in conn.execute("PRAGMA table_info(candidates)")}:
+            try:
+                conn.execute(f"ALTER TABLE candidates ADD COLUMN {ddl}")
+            except Exception as exc:  # another worker added it first
+                if "duplicate column" not in str(exc):
+                    raise
     if fresh:  # start the log from the marks made before it existed
         conn.execute("INSERT INTO pledge_log (national_id, candidate_id, value, at, by_user)"
                      " SELECT national_id, candidate_id, value, at, by_user FROM pledges")
@@ -691,6 +694,54 @@ def colors_css():
 
 # --- candidates -------------------------------------------------------------------------------
 
+def _candidate_dir():
+    import os
+
+    from flask import current_app
+
+    path = os.path.join(current_app.config["CAMPAIGN_DIR"], "candidates")
+    os.makedirs(path, exist_ok=True)
+    return path
+
+
+def _save_candidate_photo(upload, cid):
+    """A candidate's photo: checked, turned upright, shrunk and saved as JPEG (no camera metadata)."""
+    import os
+    import secrets as _secrets
+
+    from PIL import Image, ImageOps
+
+    if not upload or not upload.filename:
+        raise ValueError("Choose a photo.")
+    blob = upload.read(8 * 1024 * 1024 + 1)
+    if len(blob) > 8 * 1024 * 1024:
+        raise ValueError("The photo must be 8 MB or smaller.")
+    try:
+        with Image.open(io.BytesIO(blob)) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            im.thumbnail((600, 800))
+            name = f"cand-{cid}-{_secrets.token_hex(6)}.jpg"
+            im.save(os.path.join(_candidate_dir(), name), "JPEG", quality=85)
+    except ValueError:
+        raise
+    except Exception:
+        raise ValueError("That file isn't a photo the portal can read (use JPG or PNG).")
+    return name
+
+
+@bp.route("/pledges/candidates/<int:cid>/photo")
+@login_required
+def candidate_photo(cid):
+    from flask import send_from_directory
+
+    row = get_db().execute("SELECT photo_path FROM candidates WHERE id = ?", (cid,)).fetchone()
+    if not row or not row["photo_path"]:
+        abort(404)
+    resp = send_from_directory(_candidate_dir(), row["photo_path"], max_age=3600)
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
+
+
 @bp.route("/pledges/candidates", methods=["GET", "POST"])
 @pledge_owner_required
 def manage():
@@ -709,6 +760,21 @@ def manage():
                            (name, COLORS[n % len(COLORS)], n, now_iso()))
                 audit.log("candidate_add", target=name, commit=False)
                 flash(f"{name} added.", "success")
+        elif action in ("photo", "photo_remove"):
+            cid = request.form.get("id", type=int)
+            cand = db.execute("SELECT * FROM candidates WHERE id = ?", (cid,)).fetchone() or abort(404)
+            if action == "photo_remove":
+                db.execute("UPDATE candidates SET photo_path = NULL WHERE id = ?", (cid,))
+                flash(f"Photo removed for {cand['name']}.", "success")
+            else:
+                try:
+                    name = _save_candidate_photo(request.files.get("photo"), cid)
+                except ValueError as exc:
+                    flash(str(exc), "error")
+                else:
+                    db.execute("UPDATE candidates SET photo_path = ? WHERE id = ?", (name, cid))
+                    audit.log("candidate_photo", target=cand["name"], commit=False)
+                    flash(f"Photo saved for {cand['name']}.", "success")
         elif action in ("rename", "up", "down", "retire", "restore"):
             cid = request.form.get("id", type=int)
             cand = db.execute("SELECT * FROM candidates WHERE id = ?", (cid,)).fetchone() or abort(404)
@@ -718,8 +784,11 @@ def manage():
                 color = color if re.fullmatch(r"#[0-9a-fA-F]{6}", color or "") else cand["color"]
                 ballot = request.form.get("ballot_no", "").strip()
                 ballot = int(ballot) if ballot.isdigit() and 0 < int(ballot) < 100 else None
+                full = clean_text(request.form.get("full_name", cand["full_name"]))[:80]
+                place = clean_text(request.form.get("place", cand["place"]))[:80]
                 if name and not db.execute("SELECT 1 FROM candidates WHERE name = ? AND id != ?", (name, cid)).fetchone():
-                    db.execute("UPDATE candidates SET name = ?, color = ?, ballot_no = ? WHERE id = ?", (name, color, ballot, cid))
+                    db.execute("UPDATE candidates SET name = ?, color = ?, ballot_no = ?, full_name = ?, place = ? WHERE id = ?",
+                               (name, color, ballot, full, place, cid))
                     audit.log("candidate_rename", target=name, detail={"from": cand["name"]}, commit=False)
                     flash("Saved.", "success")
                 else:

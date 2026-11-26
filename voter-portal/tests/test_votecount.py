@@ -29,7 +29,8 @@ def test_tally_final_and_results(app):
     s, r, j = ids["Sofhaz"], ids["Rayaan"], ids["Jawid"]
     page = t1.get("/count").get_data(as_text=True)
     lo, hi = sorted((r, s))
-    assert "Vote count · Box A" in page and f'data-combo="p:{r}-{s}"' in page and 'data-combo="x"' in page
+    assert "Vote count · Box A" in page and f'data-pick="{r}"' in page and f'data-pick="{s}"' in page
+    assert 'data-combo="x"' in page and "Count ballot" in page
     tok = csrf(t1, "/count")
     assert tap(t1, tok, f"p:{r}-{s}", key="a").json["ballots"] == 1
     assert tap(t1, tok, f"p:{r}-{s}", key="a").json["repeat"]          # resent after a signal drop: once
@@ -77,3 +78,31 @@ def test_tally_final_and_results(app):
     b = app.test_client()
     login(b, "boss", ADMIN_PW)
     assert b.get("/count/results").status_code == 403
+
+
+
+def test_candidate_cards_full_name_place_and_photo(app):
+    import io as _io
+
+    from PIL import Image
+
+    from tests.test_super import owner
+
+    o, token, ids = owner(app)
+    cid = ids["Sofhaz"]
+    o.post("/pledges/candidates", data={"csrf_token": token, "action": "rename", "id": cid, "name": "Sofhaz",
+                                        "color": "#2a78d6", "ballot_no": "2", "full_name": "Sofhaz Ahmed",
+                                        "place": "Gadhdhoo, Seenuge"})
+    img = _io.BytesIO()
+    Image.new("RGB", (40, 50), "red").save(img, "PNG")
+    img.seek(0)
+    r = o.post("/pledges/candidates", data={"csrf_token": token, "action": "photo", "id": cid, "photo": (img, "s.png")},
+               content_type="multipart/form-data", follow_redirects=True)
+    assert "Photo saved" in r.get_data(as_text=True)
+    assert o.get(f"/pledges/candidates/{cid}/photo").mimetype == "image/jpeg"
+    bad = o.post("/pledges/candidates", data={"csrf_token": token, "action": "photo", "id": cid,
+                                              "photo": (_io.BytesIO(b"not an image"), "x.png")},
+                 content_type="multipart/form-data", follow_redirects=True)
+    assert "a photo the portal can read" in bad.get_data(as_text=True)
+    page = o.get("/count?box=Box+A").get_data(as_text=True)
+    assert "Sofhaz Ahmed" in page and "Gadhdhoo, Seenuge" in page and f"/pledges/candidates/{cid}/photo" in page

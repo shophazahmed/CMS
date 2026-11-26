@@ -840,10 +840,48 @@ document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select
     btn.classList.add("hit"); setTimeout(() => btn.classList.remove("hit"), 180);
     send({ combo: btn.dataset.combo });
   }));
+  // the ballot cards: tap the candidates marked on this ballot, then Count ballot (one record: a pair or a single)
+  const ballot = page.querySelector("[data-ballot]");
+  const saveBtn = page.querySelector("[data-ballot-save]");
+  const picked = page.querySelector("[data-picked]");
+  const cards = ballot ? [...ballot.querySelectorAll("[data-pick]")] : [];
+  const max = ballot ? Number(ballot.dataset.max) || 2 : 2;
+  const chosen = () => cards.filter((c) => c.getAttribute("aria-pressed") === "true");
+  const refresh = () => {
+    const on = chosen();
+    if (saveBtn) saveBtn.disabled = on.length === 0;
+    if (picked) picked.textContent = on.length
+      ? on.map((c) => c.querySelector(".bc-who strong").textContent).join(" + ") + (on.length < max ? "  ·  tap another, or Count ballot" : "")
+      : "Tap the candidates on this ballot";
+  };
+  const bumpVotes = (ids, d) => ids.forEach((id) => {
+    const v = page.querySelector(`[data-v="${id}"]`); if (v) v.textContent = Math.max(0, Number(v.textContent) + d);
+  });
+  cards.forEach((card) => card.addEventListener("click", () => {
+    const on = card.getAttribute("aria-pressed") === "true";
+    if (!on && chosen().length >= max) { toast(`A ballot has at most ${max} vote${max === 1 ? "" : "s"}.`); return; }
+    card.setAttribute("aria-pressed", String(!on));
+    refresh();
+  }));
+  const lastIds = [];
+  if (saveBtn) saveBtn.addEventListener("click", () => {
+    const on = chosen().sort((a, b) => Number(a.dataset.order) - Number(b.dataset.order));
+    if (!on.length) return;
+    const ids = on.map((c) => c.dataset.pick);
+    const combo = ids.length === 1 ? `s:${ids[0]}` : `p:${ids.join("-")}`;
+    bump(combo, 1); bumpVotes(ids, 1); last.push(combo); lastIds.push(ids);
+    on.forEach((c) => c.setAttribute("aria-pressed", "false"));
+    refresh();
+    saveBtn.classList.add("hit"); setTimeout(() => saveBtn.classList.remove("hit"), 180);
+    toast(`Counted: ${on.map((c) => c.querySelector(".bc-who strong").textContent).join(" + ")}`);
+    send({ combo });
+  });
+  page.querySelectorAll("[data-combo]").forEach((btn) => btn.addEventListener("click", () => lastIds.push([])));
   const undo = page.querySelector("[data-count-undo]");
   if (undo) undo.addEventListener("click", () => {
     const combo = last.pop();
     if (combo) bump(combo, -1);
+    bumpVotes(lastIds.pop() || [], -1);
     send({ undo: "1" });
   });
   window.addEventListener("online", flush);
