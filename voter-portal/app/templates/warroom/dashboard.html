@@ -149,8 +149,8 @@
     <thead><tr><th>Agent</th><th>Tier</th><th>Marked</th><th>Calls</th><th>Left</th><th>Last</th></tr></thead>
     <tbody>
     {% for a in s.agents %}
-    <tr class="{{ 'war-stale' if a.stale }}"><th>{{ a.username }}</th><td class="small-text">{{ tiers[a.tier].split(' · ')[1] }}{% if a.box %} · {{ a.box }}{% endif %}</td>
-      <td>{{ a.marks }}</td><td>{{ a.calls }}</td><td>{{ a.pending if a.tier == 't3' else '' }}</td>
+    <tr class="{{ 'war-stale' if a.stale }}"><th>{{ a.username }}</th><td class="small-text">{% for t in a.tiers %}{{ tiers[t].split(' · ')[1] }}{{ ' + ' if not loop.last }}{% endfor %}{% if a.box and 't1' in a.tiers %} · {{ a.box }}{% endif %}</td>
+      <td>{{ a.marks }}</td><td>{{ a.calls }}</td><td>{{ a.pending if 't3' in a.tiers else '' }}</td>
       <td class="small-text">{{ a.last or '—' }}{% if a.stale %} <span class="tag vo-flag">idle</span>{% endif %}</td></tr>
     {% endfor %}
     </tbody>

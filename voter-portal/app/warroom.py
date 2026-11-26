@@ -107,6 +107,7 @@ CREATE INDEX IF NOT EXISTS ix_war_hits ON war_hits (user_id, at);
 TIERS = {"": "No access", "room": "War Room (dashboard)", "t1": "Tier 1 · box agent", "t2": "Tier 2 · field runner",
          "t3": "Tier 3 · call centre"}
 FIELD_TIERS = ("t1", "t2", "t3")
+FIELD_ANY = "(" + " OR ".join(f"instr(',' || war_tier || ',', ',{t},') > 0" for t in FIELD_TIERS) + ")"
 PRIORITY = {1: "Super voter", 2: "Solid base", 3: "Shared supporter", 4: "Leaning"}
 OUTCOMES = {"coming": "Coming", "transport": "Needs transport", "noanswer": "No answer", "later": "Call later",
             "refused": "Refused", "wrong": "Wrong number"}
@@ -140,19 +141,63 @@ def init_schema(conn):
 
 # --- access ---------------------------------------------------------------------------------------
 
-def tier(user=None):
-    """'owner', 'room', 't1', 't2', 't3' or ''."""
+ORDER = ("room", "t1", "t2", "t3")
+# Which of a person's tiers a page works as (someone can be, say, a box agent and a field runner at once).
+ENDPOINT_TIER = {
+    "warroom.box": "t1", "warroom.box_export": "t1", "warroom.lookup": "t1", "votecount.sheet": "t1",
+    "votecount.tap": "t1", "votecount.final": "t1", "votecount.photo": "t1", "votecount.export": "t1",
+    "warroom.field": "t2", "warroom.field_export": "t2", "warroom.contact": "t2", "warroom.transport": "t2",
+    "warroom.transport_action": "t2",
+    "warroom.calls": "t3", "warroom.call": "t3", "warroom.calls_export": "t3",
+}
+
+
+def stored_tiers(user):
+    """The election-day roles saved for an account ('room', 't1', 't2', 't3'), in order."""
+    have = set((user["war_tier"] or "").split(","))
+    return [t for t in ORDER if t in have]
+
+
+def field_tiers(user):
+    return [t for t in stored_tiers(user) if t in FIELD_TIERS]
+
+
+def tier_sql(t, col="war_tier"):
+    """SQL: this account has tier t (t is one of ORDER, never user input)."""
+    assert t in ORDER
+    return f"instr(',' || {col} || ',', ',{t},') > 0"
+
+
+def tiers(user=None):
+    """What this account works as on the day: ('owner',), the War Room ('room', ...) and/or field tiers, or ()."""
     user = user if user is not None else g.get("user")
     if user is None:
-        return ""
+        return ()
     if is_owner(user):
-        return "owner"
+        return ("owner",)
     by_link = g.get("war_link") and g.get("user") is not None and g.user["id"] == user["id"]
     if (not user["can_login"] and not by_link) or user["deleted_at"] or not user["is_active"]:
+        return ()
+    have = stored_tiers(user)
+    if by_link:  # a private link opens field pages only: the War Room dashboard needs a password sign-in
+        have = [t for t in have if t in FIELD_TIERS]
+    return tuple(have)
+
+
+def tier(user=None):
+    """'owner', 'room', 't1', 't2', 't3' or '': for someone with several field tiers, the one this page works as."""
+    ts = tiers(user)
+    if not ts:
         return ""
-    if by_link and user["war_tier"] not in FIELD_TIERS:
-        return ""
-    return user["war_tier"] if user["war_tier"] in TIERS else ""
+    if ts[0] in ("owner", "room"):
+        return ts[0]
+    from flask import has_request_context
+
+    if has_request_context() and (user is None or (g.get("user") is not None and user["id"] == g.user["id"])):
+        want = ENDPOINT_TIER.get(request.endpoint or "")
+        if want in ts:
+            return want
+    return ts[0]
 
 
 def is_field(user=None):
@@ -179,9 +224,10 @@ def field_guard():
     abort(403)
 
 
-def _need(*tiers):
-    t = tier()
-    if t not in tiers and t not in ("owner", "room"):
+def _need(*wanted):
+    ts = tiers()
+    t = ts[0] if ts and ts[0] in ("owner", "room") else next((x for x in wanted if x in ts), "")
+    if not t:
         audit.log("access_denied", target=request.path)
         abort(403)
     if t in FIELD_TIERS and not is_open():
@@ -248,12 +294,23 @@ def field_may_see(national_id):
     if t not in FIELD_TIERS or not is_field():
         return True
     db = get_db()
-    if t == "t2" and db.execute("SELECT 1 FROM war_transport WHERE national_id = ? AND status IN ('waiting', 'onway')",
-                                (national_id,)).fetchone():
+    mine = tiers()
+    if "t2" in mine and db.execute("SELECT 1 FROM war_transport WHERE national_id = ? AND status IN ('waiting', 'onway')",
+                                   (national_id,)).fetchone():
         return True  # runners see every ride waiting in the transport queue
-    cond, params = _scope_sql(t, g.user["id"], g.user["war_box"] or "")
-    return db.execute(f"SELECT 1 FROM voters WHERE national_id = ? AND {cond}",
-                      [national_id] + params).fetchone() is not None
+    return _in_scope(national_id, mine) is not None
+
+
+def _in_scope(national_id, among):
+    """The first of these field tiers whose voters include this one (for the signed-in account), or None."""
+    db = get_db()
+    for t in among:
+        if t not in FIELD_TIERS:
+            continue
+        cond, params = _scope_sql(t, g.user["id"], g.user["war_box"] or "")
+        if db.execute(f"SELECT 1 FROM voters WHERE national_id = ? AND {cond}", [national_id] + params).fetchone():
+            return t
+    return None
 
 
 def _box_of(t):
@@ -322,7 +379,7 @@ def box():
     b = _box_of(t)
     boxes = [r[0] for r in db.execute("SELECT DISTINCT location FROM voters WHERE location != '' ORDER BY location")]
     if t != "t1" and not b and boxes:
-        b = boxes[0]
+        b = g.user["war_box"] if g.user["war_box"] in boxes else boxes[0]
     total = db.execute("SELECT COUNT(*) FROM voters WHERE location = ? AND deceased = 0", (b,)).fetchone()[0]
     voted = db.execute("SELECT COUNT(*) FROM war_voted w JOIN voters v ON v.national_id = w.national_id"
                        " WHERE v.location = ?", (b,)).fetchone()[0]
@@ -462,10 +519,11 @@ def mark():
     if key and db.execute("SELECT 1 FROM war_log WHERE client_key = ?", (key,)).fetchone():
         return jsonify({"ok": True, "repeat": True})
     if t in FIELD_TIERS:
-        cond, params = _scope_sql(t, g.user["id"], _box_of(t))
-        if not db.execute(f"SELECT 1 FROM voters WHERE national_id = ? AND {cond}", [nid] + params).fetchone():
+        hit = _in_scope(nid, [x for x in tiers() if x in ("t1", "t2")])
+        if hit is None:
             audit.log("access_denied", target=nid, detail={"war_mark": t})
             abort(403)
+        t = hit
     elif not db.execute("SELECT 1 FROM voters WHERE national_id = ?", (nid,)).fetchone():
         abort(404)
     wanted = request.form.get("value", "1")
@@ -502,7 +560,11 @@ def changes():
     except ValueError:
         since = 0
     db = get_db()
-    cond, params = _scope_sql(t, g.user["id"], _box_of(t)) if t in FIELD_TIERS else ("1", [])
+    cond, params = ("1", [])
+    if t in FIELD_TIERS:
+        parts = [_scope_sql(x, g.user["id"], _box_of(x)) for x in tiers() if x in FIELD_TIERS]
+        cond = " OR ".join(f"({c})" for c, _ in parts)
+        params = [p for _, ps in parts for p in ps]
     rows = db.execute(f"SELECT id, national_id, action FROM war_log WHERE id > ? AND national_id IN"
                       f" (SELECT national_id FROM voters WHERE {cond}) ORDER BY id LIMIT 2000",
                       [since] + params).fetchall()
@@ -512,7 +574,7 @@ def changes():
     for r in rows:
         (out["voted"] if r["action"] == "voted" else out["undone"]).append(r["national_id"])
     out["open"] = is_open()
-    if t in ("t2", "owner", "room"):
+    if t in ("owner", "room") or "t2" in tiers():
         out["trev"] = _transport_rev()
     if t in ("owner", "room") and request.args.get("stats"):
         out["stats"] = _flat(stats())
@@ -534,7 +596,7 @@ def calls():
         return _closed()
     db = get_db()
     who = g.user["id"] if t == "t3" else request.args.get("u", type=int)
-    callers = db.execute("SELECT id, username FROM users WHERE war_tier = 't3' AND deleted_at IS NULL"
+    callers = db.execute(f"SELECT id, username FROM users WHERE {tier_sql('t3')} AND deleted_at IS NULL"
                          " ORDER BY username COLLATE NOCASE").fetchall()
     if who is None and callers:
         who = callers[0]["id"]
@@ -649,7 +711,7 @@ def field():
     db = get_db()
     sql, sp = supporters_sql()
     who = g.user["id"] if t == "t2" else request.args.get("u", type=int)
-    runners = db.execute("SELECT id, username FROM users WHERE war_tier = 't2' AND deleted_at IS NULL"
+    runners = db.execute(f"SELECT id, username FROM users WHERE {tier_sql('t2')} AND deleted_at IS NULL"
                          " ORDER BY username COLLATE NOCASE").fetchall()
     if who is None and runners:
         who = runners[0]["id"]
@@ -671,7 +733,7 @@ def runner_rows(who, cs=""):
     if not sql:
         return [], {}
     if who == "all":
-        runners = [r[0] for r in db.execute("SELECT id FROM users WHERE war_tier = 't2' AND deleted_at IS NULL")]
+        runners = [r[0] for r in db.execute(f"SELECT id FROM users WHERE {tier_sql('t2')} AND deleted_at IS NULL")]
         if not runners:
             return [], {}
         cond = " OR ".join([handled_by()] * len(runners))
@@ -813,8 +875,8 @@ def stats():
     hourly = [(t.strftime("%H:00"), n) for t, n in sorted(hours.items())]
     # agents
     agents = []
-    for u in db.execute("SELECT id, username, war_tier, war_box, last_login_at FROM users WHERE war_tier IN"
-                        " ('t1', 't2', 't3') AND deleted_at IS NULL ORDER BY war_tier, username COLLATE NOCASE"):
+    for u in db.execute(f"SELECT id, username, war_tier, war_box, last_login_at FROM users WHERE {FIELD_ANY}"
+                        " AND deleted_at IS NULL ORDER BY war_tier, username COLLATE NOCASE"):
         marks = db.execute("SELECT COUNT(*), MAX(at) FROM war_log WHERE by_user = ? AND action = 'voted'", (u["id"],)).fetchone()
         calls_made = db.execute("SELECT COUNT(*), MAX(outcome_at) FROM war_calls WHERE user_id = ? AND outcome != ''",
                                 (u["id"],)).fetchone()
@@ -824,7 +886,7 @@ def stats():
                           (u["id"], (now - timedelta(minutes=5)).isoformat(timespec="seconds"))).fetchone()[0]
         last = max([x for x in (marks[1], calls_made[1]) if x] or [""])
         stale = bool(is_open() and (not last or datetime.fromisoformat(last) < now - timedelta(minutes=STALE_MINUTES)))
-        agents.append({"id": u["id"], "username": u["username"], "tier": u["war_tier"], "box": u["war_box"],
+        agents.append({"id": u["id"], "username": u["username"], "tiers": field_tiers(u), "box": u["war_box"],
                        "marks": marks[0], "calls": calls_made[0], "pending": assigned, "last": _hm(last) if last else "",
                        "stale": stale, "hot": hits >= LOOKUP_LIMIT * 0.8})
     outcomes = dict(db.execute("SELECT outcome, COUNT(*) FROM war_calls WHERE outcome != '' AND national_id NOT IN"
@@ -838,7 +900,7 @@ def stats():
                           f" box turnout {round(100 * b['voted'] / b['total'])}%.")
     for a in agents:
         if a["stale"]:
-            alerts.append(f"{a['username']} ({TIERS[a['tier']].split(' · ')[0]}): nothing for {STALE_MINUTES}+ minutes.")
+            alerts.append(f"{a['username']} ({' + '.join(TIERS[t].split(' · ')[0] for t in a['tiers'])}): nothing for {STALE_MINUTES}+ minutes.")
         if a["hot"]:
             alerts.append(f"{a['username']}: very many lookups in 5 minutes. Check the phone.")
     # transport
@@ -910,19 +972,28 @@ def team():
             user = db.execute("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (uid,)).fetchone() or abort(404)
             if is_owner(user):
                 abort(400)
-            level = request.form.get("tier", "")
-            if not owner and "room" in (level, user["war_tier"]):
+            had = stored_tiers(user)
+            # tick any mix: War Room dashboard, tier 1 (with a box), tier 2, tier 3. "tier" (one value) still works.
+            picked = request.form.getlist("tiers") or [request.form.get("tier", "")]
+            picked = [t for t in ORDER if t in picked]
+            if not owner and ("room" in picked) != ("room" in had):
                 flash("Only the owner gives (or takes away) the War Room dashboard.", "error")
                 return redirect(url_for("warroom.team"))
-            if level not in TIERS or (level in FIELD_TIERS and user["role"] == "admin"):
+            if user["role"] == "admin" and any(t in FIELD_TIERS for t in picked):
                 flash("Admins can be given the War Room dashboard, not a field tier.", "error")
                 return redirect(url_for("warroom.team"))
-            b = request.form.get("war_box", "")[:200]
-            db.execute("UPDATE users SET war_tier = ?, war_box = ? WHERE id = ?", (level, b if level == "t1" else "", uid))
-            if level not in FIELD_TIERS:  # no field tier: their private links stop
+            if "room" in picked and "room" not in had and not user["can_login"] and user["role"] != "admin":
+                flash(f"{user['username']} doesn't sign in: give them a password first (Users page). The War Room"
+                      " dashboard needs a proper sign-in, a private link only opens their field pages.", "error")
+                return redirect(url_for("warroom.team"))
+            b = request.form.get("war_box", "")[:200] if "t1" in picked else ""
+            level = ",".join(picked)
+            db.execute("UPDATE users SET war_tier = ?, war_box = ? WHERE id = ?", (level, b, uid))
+            if not any(t in FIELD_TIERS for t in picked):  # no field tier: their private links stop
                 db.execute("UPDATE war_links SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", (now_iso(), uid))
             audit.log("war_tier", target=user["username"], detail={"tier": level, "box": b}, commit=False)
-            flash(f"{user['username']}: {TIERS[level]}{' · ' + b if level == 't1' and b else ''}.", "success")
+            flash(f"{user['username']}: {' + '.join(TIERS[t] for t in picked) or TIERS['']}"
+                  f"{' · ' + b if b else ''}.", "success")
         elif action in ("open", "close"):
             campaign.put_setting("war_open", "1" if action == "open" else "0")
             audit.log("war_" + action, commit=False)
@@ -951,7 +1022,7 @@ def team():
             uid = request.form.get("user_id", type=int)
             user = db.execute("SELECT * FROM users WHERE id = ? AND deleted_at IS NULL", (uid,)).fetchone() or abort(404)
             days = request.form.get("days", type=int)
-            if user["war_tier"] not in FIELD_TIERS or user["role"] == "admin":
+            if not field_tiers(user) or user["role"] == "admin":
                 flash("Give the agent a tier first.", "error")
             elif days not in LINK_DAYS:
                 abort(400)
@@ -986,14 +1057,14 @@ def team():
                            ours=pledges.our_candidate(), owner_id=next((u["id"] for u in users if is_owner(u)), None),
                            can_edit=True, can_own=owner, can_watch=can_watch(), links=links, link_days=LINK_DAYS,
                            link_url=lambda r: url_for("warroom.link_open", token=r["token"], _external=True),
-                           contact=CONTACT, local=_local_day)
+                           contact=CONTACT, local=_local_day, ftiers=field_tiers, stiers=stored_tiers)
 
 
 def allocate():
     """Share our supporters who haven't voted between the tier 3 callers, best first, keeping lists
     already made (and their call outcomes); newcomers go to whoever has the shortest list."""
     db = get_db()
-    callers = [r[0] for r in db.execute("SELECT id FROM users WHERE war_tier = 't3' AND deleted_at IS NULL"
+    callers = [r[0] for r in db.execute(f"SELECT id FROM users WHERE {tier_sql('t3')} AND deleted_at IS NULL"
                                         " AND is_active = 1 ORDER BY id")]
     sql, sp = supporters_sql()
     if not callers or not sql:
@@ -1169,10 +1240,9 @@ def transport_action():
 
 # --- allocation sheets (owner) -------------------------------------------------------------------
 
-def sheet_rows(user):
-    """What one agent works with on the day, for the paper backup."""
+def sheet_rows(user, t):
+    """What one agent works with on the day as tier t, for the paper backup."""
     db = get_db()
-    t = user["war_tier"]
     if t == "t1":
         return db.execute(
             "SELECT l.list_no AS no, v.full_name AS name, v.national_id AS id, v.house_name AS house, '' AS phone,"
@@ -1203,10 +1273,10 @@ def sheets():
         abort(403)
     db = get_db()
     uid = request.args.get("u", type=int)
-    users = db.execute("SELECT * FROM users WHERE war_tier IN ('t1', 't2', 't3') AND deleted_at IS NULL"
+    users = db.execute(f"SELECT * FROM users WHERE {FIELD_ANY} AND deleted_at IS NULL"
                        + (" AND id = ?" if uid else "") + " ORDER BY war_tier, username COLLATE NOCASE",
                        ((uid,) if uid else ())).fetchall()
-    packs = [{"u": u, "rows": sheet_rows(u)} for u in users]
+    packs = [{"u": u, "t": t, "rows": sheet_rows(u, t)} for u in users for t in field_tiers(u)]
     audit.log("war_sheets_print", detail={"agents": len(packs)})
     return render_template("warroom/sheets.html", packs=packs, tiers=TIERS, priority=PRIORITY,
                            printed=(datetime.now(timezone.utc) + LOCAL).strftime("%-d %b %Y %H:%M"),
@@ -1229,19 +1299,21 @@ def sheets_xlsx():
     wb = Workbook()
     wb.remove(wb.active)
     stamp = (datetime.now(timezone.utc) + LOCAL).strftime("%-d %b %Y %H:%M")
-    users = db.execute("SELECT * FROM users WHERE war_tier IN ('t1', 't2', 't3') AND deleted_at IS NULL"
+    users = db.execute(f"SELECT * FROM users WHERE {FIELD_ANY} AND deleted_at IS NULL"
                        " ORDER BY war_tier, username COLLATE NOCASE").fetchall()
-    for u in users:
-        ws = wb.create_sheet(re.sub(r"[\\/*?:\[\]]", "", u["username"])[:31] or f"user{u['id']}")
-        ws.append([f"{TIERS[u['war_tier']]}{' · ' + u['war_box'] if u['war_box'] else ''} · for {u['username']}"
+    for u, t in [(u, t) for u in users for t in field_tiers(u)]:
+        many = len(field_tiers(u)) > 1
+        title = (re.sub(r"[\\/*?:\[\]]", "", u["username"])[:27] or f"user{u['id']}") + (f" {t.upper()}" if many else "")
+        ws = wb.create_sheet(title)
+        ws.append([f"{TIERS[t]}{' · ' + u['war_box'] if u['war_box'] and t == 't1' else ''} · for {u['username']}"
                    f" · printed {stamp} · confidential, return after the election"])
         ws["A1"].font = Font(bold=True)
         ws.append(["No.", "Name", "ID", "House", "Phone", "Group", "Done"])
         for c in ws[2]:
             c.font = Font(bold=True)
-        for r in sheet_rows(u):
+        for r in sheet_rows(u, t):
             ws.append([r["no"], _safe_cell(r["name"]), r["id"], _safe_cell(r["house"]),
-                       "" if u["war_tier"] == "t1" else r["phone"], PRIORITY.get(r["kind"], "") if r["kind"] else "", ""])
+                       "" if t == "t1" else r["phone"], PRIORITY.get(r["kind"], "") if r["kind"] else "", ""])
     if not users:
         wb.create_sheet("No agents")
     out = io.BytesIO()
@@ -1339,7 +1411,7 @@ def link_user(link_id, user_id):
     db = get_db()
     row = db.execute("SELECT u.* FROM war_links l JOIN users u ON u.id = l.user_id WHERE l.id = ? AND l.user_id = ?"
                      " AND l.revoked_at IS NULL AND l.expires_at > ? AND u.deleted_at IS NULL AND u.is_active = 1"
-                     " AND u.role != 'admin' AND u.war_tier IN ('t1', 't2', 't3')",
+                     f" AND u.role != 'admin' AND {FIELD_ANY.replace('war_tier', 'u.war_tier')}",
                      (link_id, user_id, now_iso())).fetchone()
     return row
 

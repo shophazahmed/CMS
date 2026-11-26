@@ -34,22 +34,27 @@
     <tr><th>{{ u.username }} <span class="agent-badge">{{ 'agent' if u.role == 'agent' else u.role }}{{ ' · no sign-in' if not u.can_login }}</span></th>
       {% if u.id == owner_id %}<td colspan="3" class="muted small-text">Owner: sees everything</td>{% else %}
       <td>
+        {% set have = stiers(u) %}
         <form class="inline war-tier-form" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="set"><input type="hidden" name="user_id" value="{{ u.id }}">
-          <select name="tier" aria-label="Election day role for {{ u.username }}" {{ 'disabled' if u.war_tier == 'room' and not can_own }}>
-            {% for k, label in tiers.items() %}
-              {% if not (u.role == 'admin' and k in ('t1', 't2', 't3')) and not (u.role != 'admin' and not u.can_login and k == 'room') and (can_own or k != 'room' or u.war_tier == 'room') %}
-              <option value="{{ k }}" {{ 'selected' if u.war_tier == k }}>{{ label }}</option>{% endif %}
-            {% endfor %}
-          </select>
-          <select name="war_box" aria-label="Box for {{ u.username }}">
+          <fieldset class="war-tier-picks" aria-label="Election day roles for {{ u.username }}">
+          {% if can_own and (u.role == 'admin' or u.can_login) %}
+            <label class="check"><input type="checkbox" name="tiers" value="room" {{ 'checked' if 'room' in have }}> War Room</label>
+          {% elif 'room' in have %}<input type="hidden" name="tiers" value="room"><span class="agent-badge">War Room</span>{% endif %}
+          {% if u.role != 'admin' %}
+            <label class="check"><input type="checkbox" name="tiers" value="t1" {{ 'checked' if 't1' in have }}> Tier 1 box</label>
+            <label class="check"><input type="checkbox" name="tiers" value="t2" {{ 'checked' if 't2' in have }}> Tier 2 field</label>
+            <label class="check"><input type="checkbox" name="tiers" value="t3" {{ 'checked' if 't3' in have }}> Tier 3 calls</label>
+          {% endif %}
+          </fieldset>
+          {% if u.role != 'admin' %}
+          <select name="war_box" aria-label="Box for {{ u.username }} (tier 1)">
             <option value="">Box (tier 1) —</option>{% for b in boxes %}<option {{ 'selected' if u.war_box == b }}>{{ b }}</option>{% endfor %}
-          </select>
-          <button class="small" {{ 'disabled' if u.war_tier == 'room' and not can_own }}>Save</button>
-        </form>
+          </select>{% endif %}
+          <button class="small">Save</button>
       </td>
       <td class="small-text">
-        {% if u.war_tier in ('t1', 't2', 't3') and u.role != 'admin' %}
+        {% if ftiers(u) and u.role != 'admin' %}
           {% if u.can_login %}Signs in with their password{% endif %}
           {% if link %}
           <div class="war-link-box">
@@ -66,7 +71,7 @@
             <input type="hidden" name="action" value="link"><input type="hidden" name="user_id" value="{{ u.id }}">
             <select name="days" aria-label="Link lasts">{% for d in link_days %}<option value="{{ d }}" {{ 'selected' if d == 7 }}>{{ d }} days</option>{% endfor %}</select>
             <button class="small">{{ 'New link' if link else 'Make private link' }}</button></form>
-        {% elif u.role == 'agent' and not u.can_login %}<span class="muted">Give a tier to make a link</span>
+        {% elif u.role == 'agent' and not u.can_login %}<span class="muted">Give a tier to make a link (War Room needs a password)</span>
         {% elif u.war_tier %}{{ 'Signs in' if u.can_login else '' }}{% endif %}
       </td>
       <td>{{ loads.get(u.id, '') }}</td>{% endif %}</tr>
@@ -87,8 +92,8 @@
   <form class="inline war-move" method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="action" value="move">
     <label>Move the remaining calls of
-      <select name="from">{% for u in users if u.war_tier == 't3' %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}</select></label>
-    <label>to <select name="to">{% for u in users if u.war_tier == 't3' %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}</select></label>
+      <select name="from">{% for u in users if 't3' in ftiers(u) %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}</select></label>
+    <label>to <select name="to">{% for u in users if 't3' in ftiers(u) %}<option value="{{ u.id }}">{{ u.username }}</option>{% endfor %}</select></label>
     <button class="small">Move</button>
   </form>
 </section>
@@ -109,7 +114,7 @@
     their call list. Each page carries the agent's name. Make the call lists first.</p>
   <p><a class="button primary" href="{{ url_for('warroom.sheets') }}">Print all sheets</a>
     <a class="button" href="{{ url_for('warroom.sheets_xlsx') }}">{{ icon('download', 16) }} Excel</a></p>
-  <ul class="war-sheet-links">{% for u in users if u.war_tier in ('t1', 't2', 't3') %}<li><a href="{{ url_for('warroom.sheets', u=u.id) }}">{{ u.username }}</a></li>{% endfor %}</ul>
+  <ul class="war-sheet-links">{% for u in users if ftiers(u) %}<li><a href="{{ url_for('warroom.sheets', u=u.id) }}">{{ u.username }}</a></li>{% endfor %}</ul>
 </section>
 {% endif %}
 

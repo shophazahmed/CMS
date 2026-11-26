@@ -33,7 +33,7 @@
   {% for a in agents if counts.get(a.id) or f.ag == a.id|string %}
   <a class="pledge-total agent-total {{ 'on' if f.ag == a.id|string }}" href="{{ url_for('agentsheet.sheet', **dict(query_args, ag=(None if f.ag == a.id|string else a.id))) }}">
     <span class="pt-name">{{ a.username }}</span><strong>{{ counts.get(a.id, 0) }}</strong>
-    <span class="muted small-text">{{ {'t1': 'box agent', 't2': 'field runner', 't3': 'caller', 'room': 'War Room'}.get(a.war_tier, 'agent' if a.role == 'agent' else a.role) }}</span></a>
+    <span class="muted small-text">{% set lab = {'room': 'War Room', 't1': 'box agent', 't2': 'field runner', 't3': 'caller'} %}{% set ts = (a.war_tier or '').split(',')|select('in', lab)|list %}{% for t in ts %}{{ lab[t] }}{{ ' + ' if not loop.last }}{% else %}{{ 'agent' if a.role == 'agent' else a.role }}{% endfor %}</span></a>
   {% endfor %}
 </section>
 

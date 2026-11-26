@@ -323,12 +323,13 @@ def _safe_next(target, user=None):
 
 def home_url(user=None):
     """Where someone lands after signing in: their dashboard."""
-    from .warroom import FIELD_TIERS
+    from .warroom import FIELD_TIERS, stored_tiers
 
     user = user or g.get("user")
     if user is None:
         return url_for("voters.search")
-    if user["role"] != "admin" and user["war_tier"] in FIELD_TIERS:
+    have = stored_tiers(user)
+    if user["role"] != "admin" and "room" not in have and any(t in FIELD_TIERS for t in have):
         return url_for("warroom.home")
     if is_pledge_only(user):
         return url_for("pledges.sheet")

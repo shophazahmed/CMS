@@ -1399,3 +1399,7 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
 .pledge-table .agent-col select.set { border-color: var(--accent, #0f766e); font-weight: 600; }
 .pledge-table .connector-input { width: 9rem; padding: .2rem .35rem; font-size: .85rem; }
 .pledge-table .connector-input.saved { border-color: var(--accent, #0f766e); }
+
+/* War Room team: several election-day roles per person */
+.war-tier-picks { border: 0; padding: 0; margin: 0 0 .35rem; display: flex; flex-wrap: wrap; gap: .25rem .9rem; }
+.war-tier-picks .check { display: inline-flex; align-items: center; gap: .35rem; font-size: .9rem; margin: 0; white-space: nowrap; }

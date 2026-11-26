@@ -326,3 +326,58 @@ def test_call_list_export(app):
     assert len(everyone) == 4 and {r[1] for r in everyone[1:]} == {"caller", "caller2"}
     t2, _ = make(app, o, token, "runner", "t2")
     assert t2.get("/war/calls/export.csv").status_code in (302, 403)
+
+
+def test_one_agent_several_tiers_and_the_war_room(app):
+    from tests.test_canvass import add_agent
+
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    both, uid = make(app, o, token, "both", "")
+    o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": uid, "tiers": ["t1", "t2"], "war_box": "Box B"})
+    conn = connect(app.config["DATABASE"])
+    assert tuple(conn.execute("SELECT war_tier, war_box FROM users WHERE id = ?", (uid,)).fetchone()) == ("t1,t2", "Box B")
+    house = conn.execute("SELECT house_name FROM voters WHERE national_id = 'A200001'").fetchone()[0]
+    conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES (?, ?, '2026-01-01')", (house, uid))
+    conn.commit()
+    box = both.get("/war/box").get_data(as_text=True)
+    assert "Box B" in box and "My supporters" in box and "Vote count" in box          # both tiers in the menu
+    field = both.get("/war/field").get_data(as_text=True)
+    assert "Aminath Alpha" in field                                                  # tier 2: their supporters
+    assert both.get("/war/transport").status_code == 200
+    assert both.get("/war/calls").status_code == 403                                 # no tier 3
+    assert both.get("/war/lookup?q=A200003").json["ok"]                              # tier 1: their box (Box B)
+    tok = csrf(both, "/war/box")
+    assert both.post("/war/mark", data={"csrf_token": tok, "national_id": "A200003", "value": "1"}).json["voted"]  # box
+    assert both.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "1"}).json["voted"]  # runner
+    assert both.post("/war/mark", data={"csrf_token": tok, "national_id": "A200002", "value": "1"}).status_code == 403
+    assert both.get("/pledges").status_code == 302                                    # still a field account
+    # the War Room dashboard as well (owner only), for an agent who signs in
+    o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": uid, "tiers": ["room", "t1", "t2"],
+                              "war_box": "Box B"})
+    assert conn.execute("SELECT war_tier FROM users WHERE id = ?", (uid,)).fetchone()[0] == "room,t1,t2"
+    assert "War Room" in both.get("/war").get_data(as_text=True) and both.get("/war").status_code == 200
+    assert "Box B" in both.get("/war/box").get_data(as_text=True)                    # opens their own box first
+    # an admin who isn't the owner can't give or take it
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    r = b.post("/war/team", data={"csrf_token": csrf(b, "/war/team"), "action": "set", "user_id": uid, "tiers": ["t1"]},
+               follow_redirects=True)
+    assert "Only the owner" in r.get_data(as_text=True)
+    assert conn.execute("SELECT war_tier FROM users WHERE id = ?", (uid,)).fetchone()[0] == "room,t1,t2"
+    # an agent without a password can't get the dashboard; their private link opens field pages only
+    add_agent(app, "ali")
+    ali = conn.execute("SELECT id FROM users WHERE username = 'ali'").fetchone()[0]
+    conn.execute("UPDATE users SET can_login = 0 WHERE id = ?", (ali,))
+    conn.commit()
+    r = o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": ali, "tiers": ["room", "t2"]},
+               follow_redirects=True)
+    assert "give them a password first" in r.get_data(as_text=True)
+    conn.execute("UPDATE users SET war_tier = 'room,t2' WHERE id = ?", (ali,))            # even if it got in somehow
+    conn.commit()
+    o.post("/war/team", data={"csrf_token": token, "action": "link", "user_id": ali, "days": "7"})
+    link = conn.execute("SELECT token FROM war_links WHERE user_id = ? AND revoked_at IS NULL", (ali,)).fetchone()[0]
+    a = app.test_client()
+    a.get(f"/w/{link}")
+    assert a.get("/war/field").status_code == 200
+    assert a.get("/war").status_code == 302 and a.get("/war/team").status_code in (302, 403)
