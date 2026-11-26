@@ -275,12 +275,39 @@ def supporters_sql():
     return sql, params
 
 
+def box_cond(b, col="v.national_id"):
+    """Voters at box b: the official list once it's loaded for that box (only numbered voters), else the
+    portal's box field. (SQL condition on col, params)"""
+    if get_db().execute("SELECT 1 FROM war_list WHERE box = ? LIMIT 1", (b,)).fetchone():
+        return f"{col} IN (SELECT national_id FROM war_list WHERE box = ?)", [b]
+    return f"{col} IN (SELECT national_id FROM voters WHERE location = ?)", [b]
+
+
+OFF_LIST = "Not on an official list"
+
+
+def box_expr(t):
+    """SQL: a voter's election-day box (alias t): their official list's box; voters the portal has at a box
+    whose official list leaves them out count as OFF_LIST; boxes without a list keep the portal's box."""
+    return (f"COALESCE((SELECT wl.box FROM war_list wl WHERE wl.national_id = {t}.national_id),"
+            f" CASE WHEN {t}.location IN (SELECT box FROM war_list) THEN '{OFF_LIST}' ELSE {t}.location END)")
+
+
+def off_list(b):
+    """Voters the portal has at box b who aren't on its official list (0 when the box has no list yet)."""
+    db = get_db()
+    if not db.execute("SELECT 1 FROM war_list WHERE box = ? LIMIT 1", (b,)).fetchone():
+        return 0
+    return db.execute("SELECT COUNT(*) FROM voters WHERE location = ? AND deceased = 0 AND national_id NOT IN"
+                      " (SELECT national_id FROM war_list WHERE box = ?)", (b, b)).fetchone()[0]
+
+
 def _scope_sql(t, user_id, box):
     """Voters a tier may see: (SQL condition on national_id, params)."""
     from .voters import handled_by
 
     if t == "t1":
-        return "national_id IN (SELECT national_id FROM voters WHERE location = ?)", [box]
+        return box_cond(box, "national_id")
     if t == "t2":
         return handled_by(), [user_id, user_id]
     if t == "t3":
@@ -380,21 +407,22 @@ def box():
     boxes = [r[0] for r in db.execute("SELECT DISTINCT location FROM voters WHERE location != '' ORDER BY location")]
     if t != "t1" and not b and boxes:
         b = g.user["war_box"] if g.user["war_box"] in boxes else boxes[0]
-    total = db.execute("SELECT COUNT(*) FROM voters WHERE location = ? AND deceased = 0", (b,)).fetchone()[0]
+    at, ap = box_cond(b)
+    total = db.execute(f"SELECT COUNT(*) FROM voters v WHERE {at} AND v.deceased = 0", ap).fetchone()[0]
     voted = db.execute("SELECT COUNT(*) FROM war_voted w JOIN voters v ON v.national_id = w.national_id"
-                       " WHERE v.location = ?", (b,)).fetchone()[0]
+                       f" WHERE {at} AND v.deceased = 0", ap).fetchone()[0]
     recent = db.execute(
         "SELECT v.national_id, v.full_name, w.at, l.list_no, w.by_user FROM war_voted w JOIN voters v"
         " ON v.national_id = w.national_id LEFT JOIN war_list l ON l.national_id = v.national_id"
-        " WHERE v.location = ? ORDER BY w.at DESC LIMIT 15", (b,)).fetchall()
+        f" WHERE {at} ORDER BY w.at DESC LIMIT 15", ap).fetchall()
     has_numbers = db.execute("SELECT 1 FROM war_list WHERE box = ? LIMIT 1", (b,)).fetchone() is not None
     # the whole box list: list number, name, house, voted or not (no phone numbers)
     everyone = db.execute(
         "SELECT v.national_id, v.full_name, v.house_name, v.sex, v.age, v.photo_path, l.list_no, w.at AS voted_at FROM voters v"
         " LEFT JOIN war_list l ON l.national_id = v.national_id LEFT JOIN war_voted w ON w.national_id = v.national_id"
-        " WHERE v.location = ? AND v.deceased = 0"
-        " ORDER BY l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE", (b,)).fetchall()
-    return render_template("warroom/box.html", box=b, boxes=boxes if t != "t1" else [], total=total, voted=voted,
+        f" WHERE {at} AND v.deceased = 0"
+        " ORDER BY l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE", ap).fetchall()
+    return render_template("warroom/box.html", box=b, off_list=off_list(b) if t != "t1" else 0, boxes=boxes if t != "t1" else [], total=total, voted=voted,
                            recent=recent, everyone=everyone, has_numbers=has_numbers, t=t, cursor=_cursor(), is_open=is_open(),
                            undo_minutes=UNDO_MINUTES, hm=_hm, me=g.user["id"],
                            undo_after=(datetime.now(timezone.utc) - timedelta(minutes=UNDO_MINUTES)).isoformat(timespec="seconds"))
@@ -417,11 +445,12 @@ def box_export(fmt):
         abort(400)
     show = request.args.get("show", "")
     cond = {"yes": " AND w.national_id IS NOT NULL", "no": " AND w.national_id IS NULL"}.get(show, "")
+    at, ap = box_cond(b)
     rows = get_db().execute(
         "SELECT v.full_name, v.house_name, v.sex, v.age, v.photo_path, l.list_no, w.at AS voted_at FROM voters v"
         " LEFT JOIN war_list l ON l.national_id = v.national_id LEFT JOIN war_voted w ON w.national_id = v.national_id"
-        f" WHERE v.location = ? AND v.deceased = 0{cond}"
-        " ORDER BY l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE", (b,)).fetchall()
+        f" WHERE {at} AND v.deceased = 0{cond}"
+        " ORDER BY l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE", ap).fetchall()
     head = ["No.", "Name", "House", "Age", "Sex", "Voted", "Time"]
     table = [[r["list_no"], _safe_cell(r["full_name"]), _safe_cell(r["house_name"]), r["age"], r["sex"],
               "Voted" if r["voted_at"] else "Not yet", _hm(r["voted_at"]) if r["voted_at"] else ""] for r in rows]
@@ -495,13 +524,14 @@ def lookup():
     q = (request.args.get("q") or "").strip()
     b = _box_of(t)
     v = None
+    at, ap = box_cond(b)
     if q.isdigit():
         v = db.execute("SELECT v.* FROM war_list l JOIN voters v ON v.national_id = l.national_id"
-                       " WHERE l.list_no = ? AND v.location = ?", (int(q), b)).fetchone()
+                       f" WHERE l.list_no = ? AND {at}", [int(q)] + ap).fetchone()
     if v is None:
         nid, _ = normalize_id(q)
         if nid:
-            v = db.execute("SELECT * FROM voters WHERE national_id = ? AND location = ?", (nid, b)).fetchone()
+            v = db.execute(f"SELECT v.* FROM voters v WHERE v.national_id = ? AND {at}", [nid] + ap).fetchone()
     db.commit()
     if v is None:
         return jsonify({"ok": False, "error": f"No voter {q} at {b or 'this box'}."}), 404
@@ -827,8 +857,9 @@ def voted_rows(box="", grp="", q="", limit=None):
     sup = f"LEFT JOIN ({sql}) s ON s.national_id = v.national_id" if sql else "LEFT JOIN (SELECT NULL AS national_id, NULL AS priority) s ON 0"
     where, params = [], []
     if box:
-        where.append("v.location = ?")
-        params.append(box)
+        at, ap = box_cond(box)
+        where.append(at)
+        params += ap
     if grp == "ours":
         where.append("s.priority IS NOT NULL")
     elif grp in ("1", "2", "3", "4"):
@@ -954,7 +985,7 @@ def stats():
     groups = {k: {"total": 0, "voted": 0} for k in PRIORITY}
     by_box = {}
     if sql:
-        for r in db.execute(f"SELECT s.priority, v.location, s.national_id IN (SELECT national_id FROM war_voted) AS done"
+        for r in db.execute(f"SELECT s.priority, {box_expr('v')}, s.national_id IN (SELECT national_id FROM war_voted) AS done"
                             f" FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id"
                             f" WHERE 1{mine.replace('national_id IN', 's.national_id IN', 1)}", sp + list(extra)):
             groups[r[0]]["total"] += 1
@@ -962,12 +993,12 @@ def stats():
             b = by_box.setdefault(r[1] or "", {"sup": 0, "sup_voted": 0})
             b["sup"] += 1
             b["sup_voted"] += r[2]
-    box_last = dict(db.execute("SELECT v.location, MAX(w.at) FROM war_voted w JOIN voters v ON v.national_id = w.national_id"
-                               f" WHERE 1{mine.replace('national_id IN', 'w.national_id IN', 1)} GROUP BY v.location",
+    box_last = dict(db.execute(f"SELECT {box_expr('v')}, MAX(w.at) FROM war_voted w JOIN voters v ON v.national_id = w.national_id"
+                               f" WHERE 1{mine.replace('national_id IN', 'w.national_id IN', 1)} GROUP BY 1",
                                extra).fetchall())
     boxes = []
-    for r in db.execute(f"SELECT location, COUNT(*), SUM(national_id IN (SELECT national_id FROM war_voted))"
-                        f" FROM voters WHERE deceased = 0{scope} GROUP BY location ORDER BY COUNT(*) DESC", extra):
+    for r in db.execute(f"SELECT {box_expr('voters')}, COUNT(*), SUM(national_id IN (SELECT national_id FROM war_voted))"
+                        f" FROM voters WHERE deceased = 0{scope} GROUP BY 1 ORDER BY COUNT(*) DESC", extra):
         b = by_box.get(r[0] or "", {"sup": 0, "sup_voted": 0})
         boxes.append({"box": r[0] or "", "total": r[1], "voted": r[2] or 0, "sup": b["sup"], "sup_voted": b["sup_voted"]})
     sup_total = sum(x["total"] for x in groups.values())
@@ -1360,11 +1391,11 @@ def sheet_rows(user, t):
     """What one agent works with on the day as tier t, for the paper backup."""
     db = get_db()
     if t == "t1":
+        at, ap = box_cond(user["war_box"] or "")
         return db.execute(
             "SELECT l.list_no AS no, v.full_name AS name, v.national_id AS id, v.house_name AS house, '' AS phone,"
             " '' AS kind FROM voters v LEFT JOIN war_list l ON l.national_id = v.national_id"
-            " WHERE v.location = ? AND v.deceased = 0 ORDER BY l.list_no IS NULL, l.list_no, v.full_name",
-            (user["war_box"],)).fetchall()
+            f" WHERE {at} AND v.deceased = 0 ORDER BY l.list_no IS NULL, l.list_no, v.full_name", ap).fetchall()
     sql, sp = supporters_sql()
     if not sql:
         return []

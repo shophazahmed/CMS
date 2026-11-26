@@ -473,3 +473,25 @@ def test_box_agent_on_a_link_sees_the_box_photos(app):
     a.get(f"/w/{link}")
     assert a.get("/photos/A200001").status_code == 200        # at their box, though not in houses they canvass
     assert a.get("/photos/A200003").status_code == 404        # Box B: not theirs
+
+
+def test_box_list_follows_the_official_list(app):
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    conn = connect(app.config["DATABASE"])
+    # Box A has A200001 and A200002 in the portal; the official list has only A200001 (number 7)
+    conn.execute("INSERT INTO war_list (national_id, list_no, box) VALUES ('A200001', 7, 'Box A')")
+    conn.commit()
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    page = t1.get("/war/box").get_data(as_text=True)
+    assert "Aminath Alpha" in page and "Moosa Beta" not in page            # only numbered voters
+    assert t1.get("/war/lookup?q=7").json["ok"]
+    assert t1.get("/war/lookup?q=A200002").status_code == 404              # not on the official list
+    rows = t1.get("/war/box/export.csv").get_data(as_text=True).strip().splitlines()
+    assert len(rows) == 2
+    owner_page = o.get("/war/box?box=Box+A").get_data(as_text=True)
+    assert "1 voter the portal has at Box A" in owner_page                 # the War Room is told who's left out
+    # a box with no official list yet still uses the portal's box
+    assert "Box B" in o.get("/war/box?box=Box+B").get_data(as_text=True)
+    dash = o.get("/war").get_data(as_text=True)
+    assert "Not on an official list" in dash                               # left-out voters counted apart

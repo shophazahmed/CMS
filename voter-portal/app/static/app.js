@@ -1078,3 +1078,14 @@ document.addEventListener("submit", async (event) => {
     }
   }, 15000);
 })();
+
+// A photo that can't load (file missing) shows the person's initial instead of a broken image.
+document.addEventListener("error", (event) => {
+  const img = event.target;
+  if (!(img instanceof HTMLImageElement) || !img.classList.contains("avatar") || !img.dataset.initial) return;
+  const span = document.createElement("span");
+  span.className = img.className + " initials";
+  span.setAttribute("aria-hidden", "true");
+  span.textContent = img.dataset.initial;
+  img.replaceWith(span);
+}, true);

@@ -57,7 +57,7 @@
 
 {% macro avatar(v, size='sm') %}
 {% if v.photo_path %}
-<img class="avatar {{ size }}" src="{{ url_for('voters.photo', national_id=v.national_id) }}" alt="" loading="lazy">
+<img class="avatar {{ size }}" src="{{ url_for('voters.photo', national_id=v.national_id) }}" alt="" loading="lazy" data-initial="{{ (v.full_name or '?')[:1] }}">
 {% else %}
 <span class="avatar {{ size }} initials" aria-hidden="true">{{ (v.full_name or '?')[:1] }}</span>
 {% endif %}

@@ -33,6 +33,9 @@
 <div id="war-card" class="war-card-slot" data-mark-url="{{ url_for('warroom.mark') }}" data-csrf="{{ csrf_token() }}" data-box="{{ box if t != 't1' else '' }}"></div>
 
 <section class="card box-list" data-box-list data-mark-url="{{ url_for('warroom.mark') }}">
+  {% if off_list %}<p class="flash flash-info small-text">{{ off_list }} voter{{ 's' if off_list != 1 }} the portal has at {{ box }}
+    {{ 'aren\'t' if off_list != 1 else 'isn\'t' }} on this box's official list, so {{ 'they are' if off_list != 1 else 'it is' }} left out here.
+    Check them on War Room team → Import the Elections Commission lists (the not-matched download), or fix their box.</p>{% endif %}
   <div class="list-head"><h2>Voter list</h2>
     <span class="muted small-text"><strong data-bl-voted>{{ voted }}</strong> voted · <strong data-bl-left>{{ total - voted }}</strong> not yet</span></div>
   <div class="bl-tools">
