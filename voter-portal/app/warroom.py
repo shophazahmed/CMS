@@ -422,7 +422,8 @@ def box():
         " LEFT JOIN war_list l ON l.national_id = v.national_id LEFT JOIN war_voted w ON w.national_id = v.national_id"
         f" WHERE {at} AND v.deceased = 0"
         " ORDER BY l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE", ap).fetchall()
-    return render_template("warroom/box.html", box=b, off_list=off_list(b) if t != "t1" else 0, boxes=boxes if t != "t1" else [], total=total, voted=voted,
+    return render_template("warroom/box.html", box=b, off_list=off_list(b) if t != "t1" else 0,
+                           move_to=[x for x in boxes if x != b] if t != "t1" else [], boxes=boxes if t != "t1" else [], total=total, voted=voted,
                            recent=recent, everyone=everyone, has_numbers=has_numbers, t=t, cursor=_cursor(), is_open=is_open(),
                            undo_minutes=UNDO_MINUTES, hm=_hm, me=g.user["id"],
                            undo_after=(datetime.now(timezone.utc) - timedelta(minutes=UNDO_MINUTES)).isoformat(timespec="seconds"))
@@ -431,19 +432,30 @@ def box():
 @bp.post("/war/box/unlist")
 @login_required
 def box_unlist():
-    """The War Room takes one voter off a box's official list (a wrong match): they leave that box's list."""
+    """The War Room moves a voter who isn't at this box: off its official list (if on it), and their box field
+    set to another box or none."""
     if not can_watch():
         abort(403)
     nid = request.form.get("national_id", "")
     box = request.form.get("box", "")[:200]
+    to = request.form.get("to", "")[:200]
     db = get_db()
-    row = db.execute("SELECT list_no FROM war_list WHERE national_id = ? AND box = ?", (nid, box)).fetchone()
-    if row is None:
+    voter = db.execute("SELECT location FROM voters WHERE national_id = ?", (nid,)).fetchone()
+    if voter is None:
         abort(404)
+    known = {r[0] for r in db.execute("SELECT DISTINCT location FROM voters WHERE location != ''")} | \
+        {r[0] for r in db.execute("SELECT DISTINCT box FROM war_list")}
+    if to and to not in known:
+        abort(400)
+    row = db.execute("SELECT list_no FROM war_list WHERE national_id = ? AND box = ?", (nid, box)).fetchone()
     db.execute("DELETE FROM war_list WHERE national_id = ? AND box = ?", (nid, box))
-    audit.log("war_unlist", target=nid, detail={"box": box, "list_no": row["list_no"]}, commit=False)
+    if voter["location"] == box or to:
+        db.execute("UPDATE voters SET location = ?, updated_at = ?, updated_by = ? WHERE national_id = ?",
+                   (to, now_iso(), g.user["id"], nid))
+    audit.log("war_unlist", target=nid, detail={"box": box, "list_no": row["list_no"] if row else None, "to": to},
+              commit=False)
     db.commit()
-    flash("Taken off this box's list.", "success")
+    flash(f"Moved off {box}" + (f" to {to}." if to else " (no box now)."), "success")
     return redirect(url_for("warroom.box", box=box))
 
 

@@ -61,10 +61,13 @@
       <span class="bl-who"><strong>{{ v.full_name }}</strong><span class="muted small-text">{{ v.house_name }}{% if v.age is not none %} · {{ v.age }}{% endif %}{% if v.sex %} · {{ v.sex }}{% endif %}</span></span>
       <span class="bl-state" data-bl-state>{% if v.voted_at %}✓ Voted {{ hm(v.voted_at) }}{% else %}Not yet{% endif %}</span>
       <button type="button" class="small bl-mark" data-bl-mark {{ 'hidden' if v.voted_at }}>Mark voted</button>
-      {% if t != 't1' and v.list_no %}<form method="post" action="{{ url_for('warroom.box_unlist') }}" class="bl-unlist"
-          data-confirm="Take {{ v.full_name }} off the {{ box }} list? (for a wrong match)">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
-        <input type="hidden" name="box" value="{{ box }}"><button class="link small-text">Not on this list</button></form>{% endif %}
+      {% if t != 't1' %}<details class="bl-unlist"><summary class="small-text">Not at this box</summary>
+        <form method="post" action="{{ url_for('warroom.box_unlist') }}" class="inline">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+          <input type="hidden" name="box" value="{{ box }}">
+          <select name="to" aria-label="Where {{ v.full_name }} votes"><option value="">No box</option>
+            {% for x in move_to %}<option>{{ x }}</option>{% endfor %}</select>
+          <button class="small">Move</button></form></details>{% endif %}
     </li>
     {% else %}<li class="muted">No voters at this box.</li>{% endfor %}
   </ol>

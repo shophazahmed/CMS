@@ -1564,3 +1564,8 @@ body.has-tabbar .ballot-bar { bottom: calc(76px + env(safe-area-inset-bottom)); 
 .pb-initial { display: grid; place-items: center; font-weight: 700; color: var(--muted, #5b6770); font-size: 1.3rem; }
 .pb-name { display: grid; gap: .1rem; }
 .bl-unlist { margin: 0; }
+.bl-unlist { grid-column: 1 / -1; flex-basis: 100%; margin: 0; padding-left: 3.4rem; }
+.bl-unlist form { display: flex; flex-wrap: wrap; gap: .4rem; align-items: center; }
+.bl-unlist select { width: auto; max-width: 100%; min-height: 0; padding: .3rem .5rem; }
+.bl-unlist summary { cursor: pointer; color: var(--muted); }
+.bl-unlist form { margin-top: .3rem; }

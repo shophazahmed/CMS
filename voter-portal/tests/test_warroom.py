@@ -603,12 +603,18 @@ def test_public_candidate_photos_and_unlisting_a_voter(app):
     # the War Room takes a wrong match off a box's list
     conn.execute("INSERT INTO war_list (national_id, list_no, box) VALUES ('A200001', 1, 'Box A'), ('A200002', 2, 'Box A')")
     conn.commit()
-    assert "Not on this list" in o.get("/war/box?box=Box+A").get_data(as_text=True)
-    o.post("/war/box/unlist", data={"csrf_token": token, "national_id": "A200002", "box": "Box A"})
+    assert "Not at this box" in o.get("/war/box?box=Box+A").get_data(as_text=True)
+    o.post("/war/box/unlist", data={"csrf_token": token, "national_id": "A200002", "box": "Box A", "to": "Box B"})
     assert [r[0] for r in conn.execute("SELECT national_id FROM war_list")] == ["A200001"]
+    assert conn.execute("SELECT location FROM voters WHERE national_id = 'A200002'").fetchone()[0] == "Box B"
+    # a box with no official list: the box field moves (to no box)
+    o.post("/war/box/unlist", data={"csrf_token": token, "national_id": "A200003", "box": "Box B", "to": ""})
+    assert conn.execute("SELECT location FROM voters WHERE national_id = 'A200003'").fetchone()[0] == ""
+    assert o.post("/war/box/unlist", data={"csrf_token": token, "national_id": "A200003", "box": "Box B",
+                                           "to": "Made Up Box"}).status_code == 400
     o.post("/war/team", data={"csrf_token": token, "action": "open"})
     t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
-    assert "Not on this list" not in t1.get("/war/box").get_data(as_text=True)          # not for box agents
+    assert "Not at this box" not in t1.get("/war/box").get_data(as_text=True)           # not for box agents
     assert t1.post("/war/box/unlist", data={"csrf_token": csrf(t1, "/war/box"), "national_id": "A200001",
                                             "box": "Box A"}).status_code in (302, 403)
     assert conn.execute("SELECT COUNT(*) FROM war_list").fetchone()[0] == 1
