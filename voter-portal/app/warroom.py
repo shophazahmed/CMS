@@ -931,7 +931,8 @@ def stats():
             "hourly": hourly, "hour_max": max([n for _, n in hourly] or [0]), "agents": agents, "outcomes": outcomes,
             "called": called, "alerts": alerts, "close": close, "ours": pledges.our_candidate(),
             "now": local_now.strftime("%H:%M"), "transport": tr,
-            "left": ("closed" if left is not None and left <= 0 else f"{left // 60}h {left % 60:02d}m" if left is not None else ""),
+            "left": ("polls closed" if left is not None and left <= 0
+                     else f"closes in {left // 60}h {left % 60:02d}m" if left is not None else ""),
             "projection": projection(scope, extra), "contact": contact_counts(mine, extra)}
 
 
@@ -939,6 +940,7 @@ def _flat(s):
     """The numbers the dashboard updates in place, keyed like its data-k attributes."""
     out = {k: s[k] for k in ("total", "voted", "pct", "sup_total", "sup_voted", "sup_pending", "sup_pct", "now", "left")}
     out["t_waiting"], out["t_onway"], out["t_done"] = (s["transport"][k] for k in ("waiting", "onway", "done"))
+    out["alerts"], out["n_alerts"] = s["alerts"], len(s["alerts"])
     for k, x in s["groups"].items():
         out[f"g{k}v"], out[f"g{k}p"] = x["voted"], x["total"] - x["voted"]
     for i, b in enumerate(s["boxes"]):

@@ -1008,3 +1008,44 @@ document.addEventListener("submit", async (event) => {
   }));
   if (search) search.addEventListener("input", apply);
 })();
+
+// War Room dashboard: the Alerts button lights up green while there are alerts you haven't looked at.
+(() => {
+  const btn = document.querySelector("[data-alert-btn]");
+  const box = document.querySelector("[data-alerts]");
+  if (!btn || !box) return;
+  const list = box.querySelector("[data-alert-list]");
+  const none = box.querySelector("[data-alert-none]");
+  const light = btn.querySelector("[data-alert-light]");
+  const KEY = "war-alerts-seen";
+  // an alert keeps its identity while its numbers change ("oldest 21 min" -> "oldest 24 min")
+  const key = (text) => text.replace(/\d+/g, "#");
+  const seen = () => { try { return new Set(JSON.parse(localStorage.getItem(KEY) || "[]")); } catch (e) { return new Set(); } };
+  const remember = (keys) => { try { localStorage.setItem(KEY, JSON.stringify([...keys].slice(-200))); } catch (e) { /* private window */ } };
+  let current = [...list.querySelectorAll("li")].map((li) => li.textContent);
+  const render = () => {
+    const old = seen();
+    let fresh = 0;
+    list.replaceChildren(...current.map((text) => {
+      const li = document.createElement("li");
+      li.textContent = text;
+      if (!old.has(key(text))) { li.classList.add("new"); fresh += 1; }
+      return li;
+    }));
+    if (none) none.hidden = current.length > 0;
+    box.classList.toggle("quiet", !current.length);
+    btn.classList.toggle("has-alerts", current.length > 0);
+    btn.classList.toggle("fresh", fresh > 0);
+    light.hidden = fresh === 0;
+    btn.title = fresh ? `${fresh} new alert${fresh === 1 ? "" : "s"}` : "Alerts";
+  };
+  const markSeen = () => { remember(new Set([...seen(), ...current.map(key)])); render(); };
+  btn.addEventListener("click", () => setTimeout(markSeen, 1500));
+  document.addEventListener("war:changes", (e) => {
+    const stats = e.detail && e.detail.stats;
+    if (!stats || !Array.isArray(stats.alerts)) return;
+    current = stats.alerts;
+    render();
+  });
+  render();
+})();

@@ -404,3 +404,14 @@ def test_team_and_users_pages_forms_are_closed(app):
     o.post("/war/team", data={"csrf_token": token, "action": "link", "user_id": uid, "days": "3"})
     conn = connect(app.config["DATABASE"])
     assert conn.execute("SELECT COUNT(*) FROM war_links WHERE user_id = ?", (uid,)).fetchone()[0] == 2
+
+
+def test_alerts_button_and_live_alerts(app):
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    page = o.get("/war").get_data(as_text=True)
+    assert "data-alert-btn" in page and 'href="#war-alerts"' in page and 'id="war-alerts"' in page
+    assert "closes in closed" not in page
+    data = o.get("/war/changes?since=0&stats=1").json["stats"]
+    assert isinstance(data["alerts"], list) and data["n_alerts"] == len(data["alerts"])
+    assert data["left"] == "" or data["left"].startswith(("closes in ", "polls closed"))

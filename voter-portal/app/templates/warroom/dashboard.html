@@ -14,12 +14,15 @@
   <div>
     <h1>War Room{% if ag_name %} · {{ ag_name }}{% endif %}</h1>
     <p class="muted">Election day, live. <span data-k="now">{{ s.now }}</span> · polls close {{ s.close }}
-      {% if s.left %}· <strong class="war-left">closes in <span data-k="left">{{ s.left }}</span></strong>{% endif %}
+      {% if s.left %}· <strong class="war-left"><span data-k="left">{{ s.left }}</span></strong>{% endif %}
       {% if not is_open %}· <strong class="war-closed-tag">closed: field agents can't work yet</strong>{% endif %}</p>
   </div>
   {% include "warroom/_sync.html" %}
 </div>
 <p class="list-links war-links">
+  <a class="button small war-alert-btn {{ 'has-alerts' if s.alerts }}" href="#war-alerts" data-alert-btn>
+    <span class="alert-light" data-alert-light hidden aria-hidden="true"></span>{{ icon('megaphone', 16) }} Alerts
+    <span class="alert-count" data-k="n_alerts">{{ s.alerts|length }}</span></a>
   <a class="button small" href="{{ url_for('warroom.box') }}">Box agent view</a>
   <a class="button small" href="{{ url_for('warroom.calls') }}">Call lists</a>
   <a class="button small" href="{{ url_for('warroom.field') }}">Field runners</a>
@@ -52,12 +55,11 @@
     <span class="muted">waiting · <span data-k="t_onway">{{ s.transport.onway }}</span> on the way · <span data-k="t_done">{{ s.transport.done }}</span> done</span></a>
 </section>
 
-{% if s.alerts %}
-<section class="card war-alerts" aria-label="Alerts">
+<section class="card war-alerts {{ 'quiet' if not s.alerts }}" id="war-alerts" aria-label="Alerts" data-alerts>
   <h2>{{ icon('megaphone', 18) }} Alerts</h2>
-  <ul>{% for a in s.alerts %}<li>{{ a }}</li>{% endfor %}</ul>
+  <ul data-alert-list>{% for a in s.alerts %}<li>{{ a }}</li>{% endfor %}</ul>
+  <p class="muted small-text" data-alert-none {{ 'hidden' if s.alerts }}>No alerts right now.</p>
 </section>
-{% endif %}
 
 {% set pj = s.projection %}
 {% if pj %}
@@ -159,6 +161,6 @@
   {% else %}<p class="muted">No agents yet. {% if is_owner %}<a href="{{ url_for('warroom.team') }}">Give accounts a tier</a>.{% endif %}</p>{% endif %}
 </section>
 </div>
-<p class="muted small-text">The numbers update by themselves every few seconds. Lists and alerts refresh when you reload.</p>
+<p class="muted small-text">The numbers update by themselves every few seconds. Alerts update live too; lists refresh when you reload.</p>
 </div>
 {% endblock %}

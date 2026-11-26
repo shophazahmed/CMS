@@ -1444,3 +1444,18 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
 .ride-wide-label { display: inline-flex; align-items: center; gap: .35rem; font-weight: 600; }
 .ride-wide form { margin: 0; }
 .ride-wide .pl { min-width: 9rem; min-height: 2.4rem; padding: .35rem .9rem; font-size: .95rem; }
+
+/* War Room: Alerts button with a live light for alerts not seen yet */
+.war-alert-btn { position: relative; display: inline-flex; align-items: center; gap: .35rem; }
+.war-alert-btn .alert-count { display: inline-block; min-width: 1.4rem; padding: 0 .35rem; border-radius: 999px; text-align: center;
+  font-size: .78rem; font-weight: 700; background: var(--surface-2); border: 1px solid var(--border); }
+.war-alert-btn.has-alerts .alert-count { background: #eb6834; border-color: #eb6834; color: #fff; }
+.alert-light { width: .65rem; height: .65rem; border-radius: 50%; background: #16a34a; box-shadow: 0 0 0 0 rgba(22, 163, 74, .6);
+  animation: alert-live 1.4s infinite; }
+.war-alert-btn.fresh { border-color: #16a34a; box-shadow: 0 0 0 2px rgba(22, 163, 74, .25); }
+@keyframes alert-live { 0% { box-shadow: 0 0 0 0 rgba(22, 163, 74, .6); } 70% { box-shadow: 0 0 0 .5rem rgba(22, 163, 74, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(22, 163, 74, 0); } }
+.war-alerts.quiet { border-left-color: var(--border); }
+.war-alerts li.new { font-weight: 700; }
+.war-alerts li.new::marker { color: #16a34a; }
+@media (prefers-reduced-motion: reduce) { .alert-light { animation: none; } }
