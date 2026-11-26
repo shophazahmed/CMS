@@ -78,7 +78,7 @@
     <th class="num">#</th>{{ sort_th('name', 'Name', 'sticky') }}{{ sort_th('id', 'ID') }}<th>Sex</th>{{ sort_th('age', 'Age') }}
     {{ sort_th('house', 'House') }}<th>Phone</th>{{ sort_th('box', 'Box') }}{{ sort_th('no', 'No.') }}
     {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ c.name }}</th>{% endfor %}
-    <th class="cand noshow-col">No-show</th>
+    <th class="cand noshow-col">No-show</th><th class="cand ride-col">Transport</th>
     {% if not pledge_only %}<th>Agent</th><th>Connector</th>{% endif %}
   </tr></thead>
   <tbody>
@@ -112,6 +112,18 @@
         <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
         <input type="hidden" name="value" value="{{ '0' if away else '1' }}">
         <button class="pl {{ 'pl-ns' if away else 'pl-blank' }}" aria-label="No-show for {{ v.full_name }}: {{ 'yes' if away else 'no' }}">{{ 'No-show' if away else '·' }}</button>
+      </form>{% endif %}
+    </td>
+    {% set ride = rides.get(v.national_id, '') %}
+    <td class="cand ride-col">
+      {% if v.national_id in voted and ride != 'done' %}<span class="pl pl-blank muted">Voted</span>
+      {% elif not can_mark or ride in ('onway', 'done') %}<span class="pl {{ 'pl-ride ride-' ~ ride if ride else 'pl-blank' }}">{{ ride_labels.get(ride, '·') }}</span>{% else %}
+      <form method="post" action="{{ url_for('pledges.set_transport') }}" data-ride-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+        <input type="hidden" name="value" value="{{ '0' if ride else '1' }}">
+        <button class="pl {{ 'pl-ride ride-waiting' if ride else 'pl-blank' }}" aria-label="Needs transport: {{ v.full_name }}: {{ 'yes' if ride else 'no' }}">{{ ride_labels.get(ride, '·') }}</button>
       </form>{% endif %}
     </td>
     {% if not pledge_only %}{{ agent_cell(v, agents, agent_cells, agent_choices) }}

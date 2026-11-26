@@ -115,7 +115,7 @@ def test_export_and_import(app):
     assert marks[("A200002", ids["Thalaal"])] == "maybe"
 
     rows = list(csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("﻿"))))
-    assert rows[0][-5:] == ["No-show", "Shoppe", "Rayya", "Jade", "Thalaal"] and "100% confirmed" not in rows[0]
+    assert rows[0][-6:] == ["No-show", "Transport", "Shoppe", "Rayya", "Jade", "Thalaal"] and "100% confirmed" not in rows[0]
     alpha = dict(zip(rows[0], next(r for r in rows[1:] if r[1] == "A200001")))
     assert (alpha["Shoppe"], alpha["Jade"], alpha["Rayya"]) == ("yes", "yes", "")
     ws = load_workbook(io.BytesIO(a.get("/pledges/export.xlsx").data)).active
@@ -531,3 +531,33 @@ def test_connector_filter(app):
     assert len(adm) == 1 and "A200001" in adm[0]                     # who marked, when nothing is typed
     assert all("A200001" not in r and "A200002" not in r for r in rows("cn=none"))
     assert "selected>Ali Moosa</option>" in a.get("/pledges?cn=ali+moosa").get_data(as_text=True)
+
+
+def test_needs_transport_on_the_pledge_sheet(app):
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    token, ids = setup(a)
+    assert "<th class=\"cand ride-col\">Transport</th>" in a.get("/pledges").get_data(as_text=True)
+    go = lambda v: a.post("/pledges/transport", data={"csrf_token": token, "national_id": "A200001", "value": v},
+                          headers={"X-Requested-With": "fetch"})
+    assert go("1").get_json() == {"ok": True, "status": "waiting", "label": "Needs ride"}
+    conn = connect(app.config["DATABASE"])
+    row = conn.execute("SELECT status, source FROM war_transport WHERE national_id = 'A200001'").fetchone()
+    assert tuple(row) == ("waiting", "pledge sheet")                                 # in the War Room queue
+    import csv as _csv
+    rows = list(_csv.reader(io.StringIO(a.get("/pledges/export.csv").get_data(as_text=True).lstrip("﻿"))))
+    assert {r[1]: r[rows[0].index("Transport")] for r in rows[1:]}["A200001"] == "Needs ride"
+    assert go("0").get_json()["status"] == ""                                       # taken back
+    assert conn.execute("SELECT status FROM war_transport WHERE national_id = 'A200001'").fetchone()[0] == "cancelled"
+    go("1")
+    conn.execute("UPDATE war_transport SET status = 'onway' WHERE national_id = 'A200001'")
+    conn.commit()
+    r = go("0")
+    assert r.status_code == 409 and "on the way" in r.get_json()["error"]           # a runner has it: War Room cancels
+    assert ">On the way</span>" in a.get("/pledges").get_data(as_text=True)
+    conn.execute("INSERT INTO war_voted (national_id, at, by_user, tier) VALUES ('A200002', 'x', 1, 'room')")
+    conn.commit()
+    r = a.post("/pledges/transport", data={"csrf_token": token, "national_id": "A200002", "value": "1"},
+               headers={"X-Requested-With": "fetch"})
+    assert r.status_code == 409 and "already voted" in r.get_json()["error"]

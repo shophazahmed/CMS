@@ -1403,3 +1403,10 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
 /* War Room team: several election-day roles per person */
 .war-tier-picks { border: 0; padding: 0; margin: 0 0 .35rem; display: flex; flex-wrap: wrap; gap: .25rem .9rem; }
 .war-tier-picks .check { display: inline-flex; align-items: center; gap: .35rem; font-size: .9rem; margin: 0; white-space: nowrap; }
+
+/* Pledge sheet: Needs transport */
+.pledge-table th.ride-col { background: #b45309; color: #fff; }
+.pledge-table td.ride-col { background: color-mix(in srgb, #b45309 6%, transparent); }
+.pl.pl-ride { background: #b45309; color: #fff; border-color: #b45309; font-weight: 600; }
+.pl.pl-ride.ride-onway { background: #1d4ed8; border-color: #1d4ed8; }
+.pl.pl-ride.ride-done { background: #15803d; border-color: #15803d; }

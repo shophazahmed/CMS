@@ -953,3 +953,28 @@ document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select
     save(form.elements.connector);
   });
 })();
+
+// Pledge sheet: Needs transport, tap to ask for a ride (joins the War Room queue), tap again to take it back.
+document.addEventListener("submit", async (event) => {
+  const form = event.target.closest("[data-ride-form]");
+  if (!form) return;
+  event.preventDefault();
+  const button = form.querySelector("button");
+  button.disabled = true;
+  try {
+    const response = await fetch(form.getAttribute("action"), {
+      method: "POST", body: new FormData(form),
+      headers: { "X-Requested-With": "fetch" }, credentials: "same-origin",
+    });
+    const data = await response.json();
+    if (!data.ok) { toast(data.error || "Couldn't save."); return; }
+    button.className = "pl " + (data.status ? "pl-ride ride-" + data.status : "pl-blank");
+    button.textContent = data.label || "·";
+    form.elements.value.value = data.status ? "0" : "1";
+    toast(data.status ? "Added to the transport queue" : "Transport request taken back");
+  } catch (err) {
+    form.submit();
+  } finally {
+    button.disabled = false;
+  }
+});

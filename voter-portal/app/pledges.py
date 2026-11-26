@@ -182,6 +182,30 @@ def noshow_ids(ids):
     return out
 
 
+RIDES = {"waiting": "Needs ride", "onway": "On the way", "done": "Dropped"}
+
+
+def transport_map(ids):
+    """{national_id: 'waiting' / 'onway' / 'done'}: these voters' place in the War Room transport queue."""
+    out = {}
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        out.update(get_db().execute(
+            f"SELECT national_id, status FROM war_transport WHERE status IN ('waiting', 'onway', 'done')"
+            f" AND national_id IN ({','.join('?' * len(chunk))})", chunk).fetchall())
+    return out
+
+
+def voted_ids(ids):
+    """Of these voters, those the War Room has marked voted."""
+    out = set()
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        out |= {r[0] for r in get_db().execute(
+            f"SELECT national_id FROM war_voted WHERE national_id IN ({','.join('?' * len(chunk))})", chunk)}
+    return out
+
+
 # --- the sheet ----------------------------------------------------------------------------
 
 def _filters():
@@ -450,6 +474,8 @@ def sheet():
                            undecided=undecided_counts(where, params), show_super=can_view_super_pages(),
                            listno=list_numbers([r["national_id"] for r in rows]),
                            **sheet_extras([r["national_id"] for r in rows]),
+                           rides=transport_map([r["national_id"] for r in rows]), ride_labels=RIDES,
+                           voted=voted_ids([r["national_id"] for r in rows]),
                            noshows=db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN"
                                               f" (SELECT national_id FROM voters{where})", params).fetchone()[0],
                            query_args=query_args, first=(page - 1) * size)
@@ -571,6 +597,47 @@ def set_noshow():
     if request.headers.get("X-Requested-With") == "fetch":
         return {"ok": True, "noshow": wanted == "1"}
     return redirect(request.form.get("back") if (request.form.get("back") or "").startswith("/") else url_for("pledges.sheet"))
+
+
+@bp.post("/pledges/transport")
+@pledge_marker_required
+def set_transport():
+    """Needs transport (value=1): the voter joins the War Room transport queue; 0 takes a waiting request back."""
+    from .voters import get_voter_or_404
+    from .warroom import request_transport
+
+    nid = request.form.get("national_id", "")
+    get_voter_or_404(nid)
+    wanted = request.form.get("value", "")
+    if wanted not in ("0", "1"):
+        abort(400)
+    db = get_db()
+    row = db.execute("SELECT status FROM war_transport WHERE national_id = ?", (nid,)).fetchone()
+    now = row["status"] if row else ""
+    error = ""
+    if wanted == "1":
+        if db.execute("SELECT 1 FROM war_voted WHERE national_id = ?", (nid,)).fetchone():
+            error = "This voter has already voted."
+        elif request_transport(nid, "pledge sheet"):
+            now = "waiting"
+    elif now == "waiting":
+        db.execute("UPDATE war_transport SET status = 'cancelled', updated_at = ? WHERE national_id = ?", (now_iso(), nid))
+        now = ""
+    elif now == "onway":
+        error = "A runner is already on the way: the War Room can cancel it on the Transport page."
+    if not error:
+        audit.log("pledge_transport", target=nid, detail={"wanted": wanted, "status": now}, commit=False)
+        db.commit()
+    now = now if now in RIDES else ""
+    if request.headers.get("X-Requested-With") == "fetch":
+        body = {"ok": not error, "status": now, "label": RIDES.get(now, "")}
+        if error:
+            body["error"] = error
+        return body, (409 if error else 200)
+    if error:
+        flash(error, "error")
+    back = request.form.get("back") or ""
+    return redirect(back if back.startswith("/") and not back.startswith("//") else url_for("pledges.sheet"))
 
 
 @bp.post("/pledges/connector")
@@ -699,15 +766,16 @@ def export(fmt):
     connected = connector_or_auto([r["national_id"] for r in rows])
     agent = agents_of([r["national_id"] for r in rows])
     headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "List no.", "Agent",
-                "Connector", "No-show"]
+                "Connector", "No-show", "Transport"]
                + [c["name"] for c in cands])
+    rides = transport_map([r["national_id"] for r in rows])
     table = []
     for n, r in enumerate(rows, 1):
         mine = marks.get(r["national_id"], {})
         table.append([n, r["national_id"], _safe_cell(r["full_name"]), r["sex"], r["age"], _safe_cell(r["house_name"]),
                       _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"]), listno.get(r["national_id"], ""),
                       agent.get(r["national_id"], ""), connected.get(r["national_id"], ""),
-                      "yes" if r["national_id"] in away else ""]
+                      "yes" if r["national_id"] in away else "", RIDES.get(rides.get(r["national_id"]), "")]
                      + [VALUES.get(mine.get(c["id"]), "").lower() for c in cands])
     audit.log("pledges_export", target=fmt, detail={"rows": len(table)})
     name = f"pledge-sheet-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"

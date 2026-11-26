@@ -232,7 +232,7 @@ def pledge_access(user=None):
 # What a "pledge sheet only" account may open: the sheet, the distribution, marking, and what those
 # pages need (photos, colours, fonts, appearance), plus signing in and out and the password.
 PLEDGE_ONLY_ENDPOINTS = {
-    "pledges.sheet", "pledges.distribution", "pledges.set_pledge", "pledges.set_noshow", "pledges.colors_css",
+    "pledges.sheet", "pledges.distribution", "pledges.set_pledge", "pledges.set_noshow", "pledges.set_transport", "pledges.colors_css",
     "voters.photo", "theme.theme_css", "theme.set_appearance", "fonts.stylesheet", "fonts.serve",
     "auth.login", "auth.logout", "auth.change_password", "static",
     # given separately by the owner; the pages check that access themselves
