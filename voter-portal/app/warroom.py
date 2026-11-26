@@ -1120,15 +1120,35 @@ def remove_box(box):
 
 
 def box_overview():
-    """Every box the portal knows: voters (portal's box field), numbered on an official list, voted."""
+    """Every box: voters by the portal's box field, voters on its official list, how many of those have a
+    different box field (they count under the official box everywhere on election day), and voted."""
     db = get_db()
-    listed = dict(db.execute("SELECT box, COUNT(*) FROM war_list GROUP BY box").fetchall())
-    out = []
+    listed = dict(db.execute("SELECT l.box, COUNT(*) FROM war_list l JOIN voters v ON v.national_id = l.national_id"
+                             " WHERE v.deceased = 0 GROUP BY l.box").fetchall())
+    differ = dict(db.execute("SELECT l.box, COUNT(*) FROM war_list l JOIN voters v ON v.national_id = l.national_id"
+                             " WHERE v.deceased = 0 AND v.location != l.box GROUP BY l.box").fetchall())
+    field = {}
     for box, n, voted in db.execute(
             "SELECT location, COUNT(*), SUM(national_id IN (SELECT national_id FROM war_voted)) FROM voters"
-            " WHERE location != '' GROUP BY location ORDER BY location COLLATE NOCASE"):
-        out.append({"box": box, "voters": n, "listed": listed.get(box, 0), "voted": voted or 0})
+            " WHERE location != '' AND deceased = 0 GROUP BY location"):
+        field[box] = (n, voted or 0)
+    out = []
+    for box in sorted(set(field) | set(listed), key=str.casefold):
+        n, voted = field.get(box, (0, 0))
+        out.append({"box": box, "voters": n, "listed": listed.get(box, 0), "differ": differ.get(box, 0), "voted": voted})
     return out
+
+
+def sync_boxes():
+    """Set each voter on an official list to that list's box (the portal's box field), so every page agrees."""
+    db = get_db()
+    rows = db.execute("SELECT v.national_id, v.location, l.box FROM war_list l JOIN voters v ON v.national_id = l.national_id"
+                      " WHERE v.location != l.box").fetchall()
+    db.executemany("UPDATE voters SET location = ?, updated_at = ?, updated_by = ? WHERE national_id = ?",
+                   [(r["box"], now_iso(), g.user["id"], r["national_id"]) for r in rows])
+    audit.log("war_sync_boxes", detail={"voters": len(rows), "changes": [(r[0], r[1], r[2]) for r in rows[:2000]]},
+              commit=False)
+    return len(rows)
 
 
 def clear_votes():
@@ -1160,7 +1180,7 @@ def team():
     if request.method == "POST":
         action = request.form.get("action", "")
         if action in ("open", "close", "times", "public_link", "public_stop", "public_count", "clear_votes",
-                      "remove_box") and not owner:
+                      "remove_box", "sync_boxes") and not owner:
             audit.log("access_denied", target=request.path, detail={"action": action})
             abort(403)
         if action == "set":
@@ -1222,6 +1242,10 @@ def team():
             else:
                 campaign.put_setting("public_board_count", "1" if request.form.get("on") == "1" else "0")
                 flash("Saved.", "success")
+        elif action == "sync_boxes":
+            n = sync_boxes()
+            flash(f"Box set from the official lists for {n} voter{'s' if n != 1 else ''}." if n
+                  else "Every voter on an official list already has that box.", "success")
         elif action == "remove_box":
             box = request.form.get("box", "")
             if not box or request.form.get("confirm", "").strip() != box.strip():

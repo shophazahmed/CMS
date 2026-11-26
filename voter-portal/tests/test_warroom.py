@@ -559,3 +559,20 @@ def test_public_vote_count_page_and_removing_a_box(app):
     assert conn.execute("SELECT COUNT(*) FROM super_votes WHERE national_id = 'A200003'").fetchone()[0] == 0
     assert conn.execute("SELECT COUNT(*) FROM voters").fetchone()[0] == 2                 # Box A untouched
     assert "Box B" not in anyone.get(f"/live/{code}").get_data(as_text=True)
+
+
+def test_match_boxes_to_the_official_lists(app):
+    o, token, ids = setup(app)
+    conn = connect(app.config["DATABASE"])
+    # A200002 is on Box B's official list but its box field still says Box A
+    conn.execute("INSERT INTO war_list (national_id, list_no, box) VALUES ('A200003', 1, 'Box B'), ('A200002', 2, 'Box B')")
+    conn.commit()
+    team = o.get("/war/team").get_data(as_text=True)
+    assert "Box field differs" in team and "Match boxes to the official lists (1)" in team
+    r = o.post("/war/team", data={"csrf_token": token, "action": "sync_boxes"}, follow_redirects=True)
+    assert "official lists for 1 voter" in r.get_data(as_text=True)
+    assert conn.execute("SELECT location FROM voters WHERE national_id = 'A200002'").fetchone()[0] == "Box B"
+    assert "Match boxes to the official lists (1)" not in o.get("/war/team").get_data(as_text=True)
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert b.post("/war/team", data={"csrf_token": csrf(b, "/war/team"), "action": "sync_boxes"}).status_code == 403

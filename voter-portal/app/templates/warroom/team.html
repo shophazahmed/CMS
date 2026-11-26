@@ -147,10 +147,11 @@
     This can't be undone.</p>
   <div class="table-wrap">
   <table class="war-table">
-    <thead><tr><th>Box</th><th>Voters</th><th>On official list</th><th>Voted</th><th></th></tr></thead>
+    <thead><tr><th>Box</th><th>Voters (box field)</th><th>On official list</th><th>Box field differs</th><th>Voted</th><th></th></tr></thead>
     <tbody>
     {% for b in box_list %}
-    <tr><th>{{ b.box }}</th><td>{{ b.voters }}</td><td>{{ b.listed or '—' }}</td><td>{{ b.voted }}</td>
+    <tr><th>{{ b.box }}</th><td>{{ b.voters }}</td><td>{{ b.listed or '—' }}</td>
+      <td>{% if b.differ %}<strong class="war-left">{{ b.differ }}</strong>{% else %}—{% endif %}</td><td>{{ b.voted }}</td>
       <td><details class="danger-box"><summary>Remove…</summary>
         <form method="post" class="form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
           <input type="hidden" name="action" value="remove_box"><input type="hidden" name="box" value="{{ b.box }}">
@@ -159,10 +160,18 @@
             <input name="confirm" autocomplete="off" required></label>
           <button class="danger">Remove box and voters</button>
         </form></details></td></tr>
-    {% else %}<tr><td colspan="5" class="muted">No boxes yet.</td></tr>{% endfor %}
+    {% else %}<tr><td colspan="6" class="muted">No boxes yet.</td></tr>{% endfor %}
     </tbody>
   </table>
   </div>
+  {% set differ = box_list|sum(attribute='differ') %}
+  <p class="muted small-text">On election day (box agents, the War Room and the public page) a box's voters are its
+    official list. Search, the pledge sheets and filters use each voter's box field. "Box field differs" are voters on a
+    box's official list whose box field says something else: they make the counts disagree.</p>
+  <form method="post" {% if differ %}data-confirm="Set the box field of {{ differ }} voter{{ 's' if differ != 1 }} to their official list's box?"{% endif %}>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="{{ 'primary' if differ else '' }}" name="action" value="sync_boxes">Match boxes to the official lists{% if differ %} ({{ differ }}){% endif %}</button>
+  </form>
 </section>
 
 <section class="card form war-danger">
