@@ -1094,6 +1094,18 @@ def _flat(s):
 
 # --- the team (owner) -------------------------------------------------------------------------------
 
+def clear_votes():
+    """Remove every voted mark (after test voting). Each one is logged as an undo, so open box pages and lists
+    update by themselves; nothing else (calls, contact, transport) changes."""
+    db = get_db()
+    ids = [r[0] for r in db.execute("SELECT national_id FROM war_voted")]
+    stamp = now_iso()
+    db.executemany("INSERT INTO war_log (national_id, action, at, by_user, tier, reason) VALUES (?, 'undo', ?, ?, 'owner', ?)",
+                   [(nid, stamp, g.user["id"], "test votes cleared") for nid in ids])
+    db.execute("DELETE FROM war_voted")
+    return len(ids)
+
+
 def _back():
     back = request.form.get("back") or ""
     return back if back.startswith("/") and not back.startswith("//") else url_for("warroom.team")
@@ -1110,7 +1122,7 @@ def team():
     db = get_db()
     if request.method == "POST":
         action = request.form.get("action", "")
-        if action in ("open", "close", "times") and not owner:
+        if action in ("open", "close", "times", "public_link", "public_stop", "public_count", "clear_votes") and not owner:
             audit.log("access_denied", target=request.path, detail={"action": action})
             abort(403)
         if action == "set":
@@ -1160,6 +1172,30 @@ def team():
                                    " (SELECT national_id FROM war_voted)", (b, a)).rowcount
                 audit.log("war_move", detail={"from": a, "to": b, "n": moved}, commit=False)
                 flash(f"Moved {moved} call{'s' if moved != 1 else ''}.", "success")
+        elif action in ("public_link", "public_stop", "public_count"):
+            from . import publicboard
+
+            if action == "public_link":
+                publicboard.make_token()
+                flash("Public results link ready: copy it below. Any older link stops working.", "success")
+            elif action == "public_stop":
+                publicboard.stop()
+                flash("Public results link stopped: it doesn't open any more.", "success")
+            else:
+                campaign.put_setting("public_board_count", "1" if request.form.get("on") == "1" else "0")
+                flash("Saved.", "success")
+        elif action == "clear_votes":
+            if request.form.get("confirm", "").strip().upper() != "CLEAR":
+                flash("Type CLEAR to confirm.", "error")
+            else:
+                n = clear_votes()
+                msg = f"Test votes cleared: {n} voted mark{'s' if n != 1 else ''} removed."
+                if request.form.get("count") == "1":
+                    tallies = db.execute("DELETE FROM count_tally").rowcount
+                    sheets = db.execute("DELETE FROM count_box").rowcount
+                    msg += f" Vote count cleared ({tallies} ballot taps, {sheets} box sheet{'s' if sheets != 1 else ''})."
+                audit.log("war_clear_votes", detail={"voted": n, "count": request.form.get("count") == "1"}, commit=False)
+                flash(msg, "success")
         elif action == "transport_from_visits":
             n = transport_from_visits()
             flash(f"{n} supporter{'s' if n != 1 else ''} from houses flagged 'needs transport' added to the transport queue.",
@@ -1204,7 +1240,11 @@ def team():
                            ours=pledges.our_candidate(), owner_id=next((u["id"] for u in users if is_owner(u)), None),
                            can_edit=True, can_own=owner, can_watch=can_watch(), links=links, link_days=LINK_DAYS,
                            link_url=lambda r: url_for("warroom.link_open", token=r["token"], _external=True),
-                           contact=CONTACT, local=_local_day, ftiers=field_tiers, stiers=stored_tiers)
+                           contact=CONTACT, local=_local_day, ftiers=field_tiers, stiers=stored_tiers,
+                           public_token=campaign.get_setting("public_board_token") or "",
+                           public_count=campaign.get_setting("public_board_count", "1") == "1",
+                           voted_n=db.execute("SELECT COUNT(*) FROM war_voted").fetchone()[0],
+                           count_n=db.execute("SELECT COUNT(*) FROM count_tally").fetchone()[0])
 
 
 def allocate():

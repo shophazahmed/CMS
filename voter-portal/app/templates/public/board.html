@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="refresh" content="30">
+  <meta name="robots" content="noindex, nofollow">
+  <title>{{ title }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body class="public-board">
+<main class="pb">
+  <header class="pb-head">
+    <h1>{{ title }}</h1>
+    <p class="muted">Updated {{ now }} · refreshes every 30 seconds</p>
+  </header>
+
+  <section class="pb-kpis" aria-label="Turnout">
+    <div class="pb-kpi"><span>Voters</span><strong>{{ overall.registered }}</strong></div>
+    <div class="pb-kpi"><span>Voted</span><strong>{{ overall.voted }}</strong></div>
+    <div class="pb-kpi pb-kpi-main"><span>Turnout</span><strong>{{ overall.pct }}%</strong></div>
+  </section>
+
+  <section class="pb-card">
+    <h2>Turnout by box</h2>
+    <div class="pb-scroll">
+    <table class="pb-table">
+      <thead><tr><th>Box</th><th class="num">Voters</th><th class="num">Voted</th><th class="num">Turnout</th></tr></thead>
+      <tbody>
+      {% for r in rows %}
+      <tr><th>{{ r.box }}</th><td class="num">{{ r.registered }}</td><td class="num">{{ r.voted }}</td>
+        <td class="num"><span class="pb-bar"><span class="pb-bar-fill w{{ (r.pct // 5 * 5)|int }}"></span></span> {{ r.pct }}%</td></tr>
+      {% else %}<tr><td colspan="4" class="muted">No boxes yet.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+    </div>
+  </section>
+
+  {% if c %}
+  <section class="pb-card">
+    <h2>Vote count</h2>
+    {% if not c.started %}
+    <p class="muted">The count hasn't started yet.</p>
+    {% else %}
+    <p class="muted small-text">{{ c.final_boxes }} of {{ c.total_boxes }} box{{ 'es' if c.total_boxes != 1 }} final (official sheet).
+      Other boxes show the count so far.</p>
+    <ol class="pb-places">
+      {% for p in c.places %}
+      <li><span class="pb-place">{{ p.place }}</span><span class="pb-name">{% if p.ballot_no %}#{{ p.ballot_no }} {% endif %}{{ p.name }}</span>
+        <strong>{{ p.votes }}</strong></li>
+      {% endfor %}
+    </ol>
+    <p class="muted small-text">Ballots counted {{ c.ballots }} · invalid or blank {{ c.invalid }}</p>
+    <div class="pb-scroll">
+    <table class="pb-table">
+      <thead><tr><th>Box</th><th>Status</th>{% for x in c.cands %}<th class="num">{% if x.ballot_no %}#{{ x.ballot_no }} {% endif %}{{ x.name }}</th>{% endfor %}
+        <th class="num">Invalid</th><th class="num">Ballots</th></tr></thead>
+      <tbody>
+      {% for b in c.boxes %}
+      <tr><th>{{ b.box }}</th><td class="small-text">{{ {'final': 'Final', 'counting': 'Counting', 'not started': 'Not started'}[b.status] }}</td>
+        {% for x in c.cands %}<td class="num">{{ b.votes.get(x.id, 0) if b.status != 'not started' else '' }}</td>{% endfor %}
+        <td class="num">{{ b.invalid if b.status != 'not started' else '' }}</td><td class="num">{{ b.ballots if b.status != 'not started' else '' }}</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    </div>
+    {% endif %}
+  </section>
+  {% endif %}
+  <p class="muted small-text pb-foot">Turnout is counted from the boxes as voters cast their votes.</p>
+</main>
+</body>
+</html>

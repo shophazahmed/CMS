@@ -495,3 +495,37 @@ def test_box_list_follows_the_official_list(app):
     assert "Box B" in o.get("/war/box?box=Box+B").get_data(as_text=True)
     dash = o.get("/war").get_data(as_text=True)
     assert "Not on an official list" in dash                               # left-out voters counted apart
+
+
+def test_public_results_page_and_clearing_test_votes(app):
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    tok = csrf(t1, "/war/box")
+    t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "1"})
+    conn = connect(app.config["DATABASE"])
+    # only the owner makes the link
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert b.post("/war/team", data={"csrf_token": csrf(b, "/war/team"), "action": "public_link"}).status_code == 403
+    o.post("/war/team", data={"csrf_token": token, "action": "public_link"})
+    code = conn.execute("SELECT value FROM settings WHERE key = 'public_board_token'").fetchone()[0]
+    anyone = app.test_client()                                                   # not signed in
+    page = anyone.get(f"/live/{code}").get_data(as_text=True)
+    assert "Turnout by box" in page and "Box A" in page and "Vote count" in page
+    for secret in ("A200001", "Aminath", "Moosa", "Solid base", "Super voter", "boxagent", "pledge"):
+        assert secret not in page, secret                                       # totals only
+    assert anyone.get("/live/wrong-code").status_code == 404
+    o.post("/war/team", data={"csrf_token": token, "action": "public_count", "on": "0"})
+    assert "Vote count" not in anyone.get(f"/live/{code}").get_data(as_text=True)
+    o.post("/war/team", data={"csrf_token": token, "action": "public_stop"})
+    assert anyone.get(f"/live/{code}").status_code == 404
+    # clearing test votes: owner only, typed confirmation; logged as undos so open pages update
+    cursor = t1.get("/war/changes?since=0").json["cursor"]
+    r = o.post("/war/team", data={"csrf_token": token, "action": "clear_votes", "confirm": "nope"}, follow_redirects=True)
+    assert "Type CLEAR" in r.get_data(as_text=True)
+    assert conn.execute("SELECT COUNT(*) FROM war_voted").fetchone()[0] == 1
+    r = o.post("/war/team", data={"csrf_token": token, "action": "clear_votes", "confirm": "clear"}, follow_redirects=True)
+    assert "1 voted mark removed" in r.get_data(as_text=True)
+    assert conn.execute("SELECT COUNT(*) FROM war_voted").fetchone()[0] == 0
+    assert t1.get(f"/war/changes?since={cursor}").json["undone"] == ["A200001"]

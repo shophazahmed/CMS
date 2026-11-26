@@ -110,6 +110,46 @@
 
 {% if can_own %}
 <section class="card form">
+  <h2>{{ icon('chart', 18) }} Public results page</h2>
+  <p class="muted small-text">A link anyone can open without signing in. It shows only totals: voters and turnout for all
+    boxes and each box, and the vote count per candidate and box. No names, ID numbers, pledges, supporters, agents or
+    projections. Stop or replace the link any time.</p>
+  {% if public_token %}
+  {% set purl = url_for('publicboard.board', code=public_token, _external=True) %}
+  <input readonly value="{{ purl }}" aria-label="Public results link" data-select-all>
+  <div class="war-link-row">
+    <a class="button small" href="{{ purl }}" target="_blank" rel="noopener">Open</a>
+    <a class="button small" href="https://wa.me/?text={{ ('Live results: ' ~ purl)|urlencode }}" target="_blank" rel="noopener">WhatsApp</a>
+    <form method="post" class="inline" data-confirm="Make a new link? The current one stops working."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="small" name="action" value="public_link">New link</button></form>
+    <form method="post" class="inline" data-confirm="Stop the public link? It stops working at once."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button class="small danger" name="action" value="public_stop">Stop link</button></form>
+  </div>
+  <form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="public_count">
+    <label>Vote count on the page
+      <select name="on" data-autosubmit><option value="1" {{ 'selected' if public_count }}>Show</option>
+        <option value="0" {{ 'selected' if not public_count }}>Hide (turnout only)</option></select></label>
+    <noscript><button class="small">Save</button></noscript></form>
+  {% else %}
+  <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="primary" name="action" value="public_link">Make public link</button></form>
+  {% endif %}
+</section>
+
+<section class="card form war-danger">
+  <h2>Clear test votes</h2>
+  <p class="muted small-text">After a test run: removes every voted mark ({{ voted_n }} now). Calls, contact statuses and
+    transport stay. Open box pages update by themselves.</p>
+  <form method="post" data-confirm="Clear all {{ voted_n }} voted marks?"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="action" value="clear_votes">
+    <label class="check small-text"><input type="checkbox" name="count" value="1"> Also clear the vote count ({{ count_n }} ballot taps and the box result sheets)</label>
+    <label>Type <strong>CLEAR</strong> to confirm <input name="confirm" autocomplete="off" required></label>
+    <button class="danger">Clear test votes</button>
+  </form>
+</section>
+
+<section class="card form">
   <h2>Allocation sheets</h2>
   <p class="muted small-text">The paper backup for each agent: tier 1 their box's list by number, tier 2 their supporters, tier 3
     their call list. Each page carries the agent's name. Make the call lists first.</p>
