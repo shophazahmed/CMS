@@ -73,18 +73,20 @@ def count():
 
 
 @bp.route("/live/<code>")
-def board(code):
-    want = token()
-    if not want or not hmac.compare_digest(code.encode(), want.encode()):
-        return render_template("public/closed.html"), 404
-    rows, overall = turnout()
+@bp.route("/live/<code>/count", endpoint="count_page", defaults={"view": "count"})
+def board(code, view="turnout"):
     from datetime import timedelta
 
-    now = (datetime.now(timezone.utc) + timedelta(hours=LOCAL_OFFSET_H)).strftime("%-d %b %Y, %H:%M")
-    resp = render_template("public/board.html", rows=rows, overall=overall, c=count() if show_count() else None,
-                           now=now, title=campaign.get_setting("public_board_title") or "Election results")
     from flask import make_response
 
+    want = token()
+    if not want or not hmac.compare_digest(code.encode(), want.encode()) or (view == "count" and not show_count()):
+        return render_template("public/closed.html"), 404
+    rows, overall = turnout()
+    now = (datetime.now(timezone.utc) + timedelta(hours=LOCAL_OFFSET_H)).strftime("%-d %b %Y, %H:%M")
+    resp = render_template("public/board.html", rows=rows, overall=overall, view=view, code=code,
+                           c=count() if show_count() and view == "count" else None, has_count=show_count(),
+                           now=now, title=campaign.get_setting("public_board_title") or "Election results")
     out = make_response(resp)
     out.headers["Cache-Control"] = "no-store"
     out.headers["Referrer-Policy"] = "no-referrer"

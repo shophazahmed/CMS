@@ -1519,3 +1519,7 @@ body.public-board { background: var(--bg, #f4f6f7); margin: 0; }
 .pb-table th, .pb-table td { white-space: normal; }
 .pb-table td.num { white-space: nowrap; }
 @media (max-width: 520px) { .pb-bar { display: none; } .pb-table th, .pb-table td { padding: .4rem .35rem; font-size: .9rem; } }
+.pb-tabs { display: flex; gap: .4rem; margin: .8rem 0 0; }
+.pb-tabs a { padding: .5rem 1rem; border-radius: 999px; border: 1px solid var(--border, #dde3e6); background: var(--surface, #fff);
+  text-decoration: none; color: inherit; font-weight: 600; }
+.pb-tabs a[aria-current=page] { background: var(--accent, #0f766e); border-color: var(--accent, #0f766e); color: #fff; }

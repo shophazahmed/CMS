@@ -1094,6 +1094,43 @@ def _flat(s):
 
 # --- the team (owner) -------------------------------------------------------------------------------
 
+KEEP_HISTORY = {"war_log", "pledge_log", "audit_log", "audit"}  # logs keep what happened, even for removed voters
+
+
+def remove_box(box):
+    """Delete every voter the portal has at this box (by the portal's box field), with their rows in every table
+    keyed by voter (pledges, super votes, assignments, War Room marks, ...). Logs are kept."""
+    db = get_db()
+    ids = [r[0] for r in db.execute("SELECT national_id FROM voters WHERE location = ?", (box,))]
+    if not ids:
+        return 0
+    tables = [r[0] for r in db.execute("SELECT name FROM sqlite_master WHERE type = 'table' AND name != 'voters'")]
+    keyed = [t for t in tables if t not in KEEP_HISTORY and not t.startswith("sqlite_")
+             and "national_id" in {c[1] for c in db.execute(f'PRAGMA table_info("{t}")')}]
+    for i in range(0, len(ids), 500):
+        chunk = ids[i:i + 500]
+        marks = ",".join("?" * len(chunk))
+        for t in keyed:
+            db.execute(f'DELETE FROM "{t}" WHERE national_id IN ({marks})', chunk)
+        db.execute(f"DELETE FROM voters WHERE national_id IN ({marks})", chunk)
+    db.execute("DELETE FROM war_list WHERE box = ?", (box,))
+    db.execute("DELETE FROM count_box WHERE box = ?", (box,))
+    audit.log("war_remove_box", target=box, detail={"voters": len(ids), "ids": ids[:2000]}, commit=False)
+    return len(ids)
+
+
+def box_overview():
+    """Every box the portal knows: voters (portal's box field), numbered on an official list, voted."""
+    db = get_db()
+    listed = dict(db.execute("SELECT box, COUNT(*) FROM war_list GROUP BY box").fetchall())
+    out = []
+    for box, n, voted in db.execute(
+            "SELECT location, COUNT(*), SUM(national_id IN (SELECT national_id FROM war_voted)) FROM voters"
+            " WHERE location != '' GROUP BY location ORDER BY location COLLATE NOCASE"):
+        out.append({"box": box, "voters": n, "listed": listed.get(box, 0), "voted": voted or 0})
+    return out
+
+
 def clear_votes():
     """Remove every voted mark (after test voting). Each one is logged as an undo, so open box pages and lists
     update by themselves; nothing else (calls, contact, transport) changes."""
@@ -1122,7 +1159,8 @@ def team():
     db = get_db()
     if request.method == "POST":
         action = request.form.get("action", "")
-        if action in ("open", "close", "times", "public_link", "public_stop", "public_count", "clear_votes") and not owner:
+        if action in ("open", "close", "times", "public_link", "public_stop", "public_count", "clear_votes",
+                      "remove_box") and not owner:
             audit.log("access_denied", target=request.path, detail={"action": action})
             abort(403)
         if action == "set":
@@ -1184,6 +1222,13 @@ def team():
             else:
                 campaign.put_setting("public_board_count", "1" if request.form.get("on") == "1" else "0")
                 flash("Saved.", "success")
+        elif action == "remove_box":
+            box = request.form.get("box", "")
+            if not box or request.form.get("confirm", "").strip() != box.strip():
+                flash("Type the box name exactly to confirm.", "error")
+            else:
+                n = remove_box(box)
+                flash(f"Removed {box}: {n} voter{'s' if n != 1 else ''} and their records deleted.", "success")
         elif action == "clear_votes":
             if request.form.get("confirm", "").strip().upper() != "CLEAR":
                 flash("Type CLEAR to confirm.", "error")
@@ -1244,7 +1289,8 @@ def team():
                            public_token=campaign.get_setting("public_board_token") or "",
                            public_count=campaign.get_setting("public_board_count", "1") == "1",
                            voted_n=db.execute("SELECT COUNT(*) FROM war_voted").fetchone()[0],
-                           count_n=db.execute("SELECT COUNT(*) FROM count_tally").fetchone()[0])
+                           count_n=db.execute("SELECT COUNT(*) FROM count_tally").fetchone()[0],
+                           box_list=box_overview() if owner else [])
 
 
 def allocate():

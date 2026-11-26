@@ -529,3 +529,33 @@ def test_public_results_page_and_clearing_test_votes(app):
     assert "1 voted mark removed" in r.get_data(as_text=True)
     assert conn.execute("SELECT COUNT(*) FROM war_voted").fetchone()[0] == 0
     assert t1.get(f"/war/changes?since={cursor}").json["undone"] == ["A200001"]
+
+
+def test_public_vote_count_page_and_removing_a_box(app):
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "public_link"})
+    conn = connect(app.config["DATABASE"])
+    code = conn.execute("SELECT value FROM settings WHERE key = 'public_board_token'").fetchone()[0]
+    anyone = app.test_client()
+    count = anyone.get(f"/live/{code}/count").get_data(as_text=True)
+    assert "Vote count" in count and "Turnout by box" not in count and f"/live/{code}" in count
+    assert f"/live/{code}/count" in anyone.get(f"/live/{code}").get_data(as_text=True)
+    assert f"/live/{code}/count" in o.get("/war/team").get_data(as_text=True)          # the owner can send it
+    o.post("/war/team", data={"csrf_token": token, "action": "public_count", "on": "0"})
+    assert anyone.get(f"/live/{code}/count").status_code == 404
+    # remove an old box (Box B has A200003, a super voter): owner only, typed name
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    assert b.post("/war/team", data={"csrf_token": csrf(b, "/war/team"), "action": "remove_box", "box": "Box B",
+                                     "confirm": "Box B"}).status_code == 403
+    r = o.post("/war/team", data={"csrf_token": token, "action": "remove_box", "box": "Box B", "confirm": "box b"},
+               follow_redirects=True)
+    assert "Type the box name" in r.get_data(as_text=True)
+    assert "Box B" in o.get("/war/team").get_data(as_text=True)
+    r = o.post("/war/team", data={"csrf_token": token, "action": "remove_box", "box": "Box B", "confirm": "Box B"},
+               follow_redirects=True)
+    assert "Removed Box B: 1 voter" in r.get_data(as_text=True)
+    assert conn.execute("SELECT COUNT(*) FROM voters WHERE national_id = 'A200003'").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM super_votes WHERE national_id = 'A200003'").fetchone()[0] == 0
+    assert conn.execute("SELECT COUNT(*) FROM voters").fetchone()[0] == 2                 # Box A untouched
+    assert "Box B" not in anyone.get(f"/live/{code}").get_data(as_text=True)

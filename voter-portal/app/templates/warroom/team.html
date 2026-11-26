@@ -119,6 +119,9 @@
   <input readonly value="{{ purl }}" aria-label="Public results link" data-select-all>
   <div class="war-link-row">
     <a class="button small" href="{{ purl }}" target="_blank" rel="noopener">Open</a>
+    {% if public_count %}{% set curl = url_for('publicboard.count_page', code=public_token, _external=True) %}
+    <a class="button small" href="{{ curl }}" target="_blank" rel="noopener">Open vote count</a>
+    <a class="button small" href="https://wa.me/?text={{ ('Live vote count: ' ~ curl)|urlencode }}" target="_blank" rel="noopener">WhatsApp vote count</a>{% endif %}
     <a class="button small" href="https://wa.me/?text={{ ('Live results: ' ~ purl)|urlencode }}" target="_blank" rel="noopener">WhatsApp</a>
     <form method="post" class="inline" data-confirm="Make a new link? The current one stops working."><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <button class="small" name="action" value="public_link">New link</button></form>
@@ -135,6 +138,31 @@
   <form method="post"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button class="primary" name="action" value="public_link">Make public link</button></form>
   {% endif %}
+</section>
+
+<section class="card form war-danger">
+  <h2>Boxes</h2>
+  <p class="muted small-text">Every box the portal has voters at. Remove an old box you don't use: its voters are deleted
+    from the portal with their pledges, super votes, assignments and War Room records (the activity log keeps a record).
+    This can't be undone.</p>
+  <div class="table-wrap">
+  <table class="war-table">
+    <thead><tr><th>Box</th><th>Voters</th><th>On official list</th><th>Voted</th><th></th></tr></thead>
+    <tbody>
+    {% for b in box_list %}
+    <tr><th>{{ b.box }}</th><td>{{ b.voters }}</td><td>{{ b.listed or '—' }}</td><td>{{ b.voted }}</td>
+      <td><details class="danger-box"><summary>Remove…</summary>
+        <form method="post" class="form"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <input type="hidden" name="action" value="remove_box"><input type="hidden" name="box" value="{{ b.box }}">
+          {% if b.listed %}<p class="flash flash-error small-text">This box has an official list ({{ b.listed }} numbered voters).</p>{% endif %}
+          <label>Type <strong>{{ b.box }}</strong> to delete its {{ b.voters }} voter{{ 's' if b.voters != 1 }}
+            <input name="confirm" autocomplete="off" required></label>
+          <button class="danger">Remove box and voters</button>
+        </form></details></td></tr>
+    {% else %}<tr><td colspan="5" class="muted">No boxes yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
 </section>
 
 <section class="card form war-danger">

@@ -14,7 +14,14 @@
     <h1>{{ title }}</h1>
     <p class="muted">Updated {{ now }} · refreshes every 30 seconds</p>
   </header>
+  {% if has_count %}
+  <nav class="pb-tabs" aria-label="Show">
+    <a href="{{ url_for('publicboard.board', code=code) }}" {{ 'aria-current=page' if view == 'turnout' }}>Turnout</a>
+    <a href="{{ url_for('publicboard.count_page', code=code) }}" {{ 'aria-current=page' if view == 'count' }}>Vote count</a>
+  </nav>
+  {% endif %}
 
+  {% if view == 'turnout' %}
   <section class="pb-kpis" aria-label="Turnout">
     <div class="pb-kpi"><span>Voters</span><strong>{{ overall.registered }}</strong></div>
     <div class="pb-kpi"><span>Voted</span><strong>{{ overall.voted }}</strong></div>
@@ -35,6 +42,8 @@
     </table>
     </div>
   </section>
+
+  {% endif %}
 
   {% if c %}
   <section class="pb-card">
