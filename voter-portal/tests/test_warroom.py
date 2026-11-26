@@ -381,3 +381,26 @@ def test_one_agent_several_tiers_and_the_war_room(app):
     a.get(f"/w/{link}")
     assert a.get("/war/field").status_code == 200
     assert a.get("/war").status_code == 302 and a.get("/war/team").status_code in (302, 403)
+
+
+def test_team_and_users_pages_forms_are_closed(app):
+    """Every form closes before the next one opens: a missing </form> makes one row's Save send the rows below."""
+    import re as _re
+
+    from tests.test_canvass import add_agent
+
+    o, token, ids = setup(app)
+    add_agent(app, "ali")
+    _, uid = make(app, o, token, "runner", "t2")
+    o.post("/war/team", data={"csrf_token": token, "action": "link", "user_id": uid, "days": "7"})
+    for path in ("/war/team", "/admin/users"):
+        page = o.get(path).get_data(as_text=True)
+        depth = 0
+        for tag in _re.findall(r"<(/?)form\b", page):
+            depth += -1 if tag else 1
+            assert depth in (0, 1), path                                # never a form inside a form
+        assert depth == 0, path
+    # making a link from the team page makes a link (it used to re-save the tiers)
+    o.post("/war/team", data={"csrf_token": token, "action": "link", "user_id": uid, "days": "3"})
+    conn = connect(app.config["DATABASE"])
+    assert conn.execute("SELECT COUNT(*) FROM war_links WHERE user_id = ?", (uid,)).fetchone()[0] == 2

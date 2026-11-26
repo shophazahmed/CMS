@@ -52,6 +52,7 @@
             <option value="">Box (tier 1) —</option>{% for b in boxes %}<option {{ 'selected' if u.war_box == b }}>{{ b }}</option>{% endfor %}
           </select>{% endif %}
           <button class="small">Save</button>
+        </form>
       </td>
       <td class="small-text">
         {% if ftiers(u) and u.role != 'admin' %}
