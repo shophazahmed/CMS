@@ -1,0 +1,166 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Our supporters{% endblock %}
+{% block main_class %}page wide{% endblock %}
+{% macro bar(n, of) -%}
+<svg class="dbar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+  <rect class="dbar-track" x="0" y="0" width="100" height="8"/>
+  {% if of %}<rect class="dbar-fill" x="0" y="0" width="{{ (100 * n / of)|round(2) }}" height="8"/>{% endif %}
+</svg>
+{%- endmacro %}
+{% block content %}
+<div class="war-page" data-war-poll data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes', stats=1, ag=ag or None) }}" data-mode="stats">
+<div class="page-head war-head">
+  <div>
+    <p class="war-eyebrow">War Room · Election day</p>
+    <h1>Our supporters{% if ag_name %} · {{ ag_name }}{% endif %}</h1>
+    <p class="muted">Super voters, solid base, shared supporters and leaning · <span data-k="now">{{ s.now }}</span>
+      {% if s.left %}· <strong class="war-left"><span data-k="left">{{ s.left }}</span></strong>{% endif %}</p>
+  </div>
+  {% include "warroom/_sync.html" %}
+</div>
+{% with view = 'supporters', alerts = s.alerts %}{% include "warroom/_viewtabs.html" %}{% endwith %}
+<form class="war-agent-filter" method="get">
+  <label>Agent
+    <select name="ag" data-autosubmit>
+      <option value="">Everyone</option>
+      <option value="none" {{ 'selected' if ag == 'none' }}>No agent</option>
+      {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if ag == a.id|string }}>{{ a.username }}</option>{% endfor %}
+    </select>
+  </label>
+  {% if ag %}<a class="small-text" href="{{ url_for('warroom.supporters') }}">Show everyone</a>{% endif %}
+  <noscript><button class="small">Show</button></noscript>
+</form>
+{% if not s.ours %}<p class="flash flash-error">Choose our candidate (Pledges → Candidates &amp; import) so the War Room knows who our supporters are.</p>{% endif %}
+<p class="list-links war-links">
+  <a class="button small" href="{{ url_for('warroom.field') }}">Field runners</a>
+  <a class="button small" href="{{ url_for('warroom.calls') }}">Call lists</a>
+  <a class="button small" href="{{ url_for('warroom.transport') }}">Transport</a>
+</p>
+
+{% set reached = s.sup_pending - s.contact.get('', 0) %}
+<section class="war-tiles" aria-label="Key figures">
+  <div class="war-tile"><span>Our supporters</span><strong data-k="sup_total">{{ s.sup_total }}</strong><small>super, solid, shared, leaning</small></div>
+  <div class="war-tile"><span>Voted</span><strong data-k="sup_voted">{{ s.sup_voted }}</strong><small>of our supporters</small></div>
+  <div class="war-tile warn"><span>Still to vote</span><strong data-k="sup_pending">{{ s.sup_pending }}</strong><small>{{ s.contact.get('transport', 0) }} need a ride</small></div>
+  <div class="war-tile good"><span>Supporters voted</span><strong><span data-k="sup_pct">{{ s.sup_pct }}</span>%</strong>
+    <small>all voters {{ e.pct }}% ({{ '%+.1f'|format(s.sup_pct - e.pct) }} pts)</small></div>
+  <div class="war-tile warn"><span>Still to vote %</span><strong>{{ ((100 * s.sup_pending / s.sup_total)|round(1)) if s.sup_total else 0 }}%</strong><small>of our supporters</small></div>
+  <div class="war-tile"><span>Reached</span><strong>{{ reached }}</strong><small>of those still to vote, by runners or callers</small></div>
+</section>
+
+<div class="war-grid">
+<section class="card">
+  <h2>By group, best first</h2>
+  <table class="overlap war-table">
+    <thead><tr><th></th><th class="num">Voted</th><th class="num">Still to vote</th><th></th></tr></thead>
+    <tbody>
+    {% for k, label in priority.items() %}{% set gg = s.groups[k] %}
+    <tr><th>{% if 'voters' in war_views %}<a href="{{ url_for('warroom.voters', grp=k) }}">{{ label }}</a>{% else %}{{ label }}{% endif %}</th><td class="num" data-k="g{{ k }}v">{{ gg.voted }}</td>
+      <td class="num"><strong data-k="g{{ k }}p">{{ gg.total - gg.voted }}</strong></td><td class="war-bar">{{ bar(gg.voted, gg.total) }}</td></tr>
+    {% endfor %}
+    </tbody>
+  </table>
+</section>
+
+{% set pj = s.projection %}
+{% if pj %}
+<section class="card war-projection">
+  <h2>Seats: live projection</h2>
+  {% for key, title, note in (('now', 'So far', 'from the pledges of the voters marked voted'), ('final', 'If every pledged voter votes', 'super voters as marked; no-shows out')) %}
+  {% set p = pj[key] %}
+  <h3>{{ title }}</h3>
+  {% if p.verdict %}<p class="scen-verdict {{ 'win' if p.verdict.wins else 'lose' }}">{% if p.verdict.wins %}Wins · {{ p.verdict.margin }} ahead of {{ p.verdict.vs }}{% else %}Loses · needs {{ p.verdict.margin }} more to pass {{ p.verdict.vs }}{% endif %}</p>{% endif %}
+  <ul class="dist-list">
+    {% for r in p.result %}
+    <li class="cand-{{ r.c.id }} {{ 'win' if r.wins }}"><span class="dist-name">{{ r.place }}. {{ pj.label(r.c) }}{% if r.c.id == pj.ours %} <span class="tag ours-tag">ours</span>{% endif %}</span>
+      {{ bar(r.votes, p.top) }}<span class="dist-num"><strong>{{ r.votes }}</strong></span></li>
+    {% if loop.index == pj.seats and not loop.last %}<li class="cut-line" aria-hidden="true"><span>winning line</span></li>{% endif %}
+    {% endfor %}
+  </ul>
+  <p class="muted small-text">{{ note }}.</p>
+  {% endfor %}
+</section>
+{% endif %}
+</div>
+
+<section class="card">
+  <div class="list-head"><h2>By box</h2><span class="muted small-text">Red when our supporters are 10 points or more behind the box's turnout</span></div>
+  <div class="table-wrap">
+  <table class="war-table war-boxes">
+    <thead><tr><th>Box</th><th class="num">Our supporters</th><th class="num">Voted</th><th class="num">Still to vote</th><th class="num">Ours voted</th><th class="num">Box turnout</th><th>Gap</th></tr></thead>
+    <tbody>
+    {% for b in s.boxes if b.box and b.sup and b.box != off_label %}
+    {% set ours = (100 * b.sup_voted / b.sup)|round|int %}{% set all = ((100 * b.voted / b.total)|round|int) if b.total else 0 %}{% set gap = ours - all %}
+    <tr><th>{% if 'voters' in war_views %}<a href="{{ url_for('warroom.voters', box=b.box) }}">{{ b.box }}</a>{% else %}{{ b.box }}{% endif %}</th><td class="num">{{ b.sup }}</td><td class="num">{{ b.sup_voted }}</td>
+      <td class="num"><strong>{{ b.sup - b.sup_voted }}</strong></td><td class="num">{{ ours }}%</td><td class="num">{{ all }}%</td>
+      <td><span class="war-chip {{ 'gap-bad' if gap <= -10 else 'gap-warn' if gap < 0 else 'gap-good' }}">{{ '%+d'|format(gap) }} pts</span></td></tr>
+    {% else %}<tr><td colspan="7" class="muted">No supporters at any box yet.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<section class="card">
+  <div class="list-head"><h2>Field runners (tier 2)</h2><span class="muted small-text">Their supporters, and what those still to vote said</span></div>
+  <div class="table-wrap">
+  <table class="war-table">
+    <thead><tr><th>Runner</th><th class="num">Supporters</th><th class="num">Voted</th><th class="num">Still to vote</th><th class="num">Coming</th>
+      <th class="num">Needs ride</th><th class="num">Call later / no answer</th><th class="num">Not reached</th><th>Last activity</th></tr></thead>
+    <tbody>
+    {% for r in runners %}
+    <tr class="{{ 'war-stale' if r.stale }}"><th>{% if 'voters' in war_views %}<a href="{{ url_for('warroom.voters', ag=r.id or 'none') }}">{{ r.name }}</a>{% else %}{{ r.name }}{% endif %}</th>
+      <td class="num">{{ r.sup }}</td><td class="num">{{ r.voted }}</td><td class="num"><strong>{{ r.left }}</strong></td>
+      <td class="num">{{ r.coming }}</td><td class="num">{{ r.ride }}</td><td class="num">{{ r.later }}</td><td class="num">{{ r.none }}</td>
+      <td class="small-text">{{ r.last }}{% if r.stale %} <span class="tag vo-flag">idle</span>{% endif %}</td></tr>
+    {% else %}<tr><td colspan="9" class="muted">No field runners yet (War Room team → Tier 2).</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<div class="war-grid">
+<section class="card">
+  <h2>Call centre (tier 3)</h2>
+  <p class="muted small-text">{{ s.called }} supporters on call lists. Latest outcome for those who haven't voted:</p>
+  <ul class="war-oc-list">
+    {% for k, label in outcomes.items() %}<li class="oc-{{ k }}"><span>{{ label }}</span><strong data-k="o_{{ k }}">{{ s.outcomes.get(k, 0) }}</strong></li>{% endfor %}
+  </ul>
+</section>
+<section class="card">
+  <h2>Reached before the vote</h2>
+  <ul class="war-oc-list war-contact-list">
+    <li class="cs-none"><span>Not reached yet</span><strong data-k="c_none">{{ s.contact.get('', 0) }}</strong></li>
+    {% for k, label in contact.items() %}<li class="cs-{{ k }}"><span>{{ label }}</span><strong data-k="c_{{ k }}">{{ s.contact.get(k, 0) }}</strong></li>{% endfor %}
+  </ul>
+</section>
+<section class="card">
+  <h2>Transport</h2>
+  <div class="war-team-tiles">
+    <div><span>Waiting</span><strong data-k="t_waiting">{{ s.transport.waiting }}</strong><small>{% if s.transport.oldest %}oldest {{ s.transport.oldest }} min{% endif %}</small></div>
+    <div><span>On the way</span><strong data-k="t_onway">{{ s.transport.onway }}</strong></div>
+    <div><span>Dropped</span><strong data-k="t_done">{{ s.transport.done }}</strong></div>
+  </div>
+  <a class="small-text" href="{{ url_for('warroom.transport') }}">Open the transport queue</a>
+</section>
+</div>
+
+<section class="card">
+  <div class="list-head"><h2>Still to vote: who to chase next</h2>
+    {% if 'voters' in war_views %}<a class="button small" href="{{ url_for('warroom.voters', ag=ag or None) }}">Full list with agents</a>{% endif %}</div>
+  <div class="table-wrap">
+  <table class="war-table">
+    <thead><tr><th class="num">No.</th><th>Name</th><th>Box</th><th>Group</th><th>Agent</th><th>Said</th><th>Ride</th></tr></thead>
+    <tbody>
+    {% for v in chase %}
+    <tr><td class="num mono">{{ v.list_no or '—' }}</td><td><a href="{{ url_for('voters.detail', national_id=v.national_id) }}"><strong>{{ v.full_name }}</strong></a></td>
+      <td class="small-text">{{ v.box }}</td><td class="small-text">{{ priority.get(v.priority, '') }}</td><td class="small-text">{{ v.agent or 'No agent' }}</td>
+      <td class="small-text">{{ contact.get(v.said, 'Not reached') }}</td><td class="small-text">{{ transport_labels.get(v.ride, '') }}</td></tr>
+    {% else %}<tr><td colspan="7" class="muted">Every supporter has voted.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+  </div>
+</section>
+<p class="muted small-text">Numbers and alerts update by themselves every few seconds; lists refresh when you reload.</p>
+</div>
+{% endblock %}

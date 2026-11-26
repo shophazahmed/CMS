@@ -115,7 +115,8 @@ def test_marking_clears_the_call_list(app):
     assert t3.post("/war/call", data={"csrf_token": csrf(t3, "/war/calls"), "national_id": "A200002", "outcome": "transport"},
                    headers={"X-Requested-With": "fetch"}).json["label"] == "Needs transport"
     dash = " ".join(o.get("/war").get_data(as_text=True).split())
-    assert "Turnout" in dash and "Seats: live projection" in dash
+    assert "Turnout" in dash and "Still to vote" in dash
+    assert "Seats: live projection" in " ".join(o.get("/war/supporters").get_data(as_text=True).split())
     assert tuple(conn.execute("SELECT status, source FROM war_transport WHERE national_id = 'A200002'").fetchone()) == ("waiting", "call")
     # undo: their own mark, soon after
     assert t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "0"}).json["voted"] is False
@@ -186,12 +187,12 @@ def test_transport_queue(app):
     assert act(t2, "A200001", "take").json["ok"]
     assert act(other, "A200001", "done").status_code == 409             # someone else's ride
     assert act(other, "A200001", "take").status_code == 409             # already taken
-    page = o.get("/war").get_data(as_text=True)
+    page = o.get("/war/supporters").get_data(as_text=True)
     assert 'data-k="t_onway">1<' in page
     # once they vote they leave the queue
     t2.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "1"})
     assert "Aminath Alpha" not in t2.get("/war/transport").get_data(as_text=True)
-    assert 'data-k="t_done">1<' in o.get("/war").get_data(as_text=True)
+    assert 'data-k="t_done">1<' in o.get("/war/supporters").get_data(as_text=True)
     # tier 1 and tier 3 can't use the queue
     t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
     assert t1.get("/war/transport").status_code in (302, 403)
@@ -224,9 +225,10 @@ def test_dashboard_agent_filter(app):
     conn.execute("INSERT INTO war_voted (national_id, at, by_user, tier) VALUES ('A200002', '2026-01-01T08:00:00+00:00', 1, 'owner')")
     conn.commit()
     whole = " ".join(o.get("/war").get_data(as_text=True).split())
-    assert 'data-k="voted">1<' in whole and 'name="ag"' in whole
-    mine = " ".join(o.get(f"/war?ag={viewer}").get_data(as_text=True).split())
-    assert "War Room · viewer" in mine and 'data-k="voted">0<' in mine and "</span> of 1 voted" in mine
+    assert 'data-k="e_voted">1<' in whole and 'data-k="e_left">2<' in whole       # full election: still to vote
+    assert 'name="ag"' in o.get("/war/supporters").get_data(as_text=True)
+    mine = " ".join(o.get(f"/war/supporters?ag={viewer}").get_data(as_text=True).split())
+    assert "Our supporters · viewer" in mine
     assert 'data-k="sup_pending">1<' in mine                              # A200001, the only supporter of theirs
     assert o.get(f"/war/changes?since=0&stats=1&ag={viewer}").json["stats"]["voted"] == 0
     assert o.get("/war?ag=none").status_code == 200
@@ -270,7 +272,7 @@ def test_agent_links_and_contact_statuses(app):
     assert tuple(conn.execute("SELECT status, source FROM war_transport WHERE national_id = 'A200001'").fetchone()) == ("waiting", "field")
     assert a.post("/war/contact", data={"csrf_token": atok, "national_id": "A200002", "status": "coming"}).status_code == 403
     assert "Needs transport · " in a.get("/war/field?cs=transport").get_data(as_text=True)
-    dash = " ".join(o.get("/war").get_data(as_text=True).split())
+    dash = " ".join(o.get("/war/supporters").get_data(as_text=True).split())
     assert "Reached before the vote" in dash and 'data-k="c_transport">1<' in dash
     # stopping the link signs them out at once
     b.post("/war/team", data={"csrf_token": btok, "action": "unlink", "user_id": ali})
@@ -618,3 +620,45 @@ def test_public_candidate_photos_and_unlisting_a_voter(app):
     assert t1.post("/war/box/unlist", data={"csrf_token": csrf(t1, "/war/box"), "national_id": "A200001",
                                             "box": "Box A"}).status_code in (302, 403)
     assert conn.execute("SELECT COUNT(*) FROM war_list").fetchone()[0] == 1
+
+
+def test_dashboards_and_war_room_views(app):
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    conn = connect(app.config["DATABASE"])
+    house = conn.execute("SELECT house_name FROM voters WHERE national_id = 'A200001'").fetchone()[0]
+    _, runner = make(app, o, token, "runner", "t2")
+    conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES (?, ?, 'x')", (house, runner))
+    conn.execute("INSERT INTO war_voted (national_id, at, by_user, tier) VALUES ('A200002', ?, 1, 'owner')",
+                 ("2026-11-27T05:00:00+00:00",))
+    conn.commit()
+    full = " ".join(o.get("/war").get_data(as_text=True).split())
+    assert "Full election" in full and "Still to vote %" in full and "Projected at" in full and "Box agent" in full
+    sup = " ".join(o.get("/war/supporters").get_data(as_text=True).split())
+    assert "Field runners (tier 2)" in sup and "runner" in sup and "who to chase next" in sup and "No agent" in sup
+    vl = o.get("/war/voters").get_data(as_text=True)
+    assert "Aminath Alpha" in vl and "data-agent-form" in vl                         # still to vote, with the agent
+    assert "Moosa Beta" not in vl                                                     # voted: not in the default list
+    assert "Moosa Beta" in o.get("/war/voters?show=yes").get_data(as_text=True)
+    assert "Aminath Alpha" not in o.get("/war/voters?ag=none").get_data(as_text=True)  # has the runner
+    for fmt in ("csv", "xlsx", "pdf"):
+        assert o.get(f"/war/voters/export.{fmt}").status_code == 200
+    # a War Room account with only some views
+    w, wid = make(app, o, token, "watcher", "")
+    o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": wid, "tiers": ["room"],
+                              "views_shown": "1", "views": ["supporters", "count"]})
+    assert conn.execute("SELECT war_views FROM users WHERE id = ?", (wid,)).fetchone()[0] == "supporters,count"
+    assert w.get("/war/supporters").status_code == 200
+    assert w.get("/count/results").status_code == 200
+    assert w.get("/war").headers["Location"].endswith("/war/supporters")            # no full election: sent on
+    assert w.get("/war/voters").status_code == 403 and w.get("/war/voted").status_code == 403
+    nav = w.get("/war/supporters").get_data(as_text=True)
+    assert ">Our supporters<" in nav and "/war/voters" not in nav
+    # all four ticked = all views (stored as none set); unticking every view is refused
+    o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": wid, "tiers": ["room"], "views_shown": "1",
+                              "views": ["full", "supporters", "voters", "count"]})
+    assert conn.execute("SELECT war_views FROM users WHERE id = ?", (wid,)).fetchone()[0] == ""
+    r = o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": wid, "tiers": ["room"],
+                                  "views_shown": "1"}, follow_redirects=True)
+    assert "Tick at least one War Room view" in r.get_data(as_text=True)
+    assert w.get("/war/voters").status_code == 200

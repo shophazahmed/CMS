@@ -49,7 +49,8 @@ def users():
     everyone = sorted(rows, key=lambda u: (not u["is_active"], u["id"] != owner_id, u["username"].casefold()))
     return render_template("admin/users.html", agents=agents, users=logins, people=people, owner_id=owner_id,
                            everyone=everyone, cf_access=CONFIRMED_ACCESS, roles=("user", "admin"), role_labels=ROLE_LABELS,
-                           stiers=warroom.stored_tiers, boxes=boxes, slug=_slug)
+                           stiers=warroom.stored_tiers, boxes=boxes, slug=_slug, view_names=warroom.VIEWS,
+                           uviews=lambda u: [v for v in (u["war_views"] or "").split(",") if v in warroom.VIEWS] or list(warroom.VIEWS))
 
 
 def _slug(name):

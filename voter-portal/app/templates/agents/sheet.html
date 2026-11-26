@@ -14,7 +14,7 @@
     <h1>Assign agents</h1>
     <span class="list-links">
       <a class="button small" href="{{ url_for('canvass.agents') }}">Agents &amp; houses</a>
-      {% if war_tier in ('owner', 'room') %}<a class="button small" href="{{ url_for('warroom.home') }}">War Room</a>{% endif %}
+      {% if war_views %}<a class="button small" href="{{ url_for('warroom.home') }}">War Room</a>{% endif %}
     </span>
   </div>
   <p class="muted">Pick an agent on a row and it saves straight away. <em>House agent</em> gives the voter back to whoever has their

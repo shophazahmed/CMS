@@ -104,6 +104,9 @@ def assign_many():
         n = assign_voters(ids, agent_id)
         flash(f"{n} voter{'s' if n != 1 else ''} now with {name or 'their house agent'}." if n else "Nothing changed.",
               "success" if n else "info")
+    back = request.form.get("back") or ""
+    if back.startswith("/") and not back.startswith("//"):
+        return redirect(back)
     return redirect(url_for("agentsheet.sheet", **request.args))
 
 

@@ -1,0 +1,19 @@
+{# The War Room's views (only those this account has) and the Alerts button. #}
+<nav class="war-views" aria-label="War Room views">
+  {% if 'full' in war_views %}<a href="{{ url_for('warroom.home') }}" {{ 'aria-current=page' if view == 'full' }}>Full election</a>{% endif %}
+  {% if 'supporters' in war_views %}<a href="{{ url_for('warroom.supporters') }}" {{ 'aria-current=page' if view == 'supporters' }}>Our supporters</a>{% endif %}
+  {% if 'voters' in war_views %}<a href="{{ url_for('warroom.voters') }}" {{ 'aria-current=page' if view == 'voters' }}>Voters &amp; agents</a>{% endif %}
+  {% if 'count' in war_views %}<a href="{{ url_for('votecount.results_page') }}">Vote count</a>{% endif %}
+  {% if alerts is defined %}
+  <button type="button" class="button small war-alert-btn {{ 'has-alerts' if alerts }}" data-alert-btn aria-expanded="false" aria-controls="war-alerts">
+    <span class="alert-light" data-alert-light hidden aria-hidden="true"></span>{{ icon('megaphone', 16) }} Alerts
+    <span class="alert-count" data-k="n_alerts">{{ alerts|length }}</span></button>
+  {% endif %}
+</nav>
+{% if alerts is defined %}
+<section class="card war-alerts {{ 'quiet' if not alerts }}" id="war-alerts" aria-label="Alerts" data-alerts hidden>
+  <h2>{{ icon('megaphone', 18) }} Alerts</h2>
+  <ul data-alert-list>{% for a in alerts %}<li>{{ a }}</li>{% endfor %}</ul>
+  <p class="muted small-text" data-alert-none {{ 'hidden' if alerts }}>No alerts right now.</p>
+</section>
+{% endif %}

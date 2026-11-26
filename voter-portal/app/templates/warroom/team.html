@@ -40,6 +40,11 @@
           <fieldset class="war-tier-picks" aria-label="Election day roles for {{ u.username }}">
           {% if can_own and (u.role == 'admin' or u.can_login) %}
             <label class="check"><input type="checkbox" name="tiers" value="room" {{ 'checked' if 'room' in have }}> War Room</label>
+          {% if can_own and (u.role == 'admin' or u.can_login) %}<input type="hidden" name="views_shown" value="1">
+          <span class="war-view-picks" title="Which War Room views (with War Room ticked)">
+            {% set uv = uviews(u) %}{% for k, label in view_names.items() %}
+            <label class="check small-text"><input type="checkbox" name="views" value="{{ k }}" {{ 'checked' if k in uv }}> {{ label }}</label>{% endfor %}
+          </span>{% endif %}
           {% elif 'room' in have %}<input type="hidden" name="tiers" value="room"><span class="agent-badge">War Room</span>{% endif %}
           {% if u.role != 'admin' %}
             <label class="check"><input type="checkbox" name="tiers" value="t1" {{ 'checked' if 't1' in have }}> Tier 1 box</label>
@@ -141,7 +146,7 @@
 </section>
 
 <section class="card form war-danger">
-  <h2>Boxes</h2>
+  <h2 id="boxes">Boxes</h2>
   <p class="muted small-text">Every box the portal has voters at. Remove an old box you don't use: its voters are deleted
     from the portal with their pledges, super votes, assignments and War Room records (the activity log keeps a record).
     This can't be undone.</p>

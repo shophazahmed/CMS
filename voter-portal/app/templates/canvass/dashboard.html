@@ -12,7 +12,7 @@
     <a class="button small" href="{{ url_for('voters.search') }}">{{ icon('search', 16) }} Find a voter</a>
     {% if can_view_pledges %}<a class="button small" href="{{ url_for('pledges.sheet') }}">{{ icon('clipboard', 16) }} Pledge sheet</a>{% endif %}
     <a class="button small" href="{{ url_for('visits.index') }}">{{ icon('door', 16) }} House visits</a>
-    {% if war_tier in ('owner', 'room') %}<a class="button small primary" href="{{ url_for('warroom.home') }}">{{ icon('flag', 16) }} War Room</a>{% endif %}
+    {% if war_views %}<a class="button small primary" href="{{ url_for('warroom.home') }}">{{ icon('flag', 16) }} War Room</a>{% endif %}
   </nav>
 </div>
 <div class="page-head">

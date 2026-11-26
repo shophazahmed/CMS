@@ -1,0 +1,81 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}Voters and agents{% endblock %}
+{% block main_class %}page wide{% endblock %}
+{% block content %}
+<div class="page-head war-head">
+  <div>
+    <p class="war-eyebrow">War Room · Election day</p>
+    <h1>Voters and agents</h1>
+    <p class="muted">Every voter with the agent allocated, as box agents mark votes.</p>
+  </div>
+  <p class="war-sync" data-voted-live data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes') }}" aria-live="polite">
+    <span class="war-dot"></span><span data-voted-live-text>Live</span></p>
+</div>
+{% with view = 'voters' %}{% include "warroom/_viewtabs.html" %}{% endwith %}
+
+<form class="card voted-filters" method="get">
+  <label class="grow">Search <input type="search" name="q" value="{{ f.q }}" placeholder="List no., name, house or ID"></label>
+  <label>Box <select name="box" data-autosubmit><option value="">Every box</option>
+    {% for b in boxes %}<option {{ 'selected' if b == f.box }}>{{ b }}</option>{% endfor %}</select></label>
+  <label>Show <select name="show" data-autosubmit>{% for k, v in shows.items() %}<option value="{{ k }}" {{ 'selected' if f.show == k }}>{{ v }}</option>{% endfor %}</select></label>
+  <label>Group <select name="grp" data-autosubmit>{% for k, v in groups.items() %}<option value="{{ k }}" {{ 'selected' if f.grp == k }}>{{ v }}</option>{% endfor %}</select></label>
+  <label>Agent <select name="ag" data-autosubmit><option value="">Any agent</option><option value="none" {{ 'selected' if f.ag == 'none' }}>No agent</option>
+    {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if f.ag == a.id|string }}>{{ a.username }}</option>{% endfor %}</select></label>
+  <label>Said <select name="cs" data-autosubmit><option value="">Anything</option><option value="none" {{ 'selected' if f.cs == 'none' }}>Not reached</option>
+    {% for k, v in contact.items() %}<option value="{{ k }}" {{ 'selected' if f.cs == k }}>{{ v }}</option>{% endfor %}</select></label>
+  <button class="small">Show</button>
+  {% if args %}<a class="small-text" href="{{ url_for('warroom.voters') }}">Clear</a>{% endif %}
+</form>
+
+<div class="resultbar">
+  <p><strong>{{ total }}</strong> voter{{ 's' if total != 1 }} · <strong>{{ no_agent }}</strong> with no agent</p>
+  <div class="export">
+    {% set ex = dict(f) %}
+    <a class="button small" href="{{ url_for('warroom.voters_export', fmt='xlsx', **ex) }}">{{ icon('download', 16) }} Excel</a>
+    <a class="button small" href="{{ url_for('warroom.voters_export', fmt='csv', **ex) }}">{{ icon('download', 16) }} CSV</a>
+    <a class="button small" href="{{ url_for('warroom.voters_export', fmt='pdf', **ex) }}">{{ icon('download', 16) }} PDF</a>
+  </div>
+</div>
+
+{% if can_assign %}
+<form id="assign-form" class="card inline war-assign" method="post" action="{{ url_for('agentsheet.assign_many') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+  <label>Give the <strong data-ticked>0</strong> ticked voters to
+    <select name="agent"><option value="">their house agent</option>{% for a in agents %}<option value="{{ a.id }}">{{ a.username }}</option>{% endfor %}</select></label>
+  <button class="small">Give</button>
+</form>
+{% endif %}
+
+<div class="table-wrap">
+<table class="war-table war-voters">
+  <thead><tr>{% if can_assign %}<th><input type="checkbox" data-tick-all aria-label="Tick every voter shown"></th>{% endif %}
+    <th class="num">No.</th><th>Name</th><th>Box</th><th>Group</th><th>Agent</th><th>Caller</th><th>Said</th><th>Ride</th><th>Voted</th></tr></thead>
+  <tbody>
+  {% for v in rows %}
+  <tr class="{{ 'is-voted' if v.voted_at }}">
+    {% if can_assign %}<td><input type="checkbox" name="ids" value="{{ v.national_id }}" form="assign-form" aria-label="Tick {{ v.full_name }}"></td>{% endif %}
+    <td class="num mono">{{ v.list_no or '—' }}</td>
+    <td><a class="pl-name" href="{{ url_for('voters.detail', national_id=v.national_id) }}">{{ avatar(v, 'xs') }}<span><strong>{{ v.full_name }}</strong>
+      <span class="muted small-text">{{ v.house_name }}</span></span></a></td>
+    <td class="small-text">{{ v.box }}</td>
+    <td class="small-text">{{ priority.get(v.priority, '') }}</td>
+    <td>{% if can_assign %}
+      <form method="post" action="{{ url_for('agentsheet.set_one') }}" data-agent-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+        <select name="agent" aria-label="Agent for {{ v.full_name }}"><option value="">{{ v.agent ~ ' (house)' if v.agent else 'No agent' }}</option>
+          {% for a in agents %}<option value="{{ a.id }}" {{ 'selected' if v.agent_id == a.id }}>{{ a.username }}</option>{% endfor %}</select>
+        <noscript><button class="small">Save</button></noscript>
+      </form>{% else %}{{ v.agent or 'No agent' }}{% endif %}</td>
+    <td class="small-text">{{ v.caller or '—' }}</td>
+    <td class="small-text">{{ contact.get(v.said, 'Not reached' if v.priority else '—') }}</td>
+    <td class="small-text">{{ rides.get(v.ride, '') }}</td>
+    <td class="small-text {{ 'war-voted-yes' if v.voted_at else 'war-voted-no' }}">{{ '✓ ' ~ hm(v.voted_at) if v.voted_at else 'Not yet' }}</td>
+  </tr>
+  {% else %}<tr><td colspan="10" class="muted">Nobody in this list.</td></tr>{% endfor %}
+  </tbody>
+</table>
+</div>
+{% if total > rows|length %}<p class="muted small-text">Showing the first {{ rows|length }} of {{ total }}: narrow the filters, or download the full list.</p>{% endif %}
+{% endblock %}

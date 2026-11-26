@@ -194,6 +194,11 @@
           <span class="war-tier-picks">
           {% if is_owner and (u.role == 'admin' or u.can_login) %}
             <label class="check"><input type="checkbox" name="tiers" value="room" {{ 'checked' if 'room' in have }}> War Room</label>
+          {% if is_owner and (u.role == 'admin' or u.can_login) %}<input type="hidden" name="views_shown" value="1">
+          <span class="war-view-picks" title="Which War Room views (with War Room ticked)">
+            {% set uv = uviews(u) %}{% for k, label in view_names.items() %}
+            <label class="check small-text"><input type="checkbox" name="views" value="{{ k }}" {{ 'checked' if k in uv }}> {{ label }}</label>{% endfor %}
+          </span>{% endif %}
           {% elif 'room' in have %}<input type="hidden" name="tiers" value="room"><span class="badge">War Room</span>{% endif %}
           {% if u.role != 'admin' %}
             <label class="check"><input type="checkbox" name="tiers" value="t1" {{ 'checked' if 't1' in have }}> Tier 1 box</label>

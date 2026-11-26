@@ -184,19 +184,58 @@ def tiers(user=None):
     return tuple(have)
 
 
+# War Room views the owner hands out separately (a War Room account with none set has them all).
+VIEWS = {"full": "Full election", "supporters": "Our supporters", "voters": "Voters & agents", "count": "Vote count"}
+VIEW_ENDPOINTS = {
+    "full": {"warroom.home", "warroom.box", "warroom.box_export", "warroom.box_unlist", "warroom.lookup", "warroom.mark",
+             "warroom.voted", "warroom.voted_export"},
+    "supporters": {"warroom.supporters", "warroom.field", "warroom.field_export", "warroom.calls", "warroom.calls_export",
+                   "warroom.call", "warroom.contact", "warroom.transport", "warroom.transport_action"},
+    "voters": {"warroom.voters", "warroom.voters_export"},
+    "count": {"votecount.sheet", "votecount.tap", "votecount.final", "votecount.reopen", "votecount.photo",
+              "votecount.results_page", "votecount.results_xlsx", "votecount.export"},
+}
+VIEW_OF = {ep: v for v, eps in VIEW_ENDPOINTS.items() for ep in eps}
+VIEW_HOME = {"full": "warroom.home", "supporters": "warroom.supporters", "voters": "warroom.voters",
+             "count": "votecount.results_page"}
+
+
+def views(user=None):
+    """The War Room views this account may open: all for the owner, its ticked ones (none ticked = all) for a
+    War Room account, none otherwise."""
+    user = user if user is not None else g.get("user")
+    ts = tiers(user)
+    if "owner" in ts:
+        return list(VIEWS)
+    if "room" not in ts:
+        return []
+    picked = [v for v in (user["war_views"] or "").split(",") if v in VIEWS]
+    return picked or list(VIEWS)
+
+
+def has_view(view, user=None):
+    return view in views(user)
+
+
 def tier(user=None):
     """'owner', 'room', 't1', 't2', 't3' or '': for someone with several field tiers, the one this page works as."""
     ts = tiers(user)
     if not ts:
         return ""
-    if ts[0] in ("owner", "room"):
-        return ts[0]
     from flask import has_request_context
 
-    if has_request_context() and (user is None or (g.get("user") is not None and user["id"] == g.user["id"])):
-        want = ENDPOINT_TIER.get(request.endpoint or "")
-        if want in ts:
+    me = has_request_context() and (user is None or (g.get("user") is not None and user["id"] == g.user["id"]))
+    want = ENDPOINT_TIER.get(request.endpoint or "") if me else None
+    if ts[0] == "owner":
+        return "owner"
+    if ts[0] == "room":
+        # a War Room account without this page's view still works it with its own field tier (e.g. its box)
+        view = VIEW_OF.get(request.endpoint or "") if me else None
+        if view and want in ts and view not in views(user):
             return want
+        return "room"
+    if want in ts:
+        return want
     return ts[0]
 
 
@@ -212,6 +251,19 @@ def is_open():
 
 def can_watch():
     return tier() in ("owner", "room")
+
+
+def view_guard():
+    """Before every request: a War Room account opens only the views the owner gave it."""
+    user = g.get("user")
+    view = VIEW_OF.get(request.endpoint or "")
+    if user is None or not view or tier() != "room" or has_view(view):
+        return None
+    mine = views()
+    if request.method in ("GET", "HEAD") and mine and request.endpoint == "warroom.home":
+        return redirect(url_for(VIEW_HOME[mine[0]]))
+    audit.log("access_denied", target=request.path, detail={"war_view": view})
+    abort(403)
 
 
 def field_guard():
@@ -384,9 +436,106 @@ def home():
     ag = agent_filter()[2]
     agents = get_db().execute("SELECT id, username FROM users WHERE role IN ('agent', 'user', 'admin') AND deleted_at IS NULL"
                               " ORDER BY username COLLATE NOCASE").fetchall()
-    return render_template("warroom/dashboard.html", s=stats(), tiers=TIERS, is_open=is_open(), cursor=_cursor(),
+    s = stats()
+    return render_template("warroom/dashboard.html", s=s, e=election(s), tiers=TIERS, is_open=is_open(), cursor=_cursor(),
                            outcomes=OUTCOMES, priority=PRIORITY, ag=ag, agents=agents, contact=CONTACT,
                            ag_name=next((a["username"] for a in agents if str(a["id"]) == ag), "No agent" if ag == "none" else ""))
+
+
+@bp.route("/war/supporters")
+@login_required
+def supporters():
+    """Our supporters on election day: groups, boxes, runners, calls, transport, seats and who to chase next."""
+    if not can_watch():
+        abort(403)
+    ag = agent_filter()[2]
+    agents = get_db().execute("SELECT id, username FROM users WHERE role IN ('agent', 'user', 'admin') AND deleted_at IS NULL"
+                              " ORDER BY username COLLATE NOCASE").fetchall()
+    s = stats()
+    f = voter_args({"show": "no", "grp": "ours", "ag": ag})
+    chase, _, _ = voter_rows(f, limit=15)
+    return render_template("warroom/supporters.html", s=s, e=election(s), runners=runner_table(), chase=chase,
+                           priority=PRIORITY, outcomes=OUTCOMES, contact=CONTACT, transport_labels=TRANSPORT,
+                           ag=ag, agents=agents, cursor=_cursor(), is_open=is_open(), off_label=OFF_LIST,
+                           ag_name=next((a["username"] for a in agents if str(a["id"]) == ag), "No agent" if ag == "none" else ""))
+
+
+@bp.route("/war/voters")
+@login_required
+def voters():
+    """Every voter with the agent allocated: filter by box, voted or not, group, agent and what they said."""
+    if not can_watch():
+        abort(403)
+    f = voter_args(request.args)
+    rows, total, no_agent = voter_rows(f, limit=400)
+    db = get_db()
+    boxes = sorted({r["box"] for r in election(stats())["boxes"]}, key=str.casefold)
+    agents = db.execute("SELECT id, username FROM users WHERE role IN ('agent', 'user', 'admin') AND deleted_at IS NULL"
+                        " ORDER BY username COLLATE NOCASE").fetchall()
+    from .auth import is_admin
+
+    return render_template("warroom/voters.html", rows=rows, total=total, no_agent=no_agent, f=f, boxes=boxes,
+                           agents=agents, shows=VOTER_SHOW, groups=VOTER_GROUPS, contact=CONTACT, priority=PRIORITY,
+                           rides=TRANSPORT, hm=_hm, can_assign=is_admin(), cursor=_cursor(),
+                           args={k: v for k, v in f.items() if v and not (k == "show" and v == "no") and not (k == "grp" and v == "ours")})
+
+
+@bp.route("/war/voters/export.<fmt>")
+@login_required
+def voters_export(fmt):
+    from flask import Response
+
+    from .voters import _safe_cell
+
+    if fmt not in ("csv", "xlsx", "pdf"):
+        abort(404)
+    if not can_watch():
+        abort(403)
+    f = voter_args(request.args)
+    rows, total, _ = voter_rows(f)
+    headers = ["#", "No.", "ID", "Name", "House", "Box", "Group", "Agent", "Caller", "Said", "Ride", "Voted"]
+    table = [[n, r["list_no"], r["national_id"], _safe_cell(r["full_name"]), _safe_cell(r["house_name"]), _safe_cell(r["box"]),
+              PRIORITY.get(r["priority"], ""), _safe_cell(r["agent"] or ""), r["caller"] or "",
+              CONTACT.get(r["said"], "Not reached" if r["priority"] else ""), TRANSPORT.get(r["ride"], ""),
+              _hm(r["voted_at"]) if r["voted_at"] else "Not yet"] for n, r in enumerate(rows, 1)]
+    audit.log("war_voters_export", target=fmt, detail={"rows": len(table), "filters": f})
+    name = f"voters-agents-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "pdf":
+        from .pdfexport import table_pdf
+
+        plain = [[c[1:] if isinstance(c, str) and c[:1] == "'" and c[1:2] and c[1:2] in "=+-@\t\r" else c for c in row]
+                 for row in table]
+        sub = (f"{VOTER_SHOW[f['show']]} · {VOTER_GROUPS[f['grp']]}" + (f" · {f['box']}" if f["box"] else "")
+               + f" · {len(table)} voters · printed {datetime.now().strftime('%d %b %Y %H:%M')} · confidential")
+        pdf = table_pdf("Voters and agents", sub, ["No.  Name", "House", "Box", "Group", "Agent", "Said", "Voted"],
+                        [[f"{r[1] or '—'}  {r[3]}", r[4], r[5], r[6], r[7], r[9], r[11]] for r in plain])
+        return Response(pdf, mimetype="application/pdf", headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    if fmt == "csv":
+        import csv
+
+        buf = io.StringIO()
+        w = csv.writer(buf)
+        w.writerow(headers)
+        w.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Voters and agents"
+    ws.append(headers)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for row in table:
+        ws.append(row)
+    ws.freeze_panes = "E2"
+    ws.auto_filter.ref = ws.dimensions
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
 def _closed():
@@ -987,6 +1136,174 @@ def voted_export(fmt):
 
 # --- the dashboard ----------------------------------------------------------------------------------
 
+AGENT_OF = ("COALESCE((SELECT user_id FROM voter_assignments va WHERE va.national_id = v.national_id),"
+            " (SELECT user_id FROM house_assignments ha WHERE ha.house_name = v.house_name))")
+
+
+def election(s):
+    """The full election view on top of stats(): every box on an official list (or the portal's box), with
+    still to vote, its box agent and whether it has gone quiet; pace, projection and the field team."""
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    t1 = {}
+    for u in db.execute(f"SELECT username, war_box FROM users WHERE {tier_sql('t1')} AND deleted_at IS NULL"):
+        t1.setdefault(u["war_box"], []).append(u["username"])
+    box_last = dict(db.execute(f"SELECT {box_expr('v')}, MAX(w.at) FROM war_voted w JOIN voters v ON v.national_id = w.national_id"
+                               " GROUP BY 1").fetchall())
+    open_ = is_open()
+    rows = []
+    for b in s["boxes"]:
+        if not b["box"] or b["box"] == OFF_LIST:
+            continue
+        last = box_last.get(b["box"])
+        agent = ", ".join(t1.get(b["box"], []))
+        if not agent:
+            status = "No agent"
+        elif open_ and (not last or datetime.fromisoformat(last) < now - timedelta(minutes=STALE_MINUTES)):
+            status = "Quiet"
+        else:
+            status = "Active" if open_ else "Ready"
+        rows.append({"box": b["box"], "total": b["total"], "voted": b["voted"], "left": b["total"] - b["voted"],
+                     "pct": round(100 * b["voted"] / b["total"]) if b["total"] else 0, "last": _hm(last) if last else "—",
+                     "agent": agent or "—", "status": status})
+    rows.sort(key=lambda r: -r["left"])
+    total = sum(r["total"] for r in rows)
+    voted = sum(r["voted"] for r in rows)
+    since = (now - timedelta(hours=1)).isoformat(timespec="seconds")
+    pace = db.execute("SELECT COUNT(*) FROM war_voted WHERE at >= ?", (since,)).fetchone()[0]
+    left_min = None
+    close = campaign.get_setting("war_close") or "16:00"
+    try:
+        hh, mm = (int(x) for x in close.split(":"))
+        local_now = now + LOCAL
+        left_min = max(0, int((local_now.replace(hour=hh, minute=mm, second=0, microsecond=0) - local_now).total_seconds() // 60))
+    except ValueError:
+        pass
+    projected = None
+    if total and left_min is not None:
+        projected = min(100, round(100 * (voted + pace * left_min / 60) / total))
+    team = {}
+    for t in FIELD_TIERS:
+        mine_ = [a for a in s["agents"] if t in a["tiers"]]
+        team[t] = {"total": len(mine_), "active": sum(1 for a in mine_ if a["last"] and not a["stale"])}
+    quiet = [a for a in s["agents"] if a["stale"]]
+    off = sum(b["total"] for b in s["boxes"] if b["box"] == OFF_LIST)
+    nobox = sum(b["total"] for b in s["boxes"] if not b["box"])
+    return {"boxes": rows, "total": total, "voted": voted, "left": total - voted, "off_list": off, "no_box": nobox,
+            "pct": round(100 * voted / total, 1) if total else 0, "left_pct": round(100 * (total - voted) / total, 1) if total else 0,
+            "pace": pace, "projected": projected, "team": team, "quiet": quiet, "open": open_}
+
+
+def runner_table():
+    """Each field runner's supporters: total, voted, still to vote and what they said; plus the ones nobody has."""
+    sql, sp = supporters_sql()
+    if not sql:
+        return []
+    db = get_db()
+    base = (f"FROM ({sql}) s JOIN voters v ON v.national_id = s.national_id"
+            " LEFT JOIN war_contact k ON k.national_id = v.national_id")
+    pick = ("COUNT(*), SUM(v.national_id IN (SELECT national_id FROM war_voted)),"
+            " SUM(v.national_id NOT IN (SELECT national_id FROM war_voted) AND k.status = 'coming'),"
+            " SUM(v.national_id NOT IN (SELECT national_id FROM war_voted) AND k.status = 'transport'),"
+            " SUM(v.national_id NOT IN (SELECT national_id FROM war_voted) AND k.status IN ('later', 'noanswer')),"
+            " SUM(v.national_id NOT IN (SELECT national_id FROM war_voted) AND k.status IS NULL)")
+    out = []
+    agents = {a["id"]: a for a in _agents_activity()}
+    for u in db.execute(f"SELECT id, username FROM users WHERE {tier_sql('t2')} AND deleted_at IS NULL ORDER BY username COLLATE NOCASE"):
+        r = db.execute(f"SELECT {pick} {base} WHERE {AGENT_OF} = ?", sp + [u["id"]]).fetchone()
+        a = agents.get(u["id"], {})
+        out.append({"name": u["username"], "id": u["id"], "sup": r[0], "voted": r[1] or 0, "left": r[0] - (r[1] or 0),
+                    "coming": r[2] or 0, "ride": r[3] or 0, "later": r[4] or 0, "none": r[5] or 0,
+                    "last": a.get("last") or "—", "stale": a.get("stale")})
+    r = db.execute(f"SELECT {pick} {base} WHERE {AGENT_OF} IS NULL", sp).fetchone()
+    if r[0]:
+        out.append({"name": "No agent", "id": None, "sup": r[0], "voted": r[1] or 0, "left": r[0] - (r[1] or 0),
+                    "coming": r[2] or 0, "ride": r[3] or 0, "later": r[4] or 0, "none": r[5] or 0, "last": "—", "stale": False})
+    return out
+
+
+def _agents_activity():
+    """Field accounts with their last activity (marks, calls, contact): for the runner table."""
+    db = get_db()
+    now = datetime.now(timezone.utc)
+    out = []
+    for u in db.execute(f"SELECT id FROM users WHERE {FIELD_ANY} AND deleted_at IS NULL"):
+        times = [db.execute("SELECT MAX(at) FROM war_log WHERE by_user = ? AND action = 'voted'", (u[0],)).fetchone()[0],
+                 db.execute("SELECT MAX(outcome_at) FROM war_calls WHERE user_id = ?", (u[0],)).fetchone()[0],
+                 db.execute("SELECT MAX(at) FROM war_contact WHERE by_user = ?", (u[0],)).fetchone()[0]]
+        last = max([x for x in times if x] or [""])
+        stale = bool(is_open() and (not last or datetime.fromisoformat(last) < now - timedelta(minutes=STALE_MINUTES)))
+        out.append({"id": u[0], "last": _hm(last) if last else "", "stale": stale})
+    return out
+
+
+VOTER_SHOW = {"no": "Still to vote", "yes": "Voted", "all": "Everyone"}
+VOTER_GROUPS = {"ours": "Our supporters", "1": PRIORITY[1], "2": PRIORITY[2], "3": PRIORITY[3], "4": PRIORITY[4],
+                "all": "Everyone"}
+
+
+def voter_args(args):
+    show = args.get("show", "no")
+    grp = args.get("grp", "ours")
+    ag = args.get("ag", "")
+    cs = args.get("cs", "")
+    return {"q": " ".join(args.get("q", "").split())[:60], "box": args.get("box", "")[:200],
+            "show": show if show in VOTER_SHOW else "no", "grp": grp if grp in VOTER_GROUPS else "ours",
+            "ag": ag if ag == "none" or ag.isdigit() else "", "cs": cs if cs in CONTACT or cs == "none" else ""}
+
+
+def voter_rows(f, limit=None):
+    """Voters with their election-day box, list number, group, agent, caller, what they said, ride and vote."""
+    sql, sp = supporters_sql()
+    sup = f"LEFT JOIN ({sql}) s ON s.national_id = v.national_id" if sql else \
+        "LEFT JOIN (SELECT NULL AS national_id, NULL AS priority) s ON 0"
+    where, params = ["v.deceased = 0", f"{box_expr('v')} != ''", f"{box_expr('v')} != '{OFF_LIST}'"], []
+    if f["box"]:
+        c, p = box_cond(f["box"])
+        where.append(c)
+        params += p
+    if f["grp"] == "ours":
+        where.append("s.priority IS NOT NULL")
+    elif f["grp"] in ("1", "2", "3", "4"):
+        where.append("s.priority = ?")
+        params.append(int(f["grp"]))
+    if f["show"] == "no":
+        where.append("w.national_id IS NULL")
+    elif f["show"] == "yes":
+        where.append("w.national_id IS NOT NULL")
+    if f["ag"] == "none":
+        where.append(f"{AGENT_OF} IS NULL")
+    elif f["ag"]:
+        where.append(f"{AGENT_OF} = ?")
+        params.append(int(f["ag"]))
+    if f["cs"] == "none":
+        where.append("k.status IS NULL")
+    elif f["cs"]:
+        where.append("k.status = ?")
+        params.append(f["cs"])
+    if f["q"]:
+        like = f"%{f['q']}%"
+        where.append("(v.full_name LIKE ? OR v.house_name LIKE ? OR v.national_id LIKE ? OR CAST(l.list_no AS TEXT) = ?)")
+        params += [like, like, like, f["q"]]
+    base = (f"FROM voters v {sup} LEFT JOIN war_list l ON l.national_id = v.national_id"
+            " LEFT JOIN war_voted w ON w.national_id = v.national_id LEFT JOIN war_contact k ON k.national_id = v.national_id"
+            " LEFT JOIN war_calls c ON c.national_id = v.national_id LEFT JOIN users cu ON cu.id = c.user_id"
+            " LEFT JOIN war_transport tr ON tr.national_id = v.national_id AND tr.status != 'cancelled'"
+            f" LEFT JOIN users au ON au.id = {AGENT_OF} WHERE " + " AND ".join(where))
+    db = get_db()
+    allp = (sp if sql else []) + params
+    total = db.execute(f"SELECT COUNT(*) {base}", allp).fetchone()[0]
+    no_agent = db.execute(f"SELECT COUNT(*) {base} AND {AGENT_OF} IS NULL", allp).fetchone()[0]
+    rows = db.execute(
+        f"SELECT v.national_id, v.full_name, v.house_name, v.photo_path, {box_expr('v')} AS box, l.list_no, s.priority,"
+        f" {AGENT_OF} AS agent_id, au.username AS agent, cu.username AS caller, k.status AS said, tr.status AS ride,"
+        f" w.at AS voted_at {base} ORDER BY w.at IS NOT NULL, s.priority IS NULL, s.priority, box COLLATE NOCASE,"
+        " l.list_no IS NULL, l.list_no, v.full_name COLLATE NOCASE" + (" LIMIT ?" if limit else ""),
+        allp + ([limit] if limit else [])).fetchall()
+    return rows, total, no_agent
+
+
+
 def agent_filter():
     """?ag=<user id> or none: limit the dashboard to one agent's voters (SQL on voters, params, value)."""
     from .voters import NO_AGENT, handled_by
@@ -1054,7 +1371,8 @@ def stats():
                               " (SELECT national_id FROM war_voted)", (u["id"],)).fetchone()[0]
         hits = db.execute("SELECT COUNT(*) FROM war_hits WHERE user_id = ? AND at >= ?",
                           (u["id"], (now - timedelta(minutes=5)).isoformat(timespec="seconds"))).fetchone()[0]
-        last = max([x for x in (marks[1], calls_made[1]) if x] or [""])
+        contacted = db.execute("SELECT MAX(at) FROM war_contact WHERE by_user = ?", (u["id"],)).fetchone()[0]
+        last = max([x for x in (marks[1], calls_made[1], contacted) if x] or [""])
         stale = bool(is_open() and (not last or datetime.fromisoformat(last) < now - timedelta(minutes=STALE_MINUTES)))
         agents.append({"id": u["id"], "username": u["username"], "tiers": field_tiers(u), "box": u["war_box"],
                        "marks": marks[0], "calls": calls_made[0], "pending": assigned, "last": _hm(last) if last else "",
@@ -1111,6 +1429,12 @@ def _flat(s):
     out = {k: s[k] for k in ("total", "voted", "pct", "sup_total", "sup_voted", "sup_pending", "sup_pct", "now", "left")}
     out["t_waiting"], out["t_onway"], out["t_done"] = (s["transport"][k] for k in ("waiting", "onway", "done"))
     out["alerts"], out["n_alerts"] = s["alerts"], len(s["alerts"])
+    e = election(s)
+    out.update({"e_total": e["total"], "e_voted": e["voted"], "e_left": e["left"], "e_pct": e["pct"],
+                "e_left_pct": e["left_pct"], "e_pace": e["pace"],
+                "e_projected": f"{e['projected']}%" if e["projected"] is not None else "—"})
+    for i, b in enumerate(e["boxes"]):
+        out[f"eb{i}v"], out[f"eb{i}l"], out[f"eb{i}p"] = b["voted"], b["left"], b["pct"]
     for k, x in s["groups"].items():
         out[f"g{k}v"], out[f"g{k}p"] = x["voted"], x["total"] - x["voted"]
     for i, b in enumerate(s["boxes"]):
@@ -1236,6 +1560,14 @@ def team():
             b = request.form.get("war_box", "")[:200] if "t1" in picked else ""
             level = ",".join(picked)
             db.execute("UPDATE users SET war_tier = ?, war_box = ? WHERE id = ?", (level, b, uid))
+            if owner and request.form.get("views_shown") == "1":  # the owner's War Room view ticks
+                vs = [v for v in VIEWS if v in request.form.getlist("views")] if "room" in picked else []
+                if "room" in picked and not vs:
+                    flash("Tick at least one War Room view (or untick War Room).", "error")
+                    db.rollback()
+                    return redirect(_back())
+                db.execute("UPDATE users SET war_views = ? WHERE id = ?",
+                           ("" if len(vs) == len(VIEWS) else ",".join(vs), uid))
             if not any(t in FIELD_TIERS for t in picked):  # no field tier: their private links stop
                 db.execute("UPDATE war_links SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL", (now_iso(), uid))
             audit.log("war_tier", target=user["username"], detail={"tier": level, "box": b}, commit=False)
@@ -1341,6 +1673,7 @@ def team():
                            can_edit=True, can_own=owner, can_watch=can_watch(), links=links, link_days=LINK_DAYS,
                            link_url=lambda r: url_for("warroom.link_open", token=r["token"], _external=True),
                            contact=CONTACT, local=_local_day, ftiers=field_tiers, stiers=stored_tiers,
+                           view_names=VIEWS, uviews=lambda u: [v for v in (u["war_views"] or "").split(",") if v in VIEWS] or list(VIEWS),
                            public_token=campaign.get_setting("public_board_token") or "",
                            public_count=campaign.get_setting("public_board_count", "1") == "1",
                            voted_n=db.execute("SELECT COUNT(*) FROM war_voted").fetchone()[0],

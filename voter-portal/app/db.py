@@ -182,6 +182,7 @@ def _add_user_columns(conn):
         ("super_access", "super_access TEXT NOT NULL DEFAULT ''"),
         ("war_tier", "war_tier TEXT NOT NULL DEFAULT ''"),
         ("war_box", "war_box TEXT NOT NULL DEFAULT ''"),
+        ("war_views", "war_views TEXT NOT NULL DEFAULT ''"),   # War Room views ('' = all of them)
     ):
         if name in columns:
             continue

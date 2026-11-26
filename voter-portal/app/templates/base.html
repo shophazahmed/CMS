@@ -74,10 +74,12 @@
       {% if can_view_cf %}{{ nav(url_for('confirmed.overview'), '100% confirmed', 'check', ep.startswith('confirmed.')) }}{% endif %}
       {% endif %}
 
-      {% if war_tier in ('owner', 'room') or is_admin %}
+      {% if war_views or is_admin %}
       <p class="side-label">Election day</p>
-      {% if war_tier in ('owner', 'room') %}{{ nav(url_for('warroom.home'), 'War Room', 'flag', ep.startswith('warroom.') and ep != 'warroom.team', 'war-link') }}{% endif %}
-      {% if war_tier in ('owner', 'room') %}{{ nav(url_for('votecount.results_page'), 'Vote count', 'chart', ep.startswith('votecount.')) }}{% endif %}
+      {% if 'full' in war_views %}{{ nav(url_for('warroom.home'), 'Full election', 'flag', ep in ('warroom.home', 'warroom.box', 'warroom.voted'), 'war-link') }}{% endif %}
+      {% if 'supporters' in war_views %}{{ nav(url_for('warroom.supporters'), 'Our supporters', 'users', ep in ('warroom.supporters', 'warroom.field', 'warroom.calls', 'warroom.transport')) }}{% endif %}
+      {% if 'voters' in war_views %}{{ nav(url_for('warroom.voters'), 'Voters & agents', 'search', ep == 'warroom.voters') }}{% endif %}
+      {% if 'count' in war_views %}{{ nav(url_for('votecount.results_page'), 'Vote count', 'chart', ep.startswith('votecount.')) }}{% endif %}
       {% if is_admin %}{{ nav(url_for('warroom.team'), 'War Room team', 'users', ep == 'warroom.team') }}{% endif %}
       {% endif %}
 
@@ -182,7 +184,7 @@
     <a href="{{ home }}" {{ 'aria-current=page' if ep in ('canvass.dashboard', 'canvass.my_houses') }}>{{ icon('chart') }}<span>Dashboard</span></a>
     <a href="{{ url_for('voters.search') }}" {{ 'aria-current=page' if ep.startswith('voters.') }}>{{ icon('search') }}<span>Search</span></a>
     <a href="{{ url_for('visits.index') }}" {{ 'aria-current=page' if ep.startswith('visits.') }}>{{ icon('door') }}<span>Visits</span></a>
-    {% if war_tier in ('owner', 'room') %}<a href="{{ url_for('warroom.home') }}" {{ 'aria-current=page' if ep.startswith('warroom.') }}>{{ icon('flag') }}<span>War Room</span></a>
+    {% if war_views %}<a href="{{ url_for('warroom.home') }}" {{ 'aria-current=page' if ep.startswith('warroom.') }}>{{ icon('flag') }}<span>War Room</span></a>
     {% elif can_view_pledges %}<a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep.startswith('pledges.') }}>{{ icon('clipboard') }}<span>Pledges</span></a>{% endif %}
     {% endif %}
     <button type="button" class="tab-menu" data-nav-open aria-controls="sidebar" aria-label="Open menu">{{ icon('menu') }}<span>Menu</span></button>
