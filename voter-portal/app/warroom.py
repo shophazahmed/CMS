@@ -428,6 +428,25 @@ def box():
                            undo_after=(datetime.now(timezone.utc) - timedelta(minutes=UNDO_MINUTES)).isoformat(timespec="seconds"))
 
 
+@bp.post("/war/box/unlist")
+@login_required
+def box_unlist():
+    """The War Room takes one voter off a box's official list (a wrong match): they leave that box's list."""
+    if not can_watch():
+        abort(403)
+    nid = request.form.get("national_id", "")
+    box = request.form.get("box", "")[:200]
+    db = get_db()
+    row = db.execute("SELECT list_no FROM war_list WHERE national_id = ? AND box = ?", (nid, box)).fetchone()
+    if row is None:
+        abort(404)
+    db.execute("DELETE FROM war_list WHERE national_id = ? AND box = ?", (nid, box))
+    audit.log("war_unlist", target=nid, detail={"box": box, "list_no": row["list_no"]}, commit=False)
+    db.commit()
+    flash("Taken off this box's list.", "success")
+    return redirect(url_for("warroom.box", box=box))
+
+
 @bp.route("/war/box/export.<fmt>")
 @login_required
 def box_export(fmt):

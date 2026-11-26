@@ -65,8 +65,9 @@ def count():
     cands = candidates()
     boxes = [{"box": x["box"], "status": x["status"], "votes": x["votes"], "invalid": x["invalid"], "ballots": x["ballots"]}
              for x in r["rows"]]
-    places = [{"name": p["c"]["name"], "ballot_no": p["c"]["ballot_no"], "votes": p["votes"], "place": p["place"]}
-              for p in r["places"]]
+    places = [{"id": p["c"]["id"], "name": p["c"]["name"], "ballot_no": p["c"]["ballot_no"], "votes": p["votes"],
+               "place": p["place"], "full_name": p["c"]["full_name"] or p["c"]["name"], "where": p["c"]["place"],
+               "photo": bool(p["c"]["photo_path"])} for p in r["places"]]
     return {"cands": [{"id": c["id"], "name": c["name"], "ballot_no": c["ballot_no"]} for c in cands], "boxes": boxes,
             "places": places, "invalid": r["invalid"], "ballots": r["ballots"], "final_boxes": r["final_boxes"],
             "total_boxes": r["boxes"], "started": any(b["status"] != "not started" for b in boxes)}
@@ -91,3 +92,21 @@ def board(code, view="turnout"):
     out.headers["Cache-Control"] = "no-store"
     out.headers["Referrer-Policy"] = "no-referrer"
     return out
+
+
+@bp.route("/live/<code>/candidate/<int:cid>.jpg")
+def candidate_photo(code, cid):
+    """A candidate's photo for the public page (candidates only, never voters)."""
+    from flask import send_from_directory
+
+    from .pledges import _candidate_dir
+
+    want = token()
+    if not want or not hmac.compare_digest(code.encode(), want.encode()) or not show_count():
+        abort(404)
+    row = get_db().execute("SELECT photo_path FROM candidates WHERE id = ? AND active = 1", (cid,)).fetchone()
+    if not row or not row["photo_path"]:
+        abort(404)
+    resp = send_from_directory(_candidate_dir(), row["photo_path"], max_age=600)
+    resp.headers["Cache-Control"] = "public, max-age=600"
+    return resp

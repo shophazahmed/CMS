@@ -53,12 +53,18 @@
     {% else %}
     <p class="muted small-text">{{ c.final_boxes }} of {{ c.total_boxes }} box{{ 'es' if c.total_boxes != 1 }} final (official sheet).
       Other boxes show the count so far.</p>
+    {% endif %}
     <ol class="pb-places">
       {% for p in c.places %}
-      <li><span class="pb-place">{{ p.place }}</span><span class="pb-name">{% if p.ballot_no %}#{{ p.ballot_no }} {% endif %}{{ p.name }}</span>
-        <strong>{{ p.votes }}</strong></li>
+      <li><span class="pb-place">{{ p.place if c.started else (p.ballot_no or loop.index) }}</span>
+        {% if p.photo %}<img class="pb-photo" src="{{ url_for('publicboard.candidate_photo', code=code, cid=p.id) }}" alt="">
+        {% else %}<span class="pb-photo pb-initial" aria-hidden="true">{{ p.full_name[:1] }}</span>{% endif %}
+        <span class="pb-name"><span>{% if p.ballot_no %}#{{ p.ballot_no }} {% endif %}{{ p.full_name }}</span>
+          {% if p.where %}<span class="muted small-text">{{ p.where }}</span>{% endif %}</span>
+        {% if c.started %}<strong>{{ p.votes }}</strong>{% endif %}</li>
       {% endfor %}
     </ol>
+    {% if c.started %}
     <p class="muted small-text">Ballots counted {{ c.ballots }} · invalid or blank {{ c.invalid }}</p>
     <div class="pb-scroll">
     <table class="pb-table">

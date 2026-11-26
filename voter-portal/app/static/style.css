@@ -1560,3 +1560,7 @@ body.has-tabbar .ballot-bar { bottom: calc(76px + env(safe-area-inset-bottom)); 
 }
 .cand-photo { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-top: .4rem; }
 .cand-thumb { width: 2.6rem; height: 3.3rem; object-fit: cover; border-radius: 6px; }
+.pb-photo { width: 3.4rem; height: 4.2rem; border-radius: 10px; object-fit: cover; background: var(--surface-2, #eef2f3); flex: none; }
+.pb-initial { display: grid; place-items: center; font-weight: 700; color: var(--muted, #5b6770); font-size: 1.3rem; }
+.pb-name { display: grid; gap: .1rem; }
+.bl-unlist { margin: 0; }

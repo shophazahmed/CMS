@@ -576,3 +576,39 @@ def test_match_boxes_to_the_official_lists(app):
     b = app.test_client()
     login(b, "boss", ADMIN_PW)
     assert b.post("/war/team", data={"csrf_token": csrf(b, "/war/team"), "action": "sync_boxes"}).status_code == 403
+
+
+def test_public_candidate_photos_and_unlisting_a_voter(app):
+    import io as _io
+
+    from PIL import Image
+
+    o, token, ids = setup(app)
+    cid = ids["Sofhaz"]
+    o.post("/pledges/candidates", data={"csrf_token": token, "action": "rename", "id": cid, "name": "Sofhaz",
+                                        "color": "#2a78d6", "ballot_no": "2", "full_name": "Sofhaz Ahmed", "place": "Gadhdhoo, Seenuge"})
+    img = _io.BytesIO()
+    Image.new("RGB", (40, 50), "blue").save(img, "PNG")
+    img.seek(0)
+    o.post("/pledges/candidates", data={"csrf_token": token, "action": "photo", "id": cid, "photo": (img, "s.png")},
+           content_type="multipart/form-data")
+    o.post("/war/team", data={"csrf_token": token, "action": "public_link"})
+    conn = connect(app.config["DATABASE"])
+    code = conn.execute("SELECT value FROM settings WHERE key = 'public_board_token'").fetchone()[0]
+    anyone = app.test_client()
+    page = anyone.get(f"/live/{code}/count").get_data(as_text=True)
+    assert "Sofhaz Ahmed" in page and "Gadhdhoo, Seenuge" in page and f"/live/{code}/candidate/{cid}.jpg" in page
+    assert anyone.get(f"/live/{code}/candidate/{cid}.jpg").mimetype == "image/jpeg"
+    assert anyone.get(f"/live/wrong/candidate/{cid}.jpg").status_code == 404
+    # the War Room takes a wrong match off a box's list
+    conn.execute("INSERT INTO war_list (national_id, list_no, box) VALUES ('A200001', 1, 'Box A'), ('A200002', 2, 'Box A')")
+    conn.commit()
+    assert "Not on this list" in o.get("/war/box?box=Box+A").get_data(as_text=True)
+    o.post("/war/box/unlist", data={"csrf_token": token, "national_id": "A200002", "box": "Box A"})
+    assert [r[0] for r in conn.execute("SELECT national_id FROM war_list")] == ["A200001"]
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    assert "Not on this list" not in t1.get("/war/box").get_data(as_text=True)          # not for box agents
+    assert t1.post("/war/box/unlist", data={"csrf_token": csrf(t1, "/war/box"), "national_id": "A200001",
+                                            "box": "Box A"}).status_code in (302, 403)
+    assert conn.execute("SELECT COUNT(*) FROM war_list").fetchone()[0] == 1
