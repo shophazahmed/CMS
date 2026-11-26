@@ -13,6 +13,8 @@
 <form class="card form" method="post" enctype="multipart/form-data">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
   <label>List files <input type="file" name="lists" accept=".xls,.xlsx,.csv" multiple required></label>
+  <label>Our island in the lists <span class="muted">(leave blank to find it: the island of the rows that match our voters)</span>
+    <input name="island" value="{{ island }}" placeholder="GDh. Gadhdhoo" maxlength="60"></label>
   <label class="check"><input type="checkbox" name="set_box" value="1" checked> Set each matched voter's box from the list (the box name in the file)</label>
   <div class="actions">
     <button class="primary" name="apply" value="0">Check only</button>
@@ -25,12 +27,14 @@
 {% for e in result.errors %}<p class="flash flash-error">{{ e }}</p>{% endfor %}
 <section class="card">
   <h2>{{ 'Saved' if result.applied else 'Check (nothing saved yet)' }}</h2>
+  <p class="small-text">Matching only rows for <strong>{{ result.island or 'every island (no Island column)' }}</strong>.
+    {% if result.applied %}Each box's earlier list was replaced.{% endif %}</p>
   <div class="table-wrap">
   <table class="report-table">
-    <thead><tr><th>Box</th><th>Code</th><th class="num">In the file</th><th class="num">List says</th><th class="num">Matched</th><th>How</th></tr></thead>
+    <thead><tr><th>Box</th><th>Code</th><th class="num">Our island</th><th class="num">Other islands (skipped)</th><th class="num">Box total</th><th class="num">Matched</th><th>How</th></tr></thead>
     <tbody>
     {% for b in result.boxes %}
-    <tr><th>{{ b.box }}</th><td class="small-text mono">{{ b.code }}</td><td class="num">{{ b.rows }}</td>
+    <tr><th>{{ b.box }}</th><td class="small-text mono">{{ b.code }}</td><td class="num">{{ b.rows }}</td><td class="num">{{ b.others or '—' }}</td>
       <td class="num {{ 'count-diff' if not b.complete }}">{{ b.expected if b.expected is not none else '—' }}</td>
       <td class="num"><strong>{{ b.matched }}</strong> <span class="muted small-text">({{ ((100 * b.matched / b.rows)|round|int) if b.rows else 0 }}%)</span></td>
       <td class="small-text">{% for how, n in b.hows.items() %}{{ how }}: {{ n }}{{ ' · ' if not loop.last }}{% endfor %}</td></tr>
@@ -39,8 +43,15 @@
   </table>
   </div>
   {% for b in result.boxes if not b.complete %}
-  <p class="flash flash-error">{{ b.box }}: the file has {{ b.rows }} voters but the list says {{ b.expected }}. Some pages are missing
-    from this file: get the full list and upload it again.</p>
+  {% if b.page_total %}
+  <p class="flash flash-error">{{ b.box }}: Some pages are missing. The file has page{{ 's' if b.pages|length != 1 }}
+    {{ b.pages|join(', ') }} of {{ b.page_total }} ({{ b.all_rows }} of the box's {{ b.expected }} voters, all islands).
+    If our island's section goes on past page {{ b.pages|max }}, upload the full list; if the next page starts another
+    island, nothing is missing for us.</p>
+  {% else %}
+  <p class="flash flash-error">{{ b.box }}: the file has {{ b.all_rows }} rows but the list says {{ b.expected }}.
+    Some pages are missing from this file, or it holds only part of the box: check it has every page of our island's section.</p>
+  {% endif %}
   {% endfor %}
   {% if result.applied %}<p class="small-text">List numbers saved{{ ' and boxes set' if result.set_box }} for every matched voter.
     Give box agents their box on the War Room team page (the box names above).</p>

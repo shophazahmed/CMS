@@ -87,6 +87,7 @@ def parse(upload):
     code = box = None
     expected = None
     rows = []
+    pages, page_total = set(), None
     for sheet in _rows_of(upload):
         cols = None
         for r, vals in enumerate(sheet):
@@ -102,6 +103,10 @@ def parse(upload):
                 m = re.fullmatch(r"(\d+) voters", v)
                 if m and expected is None:
                     expected = int(m.group(1))
+                pm = re.search(r"page\s*(\d+)\s*(?:/|of)\s*(\d+)", v, re.I)
+                if pm:
+                    pages.add(int(pm.group(1)))
+                    page_total = int(pm.group(2))
             if "no." in low and "name" in low and "house" in low:
                 cols = {k: low.index(k) for k in ("no.", "name", "house")}
                 cols["island"] = low.index("island") if "island" in low else None
@@ -115,7 +120,22 @@ def parse(upload):
         raise ValueError(f"{upload.filename}: no voter rows found (it needs No., Name and House columns).")
     if not box:
         box = code or upload.filename
-    return {"code": code or "", "box": box, "expected": expected, "rows": rows, "file": upload.filename}
+    missing = sorted(set(range(1, page_total + 1)) - pages) if page_total else []
+    return {"code": code or "", "box": box, "expected": expected, "rows": rows, "file": upload.filename,
+            "pages": sorted(pages), "page_total": page_total, "missing_pages": missing}
+
+
+def home_island(parsed):
+    """Our island in the lists: the island of the rows that match a portal voter exactly (name and house)."""
+    db = get_db()
+    pairs = {(_norm(v["full_name"]), _norm(v["house_name"])) for v in
+             db.execute("SELECT full_name, house_name FROM voters WHERE deceased = 0")}
+    votes = {}
+    for p in parsed:
+        for no, name, island, house in p["rows"]:
+            if island and (_norm(name), _norm(house)) in pairs:
+                votes[island] = votes.get(island, 0) + 1
+    return max(votes, key=votes.get) if votes else ""
 
 
 def match(rows):
@@ -158,7 +178,7 @@ def official():
     if not (is_owner() or g.user["role"] == "admin" or tier() in ("owner", "room")):
         abort(403)
     if request.method == "GET":
-        return render_template("warroom/official.html", result=None)
+        return render_template("warroom/official.html", result=None, island="")
     files = [f for f in request.files.getlist("lists") if f and f.filename]
     if not files:
         return render_template("warroom/official.html", result=None, error="Choose the official list file(s).")
@@ -166,13 +186,22 @@ def official():
     set_box = request.form.get("set_box") == "1"
     boxes, unmatched, errors = [], [], []
     db = get_db()
+    parsed_all = []
     for f in files:
         try:
-            parsed = parse(f)
+            parsed_all.append(parse(f))
         except ValueError as exc:
             errors.append(str(exc))
-            continue
-        matched = match(parsed["rows"])
+    # The lists cover voters from many islands: only our island's rows are matched, so a voter elsewhere with
+    # the same name as one of ours can't take their place (or their list number).
+    island = " ".join(request.form.get("island", "").split()) or home_island(parsed_all)
+    for parsed in parsed_all:
+        all_rows = parsed["rows"]
+        mine = [r for r in all_rows if not island or not r[2] or _norm(r[2]) == _norm(island)]
+        others = len(all_rows) - len(mine)
+        matched = match(mine)
+        if apply:  # the box's list is replaced: earlier entries (including wrong matches) go
+            db.execute("DELETE FROM war_list WHERE box = ?", (parsed["box"],))
         hows = {}
         for row, nid, how in matched:
             if nid is None:
@@ -185,8 +214,12 @@ def official():
                 db.execute("INSERT INTO war_list (national_id, list_no, box) VALUES (?, ?, ?) ON CONFLICT(national_id)"
                            " DO UPDATE SET list_no = excluded.list_no, box = excluded.box", (nid, row[0], parsed["box"]))
         boxes.append({"box": parsed["box"], "code": parsed["code"], "file": parsed["file"], "expected": parsed["expected"],
-                      "rows": len(parsed["rows"]), "matched": sum(1 for _, nid, _ in matched if nid), "hows": hows,
-                      "complete": parsed["expected"] is None or parsed["expected"] == len(parsed["rows"])})
+                      "rows": len(mine), "all_rows": len(all_rows), "others": others,
+                      "matched": sum(1 for _, nid, _ in matched if nid), "hows": hows,
+                      "pages": parsed["pages"], "page_total": parsed["page_total"], "missing_pages": parsed["missing_pages"],
+                      # with page labels: complete when no page is missing; without: when the rows add up to the box
+                      "complete": (not parsed["missing_pages"]) if parsed["page_total"] else
+                                  (parsed["expected"] is None or parsed["expected"] == len(all_rows))})
     if apply and boxes:
         audit.log("war_official_lists", detail={"boxes": [(b["box"], b["matched"], b["rows"]) for b in boxes],
                                                 "set_box": set_box}, commit=False)
@@ -196,8 +229,9 @@ def official():
     db.executemany("INSERT INTO war_official_unmatched (user_id, box, list_no, name, island, house) VALUES (?, ?, ?, ?, ?, ?)",
                    [(g.user["id"],) + tuple(u) for u in unmatched])
     db.commit()
-    return render_template("warroom/official.html", result={"boxes": boxes, "unmatched": unmatched, "errors": errors,
-                                                            "applied": apply, "set_box": set_box})
+    return render_template("warroom/official.html", island=island,
+                           result={"boxes": boxes, "unmatched": unmatched, "errors": errors, "applied": apply,
+                                   "set_box": set_box, "island": island})
 
 
 @bp.route("/war/official/unmatched.csv")

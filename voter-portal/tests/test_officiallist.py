@@ -78,3 +78,34 @@ def test_list_numbers_on_the_pledge_sheets(app):
     i = rows[0].index("List no.")
     assert [r[i] for r in rows[1:]] == ["3", "5", "7"]
     assert o.get("/agents/sheet?sort=name").status_code == 200
+
+
+def test_official_lists_only_match_our_island(app):
+    """A list covers many islands: a namesake on another island must not take our voter's place or number."""
+    from openpyxl import Workbook
+
+    conn = connect(app.config["DATABASE"])
+    v = {r["national_id"]: r for r in conn.execute("SELECT national_id, full_name, house_name FROM voters")}
+    a1, a2 = v["A200001"], v["A200002"]
+    wb = Workbook()
+    ws = wb.active
+    for line in (["", "BALLOT BOX"], ["", "LOC-MALE-X"], ["", "Male", "X"], ["", "4 voters"], ["Page 1 / 2"],
+                 ["No.", "Name", "Island", "House"], [1, a1["full_name"], "GDh. Gadhdhoo", a1["house_name"]],
+                 [2, a2["full_name"], "K. Male", "Other House"],                       # a namesake elsewhere
+                 [3, "Someone Else", "K. Male", "Far Away"], ["Page 2 / 2"], ["No.", "Name", "Island", "House"],
+                 [4, "Another One", "K. Male", "Far Away"]):
+        ws.append(line)
+    buf = io.BytesIO()
+    wb.save(buf)
+    b = app.test_client()
+    login(b, "boss", ADMIN_PW)
+    tok = csrf(b, "/war/official")
+    # an earlier wrong entry for this box is replaced on save
+    conn.execute("INSERT INTO war_list (national_id, list_no, box) VALUES ('A200003', 9, 'Male X')")
+    conn.commit()
+    buf.seek(0)
+    page = b.post("/war/official", data={"csrf_token": tok, "apply": "1", "set_box": "1",
+                                         "lists": (buf, "male.xlsx")}, content_type="multipart/form-data").get_data(as_text=True)
+    assert "GDh. Gadhdhoo" in page and "Some pages are missing" not in page
+    got = {r[0]: (r[1], r[2]) for r in conn.execute("SELECT national_id, list_no, box FROM war_list")}
+    assert got == {"A200001": (1, "Male X")}                    # not A200002 (other island), A200003's old row gone
