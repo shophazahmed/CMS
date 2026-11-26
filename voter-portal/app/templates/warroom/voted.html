@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon, avatar %}
+{% block title %}Voted list{% endblock %}
+{% block main_class %}page wide{% endblock %}
+{% block content %}
+<div class="page-head war-head">
+  <div>
+    <a class="backlink" href="{{ url_for('warroom.home') }}">{{ icon('back', 18) }} War Room</a>
+    <h1>Voted list</h1>
+    <p class="muted">Who has cast their vote, newest first, as the box agents mark them. <strong>{{ everyone }}</strong> voted so far.</p>
+  </div>
+  <p class="war-sync" data-voted-live data-since="{{ cursor }}" data-url="{{ url_for('warroom.changes') }}" aria-live="polite">
+    <span class="war-dot"></span><span data-voted-live-text>Live</span></p>
+</div>
+
+<form class="card voted-filters" method="get">
+  <label>Box
+    <select name="box" data-autosubmit>
+      <option value="">Every box</option>
+      {% for b in boxes %}<option {{ 'selected' if b == box }}>{{ b }}</option>{% endfor %}
+    </select></label>
+  <label>Group
+    <select name="grp" data-autosubmit>
+      <option value="">Everyone</option>
+      {% for k, label in groups.items() %}<option value="{{ k }}" {{ 'selected' if grp == k }}>{{ label }}</option>{% endfor %}
+    </select></label>
+  <label class="grow">Search <input type="search" name="q" value="{{ q }}" placeholder="Number, name, house or ID"></label>
+  <button class="small">Show</button>
+  {% if args %}<a class="small-text" href="{{ url_for('warroom.voted') }}">Clear</a>{% endif %}
+</form>
+
+<section class="card">
+  <div class="list-head"><h2>{{ total }} voted{% if args %} in this list{% endif %}</h2>
+    <span class="bl-export">
+      <a class="button small" href="{{ url_for('warroom.voted_export', fmt='xlsx', **args) }}">{{ icon('download', 14) }} Excel</a>
+      <a class="button small" href="{{ url_for('warroom.voted_export', fmt='csv', **args) }}">{{ icon('download', 14) }} CSV</a>
+    </span></div>
+  {% if total > rows|length %}<p class="muted small-text">Showing the newest {{ rows|length }}. Filter by box, or download the full list.</p>{% endif %}
+  <ol class="bl-rows voted-rows">
+    {% for v in rows %}
+    <li class="bl-row is-voted">
+      <span class="bl-no mono">{{ v.list_no or '—' }}</span>
+      {{ avatar(v, 'sm') }}
+      <span class="bl-who"><strong>{{ v.full_name }}</strong>
+        <span class="muted small-text">{{ v.house_name }} · {{ v.location or 'No box' }}{% if v.priority %} · <span class="voted-grp g{{ v.priority }}">{{ priority[v.priority] }}</span>{% endif %}</span></span>
+      <span class="bl-state">✓ {{ hm(v.at) }}<span class="muted small-text voted-by">{{ v.marker or '' }}</span></span>
+    </li>
+    {% else %}<li class="muted">Nobody marked voted{% if args %} in this list{% endif %} yet.</li>{% endfor %}
+  </ol>
+</section>
+{% endblock %}

@@ -1040,7 +1040,14 @@ document.addEventListener("submit", async (event) => {
     btn.title = fresh ? `${fresh} new alert${fresh === 1 ? "" : "s"}` : "Alerts";
   };
   const markSeen = () => { remember(new Set([...seen(), ...current.map(key)])); render(); };
-  btn.addEventListener("click", () => setTimeout(markSeen, 1500));
+  // the list stays out of the way until the button is pressed; pressing again hides it
+  btn.addEventListener("click", () => {
+    const open = box.hidden;
+    box.hidden = !open;
+    btn.setAttribute("aria-expanded", String(open));
+    btn.classList.toggle("on", open);
+    if (open) { box.scrollIntoView({ behavior: "smooth", block: "nearest" }); setTimeout(markSeen, 1500); }
+  });
   document.addEventListener("war:changes", (e) => {
     const stats = e.detail && e.detail.stats;
     if (!stats || !Array.isArray(stats.alerts)) return;
@@ -1048,4 +1055,27 @@ document.addEventListener("submit", async (event) => {
     render();
   });
   render();
+})();
+
+// War Room voted list: reload when someone is marked voted (or undone), unless the search box is in use.
+(() => {
+  const live = document.querySelector("[data-voted-live]");
+  if (!live) return;
+  let since = live.dataset.since || "0";
+  const text = live.querySelector("[data-voted-live-text]");
+  setInterval(async () => {
+    try {
+      const r = await fetch(`${live.dataset.url}?since=${since}`, { credentials: "same-origin" });
+      if (!r.ok) throw new Error(r.status);
+      const data = await r.json();
+      since = data.cursor;
+      live.classList.remove("off");
+      text.textContent = "Live";
+      const typing = document.activeElement && document.activeElement.matches("input, select");
+      if (((data.voted || []).length || (data.undone || []).length) && !typing) location.reload();
+    } catch (e) {
+      live.classList.add("off");
+      text.textContent = "Offline";
+    }
+  }, 15000);
 })();

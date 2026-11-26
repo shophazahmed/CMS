@@ -410,8 +410,30 @@ def test_alerts_button_and_live_alerts(app):
     o, token, ids = setup(app)
     o.post("/war/team", data={"csrf_token": token, "action": "open"})
     page = o.get("/war").get_data(as_text=True)
-    assert "data-alert-btn" in page and 'href="#war-alerts"' in page and 'id="war-alerts"' in page
+    assert "data-alert-btn" in page and 'aria-controls="war-alerts"' in page and 'id="war-alerts"' in page
     assert "closes in closed" not in page
     data = o.get("/war/changes?since=0&stats=1").json["stats"]
     assert isinstance(data["alerts"], list) and data["n_alerts"] == len(data["alerts"])
     assert data["left"] == "" or data["left"].startswith(("closes in ", "polls closed"))
+
+
+def test_voted_list_and_hidden_alerts(app):
+    o, token, ids = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    page = o.get("/war").get_data(as_text=True)
+    assert 'data-alerts hidden' in page and "/war/voted" in page                      # alerts behind the button
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    tok = csrf(t1, "/war/box")
+    t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200001", "value": "1"})
+    t1.post("/war/mark", data={"csrf_token": tok, "national_id": "A200002", "value": "1"})
+    page = o.get("/war/voted").get_data(as_text=True)
+    assert "Aminath Alpha" in page and "Moosa Beta" in page and "boxagent" in page and "2 voted" in page
+    assert "Solid base" in page                                                       # our supporter group
+    only = o.get("/war/voted?grp=2").get_data(as_text=True)
+    assert "Aminath Alpha" in only and "Moosa Beta" not in only
+    assert "Aminath" not in o.get("/war/voted?box=Box+B").get_data(as_text=True)
+    assert "Moosa Beta" in o.get("/war/voted?q=moosa").get_data(as_text=True)
+    rows = o.get("/war/voted/export.csv").get_data(as_text=True).strip().splitlines()
+    assert len(rows) == 3 and "Marked by" in rows[0]
+    assert t1.get("/war/voted").status_code in (302, 403)                             # not for field accounts
+    assert t1.get("/war/voted/export.csv").status_code in (302, 403)

@@ -1459,3 +1459,13 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
 .war-alerts li.new { font-weight: 700; }
 .war-alerts li.new::marker { color: #16a34a; }
 @media (prefers-reduced-motion: reduce) { .alert-light { animation: none; } }
+
+/* War Room: alerts open from the button; the voted list */
+.war-alert-btn.on { background: var(--accent-soft); }
+.voted-filters { display: flex; flex-wrap: wrap; gap: .6rem .9rem; align-items: flex-end; padding: .8rem; margin-bottom: 1rem; }
+.voted-filters label { display: grid; gap: .2rem; font-size: .85rem; font-weight: 600; }
+.voted-filters label.grow { flex: 1 1 14rem; }
+.voted-rows .bl-state { display: grid; justify-items: end; color: #146c43; font-weight: 600; }
+.voted-by { font-weight: 400; }
+.voted-grp { font-weight: 600; }
+.voted-grp.g1 { color: #7c3aed; } .voted-grp.g2 { color: #146c43; } .voted-grp.g3 { color: #1d4ed8; } .voted-grp.g4 { color: #b45309; }

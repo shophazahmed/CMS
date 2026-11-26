@@ -815,6 +815,114 @@ def field_export(fmt):
                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 
+# --- who has voted (War Room) -------------------------------------------------------------------------
+
+VOTED_GROUPS = {"ours": "Our supporters", "1": PRIORITY[1], "2": PRIORITY[2], "3": PRIORITY[3], "4": PRIORITY[4],
+                "other": "Not our supporters"}
+
+
+def voted_rows(box="", grp="", q="", limit=None):
+    """Voters marked voted, newest first: box, list number, when, who marked it and our supporter group."""
+    sql, sp = supporters_sql()
+    sup = f"LEFT JOIN ({sql}) s ON s.national_id = v.national_id" if sql else "LEFT JOIN (SELECT NULL AS national_id, NULL AS priority) s ON 0"
+    where, params = [], []
+    if box:
+        where.append("v.location = ?")
+        params.append(box)
+    if grp == "ours":
+        where.append("s.priority IS NOT NULL")
+    elif grp in ("1", "2", "3", "4"):
+        where.append("s.priority = ?")
+        params.append(int(grp))
+    elif grp == "other":
+        where.append("s.priority IS NULL")
+    if q:
+        like = f"%{q}%"
+        where.append("(v.full_name LIKE ? OR v.house_name LIKE ? OR v.national_id LIKE ? OR CAST(l.list_no AS TEXT) = ?)")
+        params += [like, like, like, q]
+    base = (f"FROM war_voted w JOIN voters v ON v.national_id = w.national_id {sup}"
+            " LEFT JOIN war_list l ON l.national_id = v.national_id LEFT JOIN users u ON u.id = w.by_user"
+            + (" WHERE " + " AND ".join(where) if where else ""))
+    db = get_db()
+    total = db.execute(f"SELECT COUNT(*) {base}", (sp if sql else []) + params).fetchone()[0]
+    rows = db.execute(
+        "SELECT v.national_id, v.full_name, v.house_name, v.location, v.sex, v.age, v.photo_path, l.list_no, w.at,"
+        f" w.tier, u.username AS marker, s.priority {base} ORDER BY w.at DESC, w.rowid DESC"
+        + (" LIMIT ?" if limit else ""), (sp if sql else []) + params + ([limit] if limit else [])).fetchall()
+    return rows, total
+
+
+def _voted_args():
+    box = request.args.get("box", "")[:200]
+    grp = request.args.get("grp", "")
+    grp = grp if grp in VOTED_GROUPS else ""
+    q = " ".join(request.args.get("q", "").split())[:60]
+    return box, grp, q
+
+
+@bp.route("/war/voted")
+@login_required
+def voted():
+    """The War Room: who has voted so far, newest first, across every box (filter by box and group)."""
+    if not can_watch():
+        abort(403)
+    box, grp, q = _voted_args()
+    rows, total = voted_rows(box, grp, q, limit=500)
+    db = get_db()
+    boxes = [r[0] for r in db.execute("SELECT DISTINCT location FROM voters WHERE location != '' ORDER BY location")]
+    everyone = db.execute("SELECT COUNT(*) FROM war_voted").fetchone()[0]
+    return render_template("warroom/voted.html", rows=rows, total=total, everyone=everyone, boxes=boxes, box=box,
+                           grp=grp, q=q, groups=VOTED_GROUPS, priority=PRIORITY, hm=_hm, cursor=_cursor(),
+                           args={k: v for k, v in (("box", box), ("grp", grp), ("q", q)) if v})
+
+
+@bp.route("/war/voted/export.<fmt>")
+@login_required
+def voted_export(fmt):
+    from flask import Response
+
+    from .voters import _safe_cell
+
+    if fmt not in ("csv", "xlsx"):
+        abort(404)
+    if not can_watch():
+        abort(403)
+    box, grp, q = _voted_args()
+    rows, _ = voted_rows(box, grp, q)
+    headers = ["#", "Time", "No.", "ID", "Name", "House", "Box", "Age", "Sex", "Group", "Marked by"]
+    table = [[n, _hm(r["at"]), r["list_no"], r["national_id"], _safe_cell(r["full_name"]), _safe_cell(r["house_name"]),
+              _safe_cell(r["location"]), r["age"], r["sex"], PRIORITY.get(r["priority"], ""), r["marker"] or ""]
+             for n, r in enumerate(rows, 1)]
+    audit.log("war_voted_export", target=fmt, detail={"box": box, "grp": grp, "rows": len(table)})
+    name = f"voted-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
+    if fmt == "csv":
+        import csv
+
+        buf = io.StringIO()
+        writer = csv.writer(buf)
+        writer.writerow(headers)
+        writer.writerows(table)
+        return Response("\ufeff" + buf.getvalue(), mimetype="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}"'})
+    from openpyxl import Workbook
+    from openpyxl.styles import Font
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Voted"
+    ws.append(headers)
+    for cell in ws[1]:
+        cell.font = Font(bold=True)
+    for row in table:
+        ws.append(row)
+    ws.freeze_panes = "E2"
+    ws.auto_filter.ref = ws.dimensions
+    out = io.BytesIO()
+    wb.save(out)
+    return Response(out.getvalue(), headers={"Content-Disposition": f'attachment; filename="{name}"'},
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+
+
 # --- the dashboard ----------------------------------------------------------------------------------
 
 def agent_filter():
