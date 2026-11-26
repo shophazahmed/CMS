@@ -27,3 +27,17 @@
   {%- else %}{{ typed or auto }}{% endif -%}
 </td>
 {%- endmacro %}
+{% macro ride_cell(v, rides, voted, ride_labels, can_ride) -%}
+{%- set ride = rides.get(v.national_id, '') %}
+    <td class="cand ride-col">
+      {% if v.national_id in voted and ride != 'done' %}<span class="pl pl-blank muted">Voted</span>
+      {% elif not can_ride or ride in ('onway', 'done') %}<span class="pl {{ 'pl-ride ride-' ~ ride if ride else 'pl-blank' }}">{{ ride_labels.get(ride, '·') }}</span>{% else %}
+      <form method="post" action="{{ url_for('pledges.set_transport') }}" data-ride-form>
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="national_id" value="{{ v.national_id }}">
+        <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+        <input type="hidden" name="value" value="{{ '0' if ride else '1' }}">
+        <button class="pl {{ 'pl-ride ride-waiting' if ride else 'pl-blank' }}" aria-label="Needs transport: {{ v.full_name }}: {{ 'yes' if ride else 'no' }}">{{ ride_labels.get(ride, '·') }}</button>
+      </form>{% endif %}
+    </td>
+{%- endmacro %}

@@ -953,6 +953,11 @@ def _flat(s):
 
 # --- the team (owner) -------------------------------------------------------------------------------
 
+def _back():
+    back = request.form.get("back") or ""
+    return back if back.startswith("/") and not back.startswith("//") else url_for("warroom.team")
+
+
 @bp.route("/war/team", methods=["GET", "POST"])
 @login_required
 def team():
@@ -978,14 +983,14 @@ def team():
             picked = [t for t in ORDER if t in picked]
             if not owner and ("room" in picked) != ("room" in had):
                 flash("Only the owner gives (or takes away) the War Room dashboard.", "error")
-                return redirect(url_for("warroom.team"))
+                return redirect(_back())
             if user["role"] == "admin" and any(t in FIELD_TIERS for t in picked):
                 flash("Admins can be given the War Room dashboard, not a field tier.", "error")
-                return redirect(url_for("warroom.team"))
+                return redirect(_back())
             if "room" in picked and "room" not in had and not user["can_login"] and user["role"] != "admin":
-                flash(f"{user['username']} doesn't sign in: give them a password first (Users page). The War Room"
+                flash(f"{user['username']} doesn't sign in yet: on the Users page, open them and press Allow sign-in. The War Room"
                       " dashboard needs a proper sign-in, a private link only opens their field pages.", "error")
-                return redirect(url_for("warroom.team"))
+                return redirect(_back())
             b = request.form.get("war_box", "")[:200] if "t1" in picked else ""
             level = ",".join(picked)
             db.execute("UPDATE users SET war_tier = ?, war_box = ? WHERE id = ?", (level, b, uid))
@@ -1042,7 +1047,8 @@ def team():
             except ValueError as exc:
                 flash(str(exc), "error")
         db.commit()
-        return redirect(url_for("warroom.team"))
+        back = request.form.get("back") or ""
+        return redirect(back if back.startswith("/") and not back.startswith("//") else url_for("warroom.team"))
     users = db.execute("SELECT * FROM users WHERE deleted_at IS NULL AND (can_login = 1 OR role = 'agent')"
                        " ORDER BY role != 'agent', username COLLATE NOCASE").fetchall()
     now = now_iso()

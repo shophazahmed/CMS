@@ -131,9 +131,9 @@ def test_super_export(app):
     r = o.get(f"/super/export.csv?sc={ids['Sofhaz']}")
     rows = list(csv.reader(io.StringIO(r.get_data(as_text=True).lstrip("﻿"))))
     assert rows[0][9:12] == ["List no.", "Agent", "Connector"]
-    assert rows[0][12:] == ["#1 Rayaan", "#2 Sofhaz", "#3 Jawid", "#4 Thalaal", "Super for"]
+    assert rows[0][12:] == ["#1 Rayaan", "#2 Sofhaz", "#3 Jawid", "#4 Thalaal", "Super for", "Transport"]
     assert len(rows) == 2 and rows[1][1] == "A200001" and rows[1][11] == "admin"
-    assert rows[1][12:] == ["", "super", "super", "", "Sofhaz, Jawid"]
+    assert rows[1][12:] == ["", "super", "super", "", "Sofhaz, Jawid", ""]
     wb = load_workbook(io.BytesIO(o.get("/super/export.xlsx").data))
     assert wb.active.max_row == 4                                                    # every voter
     assert "'=HYPERLINK" in [c.value for c in wb.active["C"]][1:] or any(
@@ -225,3 +225,17 @@ def test_solid_base_and_shared_in_scenarios(app):
     assert "Solid base and shared supporters" in page and "shared Rayaan &amp; Sofhaz" in page
     assert f"/pledges?pp=only:{s}" not in page                          # nobody is in Sofhaz's solid base here
     assert f"/pledges?pp=only:{s}" in o.get("/super/scenarios").get_data(as_text=True)
+
+
+def test_needs_transport_on_the_super_sheet(app):
+    o, token, ids = owner(app)
+    page = o.get("/super").get_data(as_text=True)
+    assert '<th class="cand ride-col">Transport</th>' in page and "data-ride-form" in page
+    r = o.post("/pledges/transport", data={"csrf_token": token, "national_id": "A200001", "value": "1"},
+               headers={"X-Requested-With": "fetch"})
+    assert r.get_json()["status"] == "waiting"
+    assert ">Needs ride</button>" in o.get("/super").get_data(as_text=True)
+    import csv
+    import io
+    rows = list(csv.reader(io.StringIO(o.get("/super/export.csv").get_data(as_text=True).lstrip("\ufeff"))))
+    assert {r[1]: r[-1] for r in rows[1:]}["A200001"] == "Needs ride"

@@ -103,9 +103,10 @@ def export(fmt):
     listno = pledges.list_numbers([r["national_id"] for r in rows])
     connected = pledges.connector_or_auto([r["national_id"] for r in rows], "super_votes")
     agent = pledges.agents_of([r["national_id"] for r in rows])
+    rides = pledges.transport_map([r["national_id"] for r in rows])
     headers = (["#", "ID", "Full name", "Sex", "Age", "House name", "Party", "Phone", "Box", "List no.", "Agent",
                 "Connector"]
-               + [pledges.label(c) for c in cands] + ["Super for"])
+               + [pledges.label(c) for c in cands] + ["Super for", "Transport"])
     table = []
     for n, r in enumerate(rows, 1):
         mine = marks.get(r["national_id"], set())
@@ -113,7 +114,8 @@ def export(fmt):
                       _safe_cell(r["party"]), r["phone"], _safe_cell(r["location"]), listno.get(r["national_id"], ""),
                       agent.get(r["national_id"], ""), connected.get(r["national_id"], "")]
                      + ["super" if c["id"] in mine else "" for c in cands]
-                     + [", ".join(c["name"] for c in cands if c["id"] in mine)])
+                     + [", ".join(c["name"] for c in cands if c["id"] in mine),
+                        pledges.RIDES.get(rides.get(r["national_id"]), "")])
     audit.log("super_export", target=fmt, detail={"rows": len(table)})
     name = f"super-pledge-{datetime.now().strftime('%Y%m%d-%H%M')}.{fmt}"
     if fmt == "csv":
@@ -176,6 +178,8 @@ def sheet():
                            label=pledges.label, sort_key=sort_key, sort_dir=sort_dir, owner=is_owner(),
                            listno=pledges.list_numbers([r["national_id"] for r in rows]),
                            **pledges.sheet_extras([r["national_id"] for r in rows], "super_votes"),
+                           rides=pledges.transport_map([r["national_id"] for r in rows]), ride_labels=pledges.RIDES,
+                           voted=pledges.voted_ids([r["national_id"] for r in rows]), can_ride=pledges.can_ask_ride(),
                            agent_list=pledges.agent_options(),
                            query_args={k: v for k, v in request.args.items() if k != "page"},
                            first=(page - 1) * size)

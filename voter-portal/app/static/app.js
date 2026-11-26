@@ -978,3 +978,30 @@ document.addEventListener("submit", async (event) => {
     button.disabled = false;
   }
 });
+
+// Users page: search by name and show all / sign-in / agents / election-day people.
+(() => {
+  const cards = [...document.querySelectorAll("[data-person]")];
+  if (!cards.length) return;
+  const search = document.querySelector("[data-people-search]");
+  const chips = [...document.querySelectorAll("[data-people-show]")];
+  const none = document.querySelector("[data-people-none]");
+  let show = "all";
+  const apply = () => {
+    const q = (search ? search.value : "").trim().toLowerCase();
+    let n = 0;
+    cards.forEach((c) => {
+      const kind = show === "all" || (show === "war" ? c.dataset.war === "1" : c.dataset.kind === show);
+      const ok = kind && (!q || c.dataset.name.includes(q));
+      c.hidden = !ok;
+      if (ok) n += 1;
+    });
+    if (none) none.hidden = n > 0;
+  };
+  chips.forEach((b) => b.addEventListener("click", () => {
+    show = b.dataset.peopleShow;
+    chips.forEach((x) => x.classList.toggle("on", x === b));
+    apply();
+  }));
+  if (search) search.addEventListener("input", apply);
+})();

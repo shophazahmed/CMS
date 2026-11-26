@@ -475,7 +475,7 @@ def sheet():
                            listno=list_numbers([r["national_id"] for r in rows]),
                            **sheet_extras([r["national_id"] for r in rows]),
                            rides=transport_map([r["national_id"] for r in rows]), ride_labels=RIDES,
-                           voted=voted_ids([r["national_id"] for r in rows]),
+                           voted=voted_ids([r["national_id"] for r in rows]), can_ride=can_ask_ride(),
                            noshows=db.execute(f"SELECT COUNT(*) FROM pledge_noshow WHERE national_id IN"
                                               f" (SELECT national_id FROM voters{where})", params).fetchone()[0],
                            query_args=query_args, first=(page - 1) * size)
@@ -599,13 +599,22 @@ def set_noshow():
     return redirect(request.form.get("back") if (request.form.get("back") or "").startswith("/") else url_for("pledges.sheet"))
 
 
+def can_ask_ride():
+    """Who may tap Needs transport on the pledge and super pledge sheets: anyone who marks either sheet."""
+    from .auth import can_mark_super
+
+    return can_mark_pledges() or can_mark_super()
+
+
 @bp.post("/pledges/transport")
-@pledge_marker_required
+@login_required
 def set_transport():
     """Needs transport (value=1): the voter joins the War Room transport queue; 0 takes a waiting request back."""
     from .voters import get_voter_or_404
     from .warroom import request_transport
 
+    if not can_ask_ride():
+        abort(403)
     nid = request.form.get("national_id", "")
     get_voter_or_404(nid)
     wanted = request.form.get("value", "")

@@ -372,7 +372,7 @@ def test_one_agent_several_tiers_and_the_war_room(app):
     conn.commit()
     r = o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": ali, "tiers": ["room", "t2"]},
                follow_redirects=True)
-    assert "give them a password first" in r.get_data(as_text=True)
+    assert "Allow sign-in" in r.get_data(as_text=True)
     conn.execute("UPDATE users SET war_tier = 'room,t2' WHERE id = ?", (ali,))            # even if it got in somehow
     conn.commit()
     o.post("/war/team", data={"csrf_token": token, "action": "link", "user_id": ali, "days": "7"})

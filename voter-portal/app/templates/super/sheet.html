@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon, pager, avatar %}
-{% from "pledges/_people.html" import agent_cell, connector_cell with context %}
+{% from "pledges/_people.html" import agent_cell, connector_cell, ride_cell with context %}
 {% block title %}Super pledge{% endblock %}
 {% block head %}<link rel="stylesheet" href="{{ url_for('pledges.colors_css') }}">{% endblock %}
 {% block main_class %}page wide{% endblock %}
@@ -66,6 +66,7 @@
     <th class="num">#</th>{{ sort_th('name', 'Name', 'sticky') }}{{ sort_th('id', 'ID') }}<th>Sex</th>{{ sort_th('age', 'Age') }}
     {{ sort_th('house', 'House') }}<th>Phone</th>{{ sort_th('box', 'Box') }}{{ sort_th('no', 'No.') }}
     {% for c in cands %}<th class="cand cand-{{ c.id }}">{{ label(c) }}</th>{% endfor %}
+    <th class="cand ride-col">Transport</th>
     {% if not pledge_only %}<th>Agent</th><th>Connector</th>{% endif %}
   </tr></thead>
   <tbody>
@@ -90,6 +91,7 @@
       </form>{% endif %}
     </td>
     {% endfor %}
+    {{ ride_cell(v, rides, voted, ride_labels, can_ride) }}
     {% if not pledge_only %}{{ agent_cell(v, agents, agent_cells, agent_choices) }}
     {{ connector_cell(v, connectors, connected, can_connect) }}{% endif %}
   </tr>

@@ -43,9 +43,21 @@ def users():
     logins = [u for u in rows if u["can_login"]]
     people = [u for u in rows if u["role"] in ("agent", "user", "admin")]
     owner_id = next((u["id"] for u in logins if is_owner(u)), None)
+    from . import warroom
+
+    boxes = [r[0] for r in get_db().execute("SELECT DISTINCT location FROM voters WHERE location != '' ORDER BY location")]
+    everyone = sorted(rows, key=lambda u: (not u["is_active"], u["id"] != owner_id, u["username"].casefold()))
     return render_template("admin/users.html", agents=agents, users=logins, people=people, owner_id=owner_id,
-                           cf_access=CONFIRMED_ACCESS,
-                           roles=("user", "admin"), role_labels=ROLE_LABELS)
+                           everyone=everyone, cf_access=CONFIRMED_ACCESS, roles=("user", "admin"), role_labels=ROLE_LABELS,
+                           stiers=warroom.stored_tiers, boxes=boxes, slug=_slug)
+
+
+def _slug(name):
+    """A sign-in username suggested from an agent's name ("Ilham Vatey" -> "ilham.vatey")."""
+    import re
+
+    out = re.sub(r"[^a-z0-9._-]+", ".", (name or "").casefold()).strip(".")[:32]
+    return out if len(out) >= 3 else ""
 
 
 def _clean_name(value):
@@ -278,17 +290,22 @@ def update_user(user_id):
             db.execute("UPDATE users SET can_login = 0 WHERE id = ?", (user_id,))
             audit.log("user_login_off", target=user["username"])
             flash(f"{user['username']} can no longer sign in; their houses and voters stay with them.", "success")
-        elif not USERNAME_RE.match(user["username"]):
-            flash("To sign in, the name must be a username (3-32 letters or digits, no spaces). Rename the agent first.",
-                  "error")
         else:
-            password = generate_password()
-            db.execute(
-                "UPDATE users SET can_login = 1, password_hash = ?, must_change_password = 1, password_changed_at = ?,"
-                " failed_logins = 0, locked_until = NULL WHERE id = ?",
-                (hash_password(password), now_iso(precise=True), user_id))
-            audit.log("user_login_on", target=user["username"])
-            flash(f"{user['username']} can now sign in. Temporary password (shown once): {password}", "secret")
+            # the same person keeps their houses, voters, pledges and history: no new account
+            new = (request.form.get("username") or user["username"]).strip()
+            if not USERNAME_RE.match(new):
+                flash("To sign in, pick a username: 3-32 letters, digits, dot, dash or underscore (no spaces).", "error")
+            elif db.execute("SELECT 1 FROM users WHERE username = ? AND id != ?", (new, user_id)).fetchone():
+                flash(f"Username '{new}' is taken.", "error")
+            else:
+                password = generate_password()
+                db.execute(
+                    "UPDATE users SET can_login = 1, username = ?, role = CASE role WHEN 'agent' THEN 'user' ELSE role END,"
+                    " password_hash = ?, must_change_password = 1, password_changed_at = ?,"
+                    " failed_logins = 0, locked_until = NULL WHERE id = ?",
+                    (new, hash_password(password), now_iso(precise=True), user_id))
+                audit.log("user_login_on", target=new, detail={"from": user["username"]} if new != user["username"] else None)
+                flash(f"{user['username']} can now sign in as {new}. Temporary password (shown once): {password}", "secret")
 
     elif action == "toggle_active":
         if is_self or last_admin:

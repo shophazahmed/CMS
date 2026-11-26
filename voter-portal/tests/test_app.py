@@ -644,3 +644,35 @@ def test_will_not_vote_status(app):
     dash = c.get("/dashboard").get_data(as_text=True)
     assert "seg-wontvote" in dash and "Will not vote" in dash
     assert "Will not vote" in c.get("/export.csv?status=wontvote").get_data(as_text=True)
+
+
+def test_users_page_agent_to_sign_in_and_election_day(app):
+    from tests.test_canvass import add_agent
+    from tests.test_confirmed import OWNER_PW, add_owner
+
+    add_owner(app)
+    c = app.test_client()
+    login(c, "admin", OWNER_PW)
+    add_agent(app, "Ilham Vatey")
+    conn = connect(app.config["DATABASE"])
+    uid = conn.execute("SELECT id FROM users WHERE username = 'Ilham Vatey'").fetchone()[0]
+    conn.execute("UPDATE users SET can_login = 0 WHERE id = ?", (uid,))
+    conn.execute("INSERT INTO house_assignments (house_name, user_id, assigned_at) VALUES ('Some House', ?, 'x')", (uid,))
+    conn.commit()
+    page = c.get("/admin/users").get_data(as_text=True)
+    assert "Allow sign-in" in page and 'value="ilham.vatey"' in page and "Election day" in page
+    token = csrf(c, "/admin/users")
+    r = c.post(f"/admin/users/{uid}", data={"csrf_token": token, "action": "toggle_login", "username": "ilham vatey"},
+               follow_redirects=True)
+    assert "no spaces" in r.get_data(as_text=True)
+    r = c.post(f"/admin/users/{uid}", data={"csrf_token": token, "action": "toggle_login", "username": "ilham.vatey"},
+               follow_redirects=True)
+    assert "can now sign in as ilham.vatey" in r.get_data(as_text=True)
+    row = conn.execute("SELECT username, can_login, role FROM users WHERE id = ?", (uid,)).fetchone()
+    assert tuple(row) == ("ilham.vatey", 1, "user")                                    # the same account, now signs in
+    assert conn.execute("SELECT user_id FROM house_assignments WHERE house_name = 'Some House'").fetchone()[0] == uid
+    # War Room + tier 2 from the Users page, back to the Users page
+    r = c.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": uid, "tiers": ["room", "t2"],
+                                  "back": "/admin/users"})
+    assert r.headers["Location"].endswith("/admin/users")
+    assert conn.execute("SELECT war_tier FROM users WHERE id = ?", (uid,)).fetchone()[0] == "room,t2"

@@ -1410,3 +1410,30 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
 .pl.pl-ride { background: #b45309; color: #fff; border-color: #b45309; font-weight: 600; }
 .pl.pl-ride.ride-onway { background: #1d4ed8; border-color: #1d4ed8; }
 .pl.pl-ride.ride-done { background: #15803d; border-color: #15803d; }
+
+/* Users page: one card per person, each access on its own row */
+.people-tools { display: grid; gap: .6rem; padding: .8rem; margin-bottom: 1rem; }
+.people-tools input[type=search] { width: 100%; }
+.people-tools .chips { padding-bottom: 0; }
+.chip span { opacity: .75; margin-left: .2rem; }
+.people-add { display: flex; flex-wrap: wrap; gap: .5rem; align-items: flex-start; }
+.people-add details { flex: 0 1 auto; }
+.people-add details[open] { flex: 1 1 100%; }
+.people-add summary { list-style: none; display: inline-flex; align-items: center; gap: .3rem; cursor: pointer; }
+.people-add summary::-webkit-details-marker { display: none; }
+.people-cards { list-style: none; margin: 0; padding: 0; display: grid; gap: .75rem; }
+.person-card { border: 1px solid var(--border); border-radius: var(--radius); padding: .8rem .9rem; background: var(--surface); }
+.person-card.inactive { opacity: .6; }
+.person-card .person-main strong { margin-right: .25rem; }
+.access-grid { display: grid; gap: 0; margin-top: .7rem; border-top: 1px solid var(--border); }
+.access-row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem .7rem; padding: .45rem 0; border-bottom: 1px solid var(--border); }
+.access-label { flex: 0 0 11.5rem; font-weight: 600; font-size: .9rem; }
+.access-row form.inline { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4rem .6rem; margin: 0; }
+.access-row select { min-height: 0; padding: .25rem .4rem; font-size: .9rem; }
+.access-row button.small, .person-card button.small { padding: .3rem .65rem; font-size: .85rem; min-height: 0; }
+.inline-details { display: inline-block; }
+.inline-details[open] { display: block; flex: 1 1 100%; }
+.inline-details summary { list-style: none; cursor: pointer; display: inline-flex; }
+.inline-details summary::-webkit-details-marker { display: none; }
+.inline-details .form { margin-top: .5rem; max-width: 26rem; }
+@media (max-width: 640px) { .access-label { flex-basis: 100%; } }
