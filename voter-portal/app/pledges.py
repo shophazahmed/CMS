@@ -600,10 +600,13 @@ def set_noshow():
 
 
 def can_ask_ride():
-    """Who may tap Needs transport on the pledge and super pledge sheets: anyone who marks either sheet."""
-    from .auth import can_mark_super
+    """Who may tap Needs transport: every signed-in account (only for voters they can see), except
+    pledge-sheet-only accounts that can just view the sheets."""
+    from .auth import can_mark_super, is_pledge_only
 
-    return can_mark_pledges() or can_mark_super()
+    if g.get("user") is None:
+        return False
+    return not is_pledge_only() or can_mark_pledges() or can_mark_super()
 
 
 @bp.post("/pledges/transport")

@@ -969,8 +969,11 @@ document.addEventListener("submit", async (event) => {
     const data = await response.json();
     if (!data.ok) { toast(data.error || "Couldn't save."); return; }
     button.className = "pl " + (data.status ? "pl-ride ride-" + data.status : "pl-blank");
-    button.textContent = data.label || "·";
+    button.textContent = data.label || button.dataset.off || "·";
     form.elements.value.value = data.status ? "0" : "1";
+    const hint = form.parentElement.querySelector(".ride-wide .muted");
+    if (hint) hint.textContent = data.status ? "In the War Room transport queue · tap to take it back"
+      : "Tap to add them to the War Room transport queue";
     toast(data.status ? "Added to the transport queue" : "Transport request taken back");
   } catch (err) {
     form.submit();

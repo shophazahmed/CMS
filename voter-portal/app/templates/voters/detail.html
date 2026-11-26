@@ -32,6 +32,24 @@
   </div>
   {% endif %}
 
+  {% if not v.deceased %}
+  <div class="ride-wide">
+    <span class="ride-wide-label">{{ icon('home', 18) }} Transport on election day</span>
+    {% if voted and ride != 'done' %}<span class="pl pl-blank">Voted</span>
+    {% elif not can_ride or ride in ('onway', 'done') %}<span class="pl {{ 'pl-ride ride-' ~ ride if ride else 'pl-blank' }}">{{ ride_labels.get(ride, 'Not needed') }}</span>
+    {% else %}
+    <form method="post" action="{{ url_for('pledges.set_transport') }}" data-ride-form>
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <input type="hidden" name="national_id" value="{{ v.national_id }}">
+      <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">
+      <input type="hidden" name="value" value="{{ '0' if ride else '1' }}">
+      <button class="pl {{ 'pl-ride ride-waiting' if ride else 'pl-blank' }}" data-off="Needs transport?" aria-label="Needs transport: {{ 'yes' if ride else 'no' }}">{{ ride_labels.get(ride, 'Needs transport?') }}</button>
+    </form>
+    <span class="muted small-text">{{ 'In the War Room transport queue · tap to take it back' if ride else 'Tap to add them to the War Room transport queue' }}</span>
+    {% endif %}
+  </div>
+  {% endif %}
+
   <form class="canvass" method="post" action="{{ url_for('voters.canvass', national_id=v.national_id) }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="back" value="{{ request.full_path.rstrip('?') }}">

@@ -561,3 +561,24 @@ def test_needs_transport_on_the_pledge_sheet(app):
     r = a.post("/pledges/transport", data={"csrf_token": token, "national_id": "A200002", "value": "1"},
                headers={"X-Requested-With": "fetch"})
     assert r.status_code == 409 and "already voted" in r.get_json()["error"]
+
+
+def test_needs_transport_on_the_voter_page(app):
+    add_owner(app)
+    a = app.test_client()
+    login(a, "admin", OWNER_PW)
+    page = a.get("/voters/A200001").get_data(as_text=True)
+    assert "Transport on election day" in page and "data-ride-form" in page and "Needs transport?" in page
+    token = csrf(a, "/voters/A200001")
+    a.post("/pledges/transport", data={"csrf_token": token, "national_id": "A200001", "value": "1"})
+    assert ">Needs ride</button>" in a.get("/voters/A200001").get_data(as_text=True)
+    # a plain read-only user who can see the voter can ask too
+    a.post("/admin/users", data={"csrf_token": token, "username": "reader", "role": "user", "password": "reader-pass-123"})
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE users SET must_change_password = 0 WHERE username = 'reader'")
+    conn.commit()
+    r = app.test_client()
+    login(r, "reader", "reader-pass-123")
+    assert "data-ride-form" in r.get("/voters/A200002").get_data(as_text=True)
+    assert r.post("/pledges/transport", data={"csrf_token": csrf(r, "/voters/A200002"), "national_id": "A200002",
+                                              "value": "1"}, headers={"X-Requested-With": "fetch"}).get_json()["ok"]

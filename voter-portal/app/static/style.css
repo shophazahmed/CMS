@@ -1437,3 +1437,10 @@ tr.count-diff td, tr.count-diff th { color: var(--danger); font-weight: 700; }
 .inline-details summary::-webkit-details-marker { display: none; }
 .inline-details .form { margin-top: .5rem; max-width: 26rem; }
 @media (max-width: 640px) { .access-label { flex-basis: 100%; } }
+
+/* Voter page: Needs transport */
+.ride-wide { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; margin: .9rem 0; padding: .7rem .8rem;
+  border: 1px solid var(--border); border-radius: var(--radius); background: color-mix(in srgb, #b45309 5%, var(--surface)); }
+.ride-wide-label { display: inline-flex; align-items: center; gap: .35rem; font-weight: 600; }
+.ride-wide form { margin: 0; }
+.ride-wide .pl { min-width: 9rem; min-height: 2.4rem; padding: .35rem .9rem; font-size: .95rem; }

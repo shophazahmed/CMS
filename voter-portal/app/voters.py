@@ -361,11 +361,15 @@ def detail(national_id):
     people = db.execute(
         "SELECT c.*, u.username FROM canvass c JOIN users u ON u.id = c.user_id WHERE c.national_id = ?"
         " ORDER BY c.status_at DESC", (national_id,)).fetchall() if everyone else []
+    from . import pledges
+
     return render_template("voters/detail.html", v=voter, editor=editor, statuses=STATUSES, housemates=housemates,
                            confirmation=confirmation, notes=notes, people=people, everyone=everyone,
                            status_user=status_user, back=_safe_back(request.args.get("back")),
                            assigned=assigned, house_agent=house_agent,
-                           agents=agent_list() if is_admin() else [])
+                           agents=agent_list() if is_admin() else [],
+                           ride=pledges.transport_map([national_id]).get(national_id, ""), ride_labels=pledges.RIDES,
+                           voted=bool(pledges.voted_ids([national_id])), can_ride=pledges.can_ask_ride())
 
 
 def _safe_back(target):
