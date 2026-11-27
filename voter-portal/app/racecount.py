@@ -66,12 +66,12 @@ CREATE TABLE IF NOT EXISTS race_box (
     PRIMARY KEY (race_id, box)
 );
 """
-ROLES = {"": "No access", "count": "Box counter", "watch": "Results viewer"}
+ROLES = {"": "No access", "count": "Box counter", "watch": "Results viewer", "admin": "Atoll administrator"}
 MAX_PHOTO = 12 * 1024 * 1024
 # What an atoll-count-only account may open
 RACE_ENDPOINTS = {
     "racecount.home", "racecount.sheet", "racecount.tap", "racecount.final", "racecount.reopen", "racecount.sheet_photo",
-    "racecount.results", "racecount.results_xlsx", "racecount.candidate_photo",
+    "racecount.results", "racecount.results_xlsx", "racecount.candidate_photo", "racecount.manage",
     "theme.theme_css", "theme.set_appearance", "fonts.stylesheet", "fonts.serve", "auth.login", "auth.logout",
     "auth.change_password", "static",
 }
@@ -95,7 +95,7 @@ def race_role(user=None):
     user = user if user is not None else g.get("user")
     if user is None or user["role"] == "admin" or not user["can_login"] or user["deleted_at"] or not user["is_active"]:
         return ""
-    return user["race_role"] if user["race_role"] in ("count", "watch") and user["race_id"] else ""
+    return user["race_role"] if user["race_role"] in ("count", "watch", "admin") and user["race_id"] else ""
 
 
 def is_race_only(user=None):
@@ -120,7 +120,7 @@ def can_watch(race_id):
     if user is None:
         return False
     if is_race_only():
-        return race_role() == "watch" and user["race_id"] == race_id
+        return race_role() in ("watch", "admin") and user["race_id"] == race_id
     return is_owner() or has_view("count")
 
 
@@ -160,7 +160,17 @@ def may_count(race_id):
     return can_watch(race_id) or (is_race_only() and g.user["race_id"] == race_id) or bool(t1_box())
 
 
-def can_manage():
+def can_manage(race_id=None):
+    """Edits races and candidates: the owner and admins (every race, and adding races); an atoll administrator
+    their own race only (race_id None: may open the page)."""
+    if is_owner() or is_admin():
+        return True
+    if race_role() == "admin":
+        return race_id is None or g.user["race_id"] == race_id
+    return False
+
+
+def is_portal_admin():
     return is_owner() or is_admin()
 
 
@@ -299,13 +309,23 @@ def home():
 @bp.route("/atoll/manage", methods=["GET", "POST"])
 @login_required
 def manage():
-    """Races and their candidates (owner and admins)."""
+    """Races and their candidates (owner and admins; an atoll administrator their own race)."""
     if not can_manage():
         abort(403)
     db = get_db()
     if request.method == "POST":
         action = request.form.get("action", "")
         rid = request.form.get("race_id", type=int)
+        if action in ("add_race", "t1_all_on", "t1_all_off") and not is_portal_admin():
+            abort(403)  # adding races and handing out our box agents stay with the owner and admins
+        if action in ("edit_race", "add_cand") and not can_manage(rid):
+            abort(403)
+        if action in ("edit_cand", "remove_cand", "photo", "photo_remove"):
+            row = db.execute("SELECT race_id FROM race_candidates WHERE id = ?", (request.form.get("cand_id", type=int),)).fetchone()
+            if row is None:
+                abort(404)
+            if not can_manage(row["race_id"]):
+                abort(403)
         if action == "add_race":
             name = clean_text(request.form.get("name", ""))[:80]
             seats = request.form.get("seats", type=int) or 2
@@ -378,14 +398,18 @@ def manage():
         db.commit()
         return redirect(url_for("racecount.manage"))
     races = db.execute("SELECT * FROM races ORDER BY id").fetchall()
+    if not is_portal_admin():
+        races = [r for r in races if r["id"] == g.user["race_id"]]
     people = db.execute("SELECT id, username, race_role, race_id, race_box FROM users WHERE race_role != ''"
                         " AND deleted_at IS NULL ORDER BY username COLLATE NOCASE").fetchall()
     from .warroom import tier_sql
 
     t1 = db.execute(f"SELECT username, war_box, race_t1 FROM users WHERE {tier_sql('t1')} AND deleted_at IS NULL"
                     " ORDER BY username COLLATE NOCASE").fetchall()
+    if not is_portal_admin():
+        people = [p for p in people if p["race_id"] == g.user["race_id"]]
     return render_template("race/manage.html", races=races, cands={r["id"]: candidates(r["id"]) for r in races},
-                           people=people, roles=ROLES, t1=t1)
+                           people=people, roles=ROLES, t1=t1 if is_portal_admin() else [], portal_admin=is_portal_admin())
 
 
 def _ballot(value):
@@ -601,7 +625,7 @@ def results_page(rid):
         abort(403)
     pbox = (request.args.get("pbox") or "")[:200]
     all_boxes = boxes()
-    return render_template("race/results.html", r=results(rid), label=label, all_boxes=all_boxes,
+    return render_template("race/results.html", r=results(rid), label=label, all_boxes=all_boxes, can_edit=can_manage(rid),
                            pt=patterns(rid, pbox if pbox in all_boxes else None), pbox=pbox if pbox in all_boxes else "")
 
 

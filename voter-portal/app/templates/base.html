@@ -50,6 +50,7 @@
       {% if race_role == 'count' %}{{ nav(url_for('racecount.sheet', rid=r.id), 'Count · ' ~ r.name, 'clipboard', ep == 'racecount.sheet') }}
       {% else %}{{ nav(url_for('racecount.results', rid=r.id), r.name, 'chart', ep == 'racecount.results') }}
       {{ nav(url_for('racecount.sheet', rid=r.id), 'Boxes', 'clipboard', ep == 'racecount.sheet') }}{% endif %}
+      {% if race_role == 'admin' %}{{ nav(url_for('racecount.manage'), 'Race & candidates', 'users', ep == 'racecount.manage') }}{% endif %}
       {% endfor %}
       {% elif pledge_only %}
       <p class="side-label">Pledges</p>
@@ -110,7 +111,7 @@
         <summary>
           <span class="account-avatar">{{ current_user.username[:1]|upper }}</span>
           <span class="side-who"><strong>{{ current_user.username }}</strong>
-            <span class="muted small-text">{{ war_tiers|map('replace', 't1', 'Box agent')|map('replace', 't2', 'Field runner')|map('replace', 't3', 'Call centre')|join(' + ') if war_field else ('Atoll count · ' ~ ('box counter' if race_role == 'count' else 'results')) if race_only else 'Pledge sheet' if pledge_only else {'admin': 'Admin', 'agent': 'Agent', 'user': 'Read-only user'}[role] }}</span></span>
+            <span class="muted small-text">{{ war_tiers|map('replace', 't1', 'Box agent')|map('replace', 't2', 'Field runner')|map('replace', 't3', 'Call centre')|join(' + ') if war_field else ('Atoll count · ' ~ {'count': 'box counter', 'watch': 'results', 'admin': 'administrator'}[race_role]) if race_only else 'Pledge sheet' if pledge_only else {'admin': 'Admin', 'agent': 'Agent', 'user': 'Read-only user'}[role] }}</span></span>
           {{ icon('chevron', 16) }}
         </summary>
         <div class="side-account-menu">

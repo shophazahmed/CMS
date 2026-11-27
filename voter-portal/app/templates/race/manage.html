@@ -2,10 +2,11 @@
 {% from "_macros.html" import icon %}
 {% block title %}Races and candidates{% endblock %}
 {% block content %}
-<a class="backlink" href="{{ url_for('racecount.home') }}">{{ icon('back', 18) }} Atoll count</a>
+{% if portal_admin %}<a class="backlink" href="{{ url_for('racecount.home') }}">{{ icon('back', 18) }} Atoll count</a>
+{% else %}{% for r in races %}<a class="backlink" href="{{ url_for('racecount.results', rid=r.id) }}">{{ icon('back', 18) }} Results</a>{% endfor %}{% endif %}
 <div class="page-head"><h1>Races and candidates</h1>
-  <p class="muted">A race is counted at the same ballot boxes as the island council, with its own candidates. People who count it
-    get access on the <a href="{{ url_for('admin.users') }}">Users</a> page (Atoll count row): they see only this count.</p></div>
+  <p class="muted">A race is counted at the same ballot boxes as the island council, with its own candidates.
+    {% if portal_admin %}People who count it get access on the <a href="{{ url_for('admin.users') }}">Users</a> page (Atoll count row): they see only this count.{% endif %}</p></div>
 
 {% for r in races %}
 <section class="card form">
@@ -53,6 +54,7 @@
 </section>
 {% endfor %}
 
+{% if portal_admin %}
 <section class="card form">
   <h2>Add a race</h2>
   <form method="post">
@@ -65,7 +67,9 @@
     <button class="primary" name="action" value="add_race">Add race</button>
   </form>
 </section>
+{% endif %}
 
+{% if portal_admin %}
 <section class="card form">
   <h2>Our box agents (tier 1)</h2>
   <p class="muted small-text">Box agents with the atoll count tick also count every shown race at their own box (while the
@@ -78,6 +82,7 @@
     <button class="small" name="action" value="t1_all_off">Take it from every box agent</button></form>
   {% else %}<p class="muted">No tier 1 box agents yet (War Room team).</p>{% endif %}
 </section>
+{% endif %}
 
 <section class="card">
   <h2>Who counts</h2>

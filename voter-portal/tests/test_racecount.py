@@ -159,3 +159,27 @@ def test_tier1_box_agents_count_the_atoll_race(app):
     assert conn.execute("SELECT race_t1 FROM users WHERE id = ?", (uid,)).fetchone()[0] == 0
     o.post("/war/team", data={"csrf_token": token, "action": "open"})
     assert t1.get(f"/atoll/{rid}/count").status_code == 403
+
+
+def test_atoll_administrator_edits_their_race(app):
+    o, token, conn, rid, (c1, c2, c4, c6) = setup(app)
+    o.post("/atoll/manage", data={"csrf_token": token, "action": "add_race", "name": "Another race"})
+    other = conn.execute("SELECT id FROM races WHERE name = 'Another race'").fetchone()[0]
+    adm, _ = person(app, o, token, conn, "atolladmin", "admin", rid)
+    assert adm.get("/atoll").headers["Location"].endswith(f"/atoll/{rid}/results")
+    page = adm.get("/atoll/manage").get_data(as_text=True)
+    assert "GDh - Atoll GM Member" in page and "Another race" not in page and "Add a race" not in page
+    assert "Edit race &amp; candidates" in adm.get(f"/atoll/{rid}/results").get_data(as_text=True)
+    tok = csrf(adm, "/atoll/manage")
+    adm.post("/atoll/manage", data={"csrf_token": tok, "action": "add_cand", "race_id": rid, "ballot_no": "8",
+                                    "name": "Candidate Eight", "place": "Island D, House 8"})
+    assert conn.execute("SELECT COUNT(*) FROM race_candidates WHERE race_id = ?", (rid,)).fetchone()[0] == 5
+    adm.post("/atoll/manage", data={"csrf_token": tok, "action": "edit_cand", "cand_id": c2, "ballot_no": "2",
+                                    "name": "Candidate Two B", "place": "Island B"})
+    assert conn.execute("SELECT name FROM race_candidates WHERE id = ?", (c2,)).fetchone()[0] == "Candidate Two B"
+    # not another race, not new races, not our box agents, nothing else in the portal
+    assert adm.post("/atoll/manage", data={"csrf_token": tok, "action": "add_cand", "race_id": other,
+                                           "name": "X"}).status_code == 403
+    assert adm.post("/atoll/manage", data={"csrf_token": tok, "action": "add_race", "name": "Y"}).status_code == 403
+    assert adm.post("/atoll/manage", data={"csrf_token": tok, "action": "t1_all_on"}).status_code == 403
+    assert adm.get("/admin/users").status_code in (302, 403) and adm.get("/war").status_code in (302, 403)

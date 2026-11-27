@@ -17,7 +17,8 @@
     <p class="muted">{{ r.final_boxes }} of {{ r.rows|length }} box{{ 'es' if r.rows|length != 1 }} final (official sheet) · other boxes show the count so far · refreshes by itself</p>
   </div>
   <p class="list-links"><a class="button small" href="{{ url_for('racecount.results_xlsx', rid=r.race.id) }}">{{ icon('download', 16) }} Excel</a>
-    <a class="button small" href="{{ url_for('racecount.sheet', rid=r.race.id) }}">Count a box</a></p>
+    <a class="button small" href="{{ url_for('racecount.sheet', rid=r.race.id) }}">Count a box</a>
+    {% if can_edit %}<a class="button small" href="{{ url_for('racecount.manage') }}">Edit race &amp; candidates</a>{% endif %}</p>
 </div>
 
 <ol class="pb-places race-places">
