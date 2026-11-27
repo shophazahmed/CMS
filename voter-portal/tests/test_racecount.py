@@ -81,3 +81,28 @@ def test_atoll_count_flow_and_access(app):
     boss = conn.execute("SELECT id FROM users WHERE username = 'boss'").fetchone()[0]
     o.post(f"/admin/users/{boss}", data={"csrf_token": token, "action": "set_race", "race_role": "watch", "race_id": rid})
     assert conn.execute("SELECT race_role FROM users WHERE id = ?", (boss,)).fetchone()[0] == ""
+
+
+def test_atoll_count_on_the_public_page(app):
+    import io as _io
+
+    from PIL import Image
+
+    o, token, conn, rid, (c1, c2, c4, c6) = setup(app)
+    img = _io.BytesIO()
+    Image.new("RGB", (40, 50), "green").save(img, "PNG")
+    img.seek(0)
+    o.post("/atoll/manage", data={"csrf_token": token, "action": "photo", "cand_id": c1, "photo": (img, "a.png")},
+           content_type="multipart/form-data")
+    o.post("/war/team", data={"csrf_token": token, "action": "public_link"})
+    code = conn.execute("SELECT value FROM settings WHERE key = 'public_board_token'").fetchone()[0]
+    anyone = app.test_client()
+    turnout = anyone.get(f"/live/{code}").get_data(as_text=True)
+    assert f"/live/{code}/race/{rid}" in turnout and "GDh - Atoll GM Member" in turnout       # its tab
+    page = anyone.get(f"/live/{code}/race/{rid}").get_data(as_text=True)
+    assert "Candidate One" in page and "Gadhdhoo, House 1" in page and "2 seats" in page
+    assert f"/live/{code}/race/{rid}/candidate/{c1}.jpg" in page
+    assert anyone.get(f"/live/{code}/race/{rid}/candidate/{c1}.jpg").mimetype == "image/jpeg"
+    assert anyone.get(f"/live/wrong/race/{rid}").status_code == 404
+    o.post("/war/team", data={"csrf_token": token, "action": "public_count", "on": "0"})      # hidden with the count
+    assert anyone.get(f"/live/{code}/race/{rid}").status_code == 404

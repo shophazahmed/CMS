@@ -73,25 +73,70 @@ def count():
             "total_boxes": r["boxes"], "started": any(b["status"] != "not started" for b in boxes)}
 
 
+def _ok(code):
+    want = token()
+    return bool(want) and hmac.compare_digest(code.encode(), want.encode())
+
+
+def public_races():
+    """Active other races (e.g. the atoll count) shown on the public page with the vote count."""
+    if not show_count():
+        return []
+    return get_db().execute("SELECT id, name, seats FROM races WHERE active = 1 ORDER BY id").fetchall()
+
+
+def race_view(rid):
+    """One race as the public sees it: candidates (photo, name, island and house) and votes, and each box."""
+    from . import racecount
+
+    r = racecount.results(rid)
+    places = [{"id": p["c"]["id"], "name": p["c"]["name"], "ballot_no": p["c"]["ballot_no"], "votes": p["votes"],
+               "place": p["place"], "full_name": p["c"]["name"], "where": p["c"]["place"], "wins": p["wins"],
+               "photo": bool(p["c"]["photo_path"])} for p in r["places"]]
+    return {"race": r["race"], "places": places, "boxes": r["rows"], "invalid": r["invalid"], "ballots": r["ballots"],
+            "final_boxes": r["final_boxes"], "total_boxes": len(r["rows"]), "started": r["started"],
+            "cands": [{"id": c["id"], "name": c["name"], "ballot_no": c["ballot_no"]} for c in r["cands"]]}
+
+
 @bp.route("/live/<code>")
 @bp.route("/live/<code>/count", endpoint="count_page", defaults={"view": "count"})
-def board(code, view="turnout"):
+@bp.route("/live/<code>/race/<int:rid>", endpoint="race_page", defaults={"view": "race"})
+def board(code, view="turnout", rid=None):
     from datetime import timedelta
 
     from flask import make_response
 
-    want = token()
-    if not want or not hmac.compare_digest(code.encode(), want.encode()) or (view == "count" and not show_count()):
+    races = public_races() if _ok(code) else []
+    if not _ok(code) or (view in ("count", "race") and not show_count()) or \
+            (view == "race" and rid not in {r["id"] for r in races}):
         return render_template("public/closed.html"), 404
     rows, overall = turnout()
     now = (datetime.now(timezone.utc) + timedelta(hours=LOCAL_OFFSET_H)).strftime("%-d %b %Y, %H:%M")
-    resp = render_template("public/board.html", rows=rows, overall=overall, view=view, code=code,
-                           c=count() if show_count() and view == "count" else None, has_count=show_count(),
+    resp = render_template("public/board.html", rows=rows, overall=overall, view=view, code=code, races=races, rid=rid,
+                           c=count() if show_count() and view == "count" else race_view(rid) if view == "race" else None,
+                           has_count=show_count(),
                            now=now, title=campaign.get_setting("public_board_title") or "Election results")
     out = make_response(resp)
     out.headers["Cache-Control"] = "no-store"
     out.headers["Referrer-Policy"] = "no-referrer"
     return out
+
+
+@bp.route("/live/<code>/race/<int:rid>/candidate/<int:cid>.jpg")
+def race_candidate_photo(code, rid, cid):
+    """A race candidate's photo for the public page (candidates only)."""
+    from flask import send_from_directory
+
+    from . import racecount
+
+    if not _ok(code) or rid not in {r["id"] for r in public_races()}:
+        abort(404)
+    row = get_db().execute("SELECT photo_path FROM race_candidates WHERE id = ? AND race_id = ?", (cid, rid)).fetchone()
+    if not row or not row["photo_path"]:
+        abort(404)
+    resp = send_from_directory(racecount._dir(), row["photo_path"], max_age=600)
+    resp.headers["Cache-Control"] = "public, max-age=600"
+    return resp
 
 
 @bp.route("/live/<code>/candidate/<int:cid>.jpg")
