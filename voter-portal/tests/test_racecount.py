@@ -106,3 +106,25 @@ def test_atoll_count_on_the_public_page(app):
     assert anyone.get(f"/live/wrong/race/{rid}").status_code == 404
     o.post("/war/team", data={"csrf_token": token, "action": "public_count", "on": "0"})      # hidden with the count
     assert anyone.get(f"/live/{code}/race/{rid}").status_code == 404
+
+
+def test_atoll_voting_patterns(app):
+    o, token, conn, rid, (c1, c2, c4, c6) = setup(app)
+    tok = csrf(o, f"/atoll/{rid}/count?box=Box+A")
+    for n, combo in enumerate([f"p:{c1}-{c4}", f"p:{c1}-{c4}", f"p:{c1}-{c2}", f"s:{c1}", "x"]):
+        o.post(f"/atoll/{rid}/tap", data={"csrf_token": tok, "combo": combo, "key": f"k{n}", "box": "Box A"},
+               headers={"X-Requested-With": "fetch"})
+    page = " ".join(o.get(f"/atoll/{rid}/results").get_data(as_text=True).split())
+    assert "Voting pattern" in page and "5 ballots · 3 with two candidates · 1 with one · 1 invalid or blank" in page
+    assert "#1 Candidate One + #4 Candidate Four" in page
+    assert "Who each candidate's voters paired them with" in page and "#1 Candidate One <span class=\"muted small-text\">· 4 ballots" in page
+    one = " ".join(o.get(f"/atoll/{rid}/results?pbox=Box+A").get_data(as_text=True).split())
+    assert "taps at Box A: 5 ballots" in one                                  # the pattern at one box
+    from openpyxl import load_workbook
+    import io as _io
+    wb = load_workbook(_io.BytesIO(o.get(f"/atoll/{rid}/results.xlsx").data))
+    ws = wb["Voting pattern"]
+    rows = [[c.value for c in r] for r in ws.iter_rows()]
+    assert ["#1 Candidate One + #4 Candidate Four", 2, 40.0] in [r[:3] for r in rows]
+    cand = next(r for r in rows if r[0] == "#1 Candidate One")
+    assert cand[:3] == ["#1 Candidate One", 4, 1]

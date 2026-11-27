@@ -1619,3 +1619,4 @@ body.has-tabbar .ballot-bar { bottom: calc(76px + env(safe-area-inset-bottom)); 
 .cand-add { margin-top: .8rem; }
 .bc-who > * { overflow-wrap: anywhere; }
 .bc-who .muted { overflow-wrap: anywhere; }
+.race-pattern .dbar-fill { fill: var(--accent); }

@@ -524,12 +524,44 @@ def sheet_photo(rid, box):
     return resp
 
 
+def patterns(rid, box=None):
+    """How ballots were filled in (from the counters' taps): each pair, each single vote and invalid, with the
+    partners of every candidate. box=None: every box."""
+    race = race_or_404(rid)
+    cands = candidates(rid)
+    tal_all = tally(rid, box)
+    pattern = {}
+    for b, tal in tal_all.items():
+        for combo, n in tal.items():
+            pattern[combo] = pattern.get(combo, 0) + n
+    tallied = sum(pattern.values())
+    partners = {c["id"]: {"alone": 0, "with": {}, "total": 0} for c in cands}
+    for combo, n in pattern.items():
+        if combo.startswith("p:"):
+            a, b = (int(x) for x in combo[2:].split("-"))
+            for me, other in ((a, b), (b, a)):
+                if me in partners:
+                    partners[me]["with"][other] = partners[me]["with"].get(other, 0) + n
+                    partners[me]["total"] += n
+        elif combo.startswith("s:") and int(combo[2:]) in partners:
+            partners[int(combo[2:])]["alone"] += n
+            partners[int(combo[2:])]["total"] += n
+    rows = [(key, text, ids, pattern.get(key, 0)) for key, text, ids in combos(cands, race["max_votes"])]
+    pairs = sum(n for key, _, _, n in rows if key.startswith("p:"))
+    singles = sum(n for key, _, _, n in rows if key.startswith("s:"))
+    return {"rows": rows, "tallied": tallied, "max": max([n for *_, n in rows] or [0]), "partners": partners,
+            "pairs": pairs, "singles": singles, "invalid": pattern.get("x", 0), "box": box}
+
+
 @bp.route("/atoll/<int:rid>/results", endpoint="results")
 @login_required
 def results_page(rid):
     if not can_watch(rid):
         abort(403)
-    return render_template("race/results.html", r=results(rid), label=label)
+    pbox = (request.args.get("pbox") or "")[:200]
+    all_boxes = boxes()
+    return render_template("race/results.html", r=results(rid), label=label, all_boxes=all_boxes,
+                           pt=patterns(rid, pbox if pbox in all_boxes else None), pbox=pbox if pbox in all_boxes else "")
 
 
 @bp.route("/atoll/<int:rid>/results.xlsx")
@@ -560,6 +592,24 @@ def results_xlsx(rid):
     for row in (3, 8 + len(r["places"])):
         for cell in ws[row]:
             cell.font = Font(bold=True)
+    pt = patterns(rid)
+    pw = wb.create_sheet("Voting pattern")
+    pw.append([f"{r['race']['name']} · voting pattern · {pt['tallied']} ballots tapped by the counters"])
+    pw["A1"].font = Font(bold=True)
+    pw.append([])
+    pw.append(["Ballot", "Ballots", "% of ballots"])
+    for key, text, ids, n in pt["rows"]:
+        pw.append([text, n, round(100 * n / pt["tallied"], 1) if pt["tallied"] else 0])
+    pw.append([])
+    pw.append(["Candidate", "Their ballots", "Alone"] + [f"With {label(c)}" for c in r["cands"]])
+    for c in r["cands"]:
+        p = pt["partners"][c["id"]]
+        pw.append([label(c), p["total"], p["alone"]] + [p["with"].get(o["id"], "") if o["id"] != c["id"] else "—"
+                                                        for o in r["cands"]])
+    for row in (3, 5 + len(pt["rows"])):
+        for cell in pw[row]:
+            cell.font = Font(bold=True)
+    pw.column_dimensions["A"].width = 44
     ws.column_dimensions["A"].width = 30
     ws.column_dimensions["B"].width = 30
     out = io.BytesIO()

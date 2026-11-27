@@ -1,5 +1,11 @@
 {% extends "base.html" %}
 {% from "_macros.html" import icon %}
+{% macro bar(n, of) -%}
+<svg class="dbar" viewBox="0 0 100 8" preserveAspectRatio="none" aria-hidden="true">
+  <rect class="dbar-track" x="0" y="0" width="100" height="8"/>
+  {% if of %}<rect class="dbar-fill" x="0" y="0" width="{{ (100 * n / of)|round(2) }}" height="8"/>{% endif %}
+</svg>
+{%- endmacro %}
 {% block title %}{{ r.race.name }} · results{% endblock %}
 {% block main_class %}page wide{% endblock %}
 {% block content %}
@@ -26,6 +32,47 @@
   {% endfor %}
 </ol>
 <p class="muted small-text">Ballots {{ r.ballots }} · invalid or blank {{ r.invalid }}</p>
+
+<section class="card race-pattern" id="pattern">
+  <div class="list-head"><h2>Voting pattern</h2>
+    <form method="get" class="inline"><label class="small-text">Box
+      <select name="pbox" data-autosubmit><option value="">Every box</option>
+        {% for b in all_boxes %}<option {{ 'selected' if b == pbox }}>{{ b }}</option>{% endfor %}</select></label>
+      <noscript><button class="small">Show</button></noscript></form></div>
+  <p class="muted small-text">How the ballots were filled in, from the counters' taps{{ ' at ' ~ pbox if pbox }}: {{ pt.tallied }} ballots ·
+    {{ pt.pairs }} with two candidates · {{ pt.singles }} with one · {{ pt.invalid }} invalid or blank.</p>
+  {% if pt.tallied %}
+  <ul class="dist-list">
+    {% for key, text, ids, n in pt.rows %}
+    <li><span class="dist-name small-text">{{ text }}</span>{{ bar(n, pt.max) }}
+      <span class="dist-num"><strong>{{ n }}</strong> <span class="muted small-text">{{ ((100 * n / pt.tallied)|round(1)) }}%</span></span></li>
+    {% endfor %}
+  </ul>
+  {% else %}<p class="muted">No ballots counted{{ ' at this box' if pbox }} yet.</p>{% endif %}
+</section>
+
+{% if pt.tallied %}
+<section class="card race-pattern">
+  <h2>Who each candidate's voters paired them with</h2>
+  <div class="war-grid">
+  {% for c in r.cands %}{% set p = pt.partners[c.id] %}
+  <div>
+    <h3>{{ label(c) }} <span class="muted small-text">· {{ p.total }} ballot{{ 's' if p.total != 1 }}</span></h3>
+    {% if p.total %}
+    <ul class="dist-list">
+      {% for o in r.cands if o.id != c.id %}{% set n = p.with.get(o.id, 0) %}
+      <li><span class="dist-name small-text">with {{ label(o) }}</span>{{ bar(n, p.total) }}
+        <span class="dist-num"><strong>{{ n }}</strong> <span class="muted small-text">{{ ((100 * n / p.total)|round) }}%</span></span></li>
+      {% endfor %}
+      <li><span class="dist-name small-text">alone (one vote)</span>{{ bar(p.alone, p.total) }}
+        <span class="dist-num"><strong>{{ p.alone }}</strong> <span class="muted small-text">{{ ((100 * p.alone / p.total)|round) }}%</span></span></li>
+    </ul>
+    {% else %}<p class="muted small-text">No ballots yet.</p>{% endif %}
+  </div>
+  {% endfor %}
+  </div>
+</section>
+{% endif %}
 
 <section class="card">
   <h2>By box</h2>
