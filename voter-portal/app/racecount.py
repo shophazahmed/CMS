@@ -206,11 +206,15 @@ def label(c):
 
 
 def combos(cands, max_votes):
+    """Every way a ballot can be filled in, most candidates first: (key, label, candidate ids). Two or more
+    candidates are p:<a>-<b>[-<c>...] in ballot order, one is s:<a>, x is invalid / blank."""
+    from itertools import combinations
+
     out = []
-    if max_votes != 1:
-        for i, a in enumerate(cands):
-            for b in cands[i + 1:]:
-                out.append((f"p:{a['id']}-{b['id']}", f"{label(a)} + {label(b)}", (a["id"], b["id"])))
+    for k in range(max(1, max_votes), 1, -1):
+        for group in combinations(cands, k):
+            out.append(("p:" + "-".join(str(c["id"]) for c in group), " + ".join(label(c) for c in group),
+                        tuple(c["id"] for c in group)))
     for a in cands:
         out.append((f"s:{a['id']}", f"{label(a)} only", (a["id"],)))
     out.append(("x", "Invalid / blank", ()))
@@ -334,7 +338,7 @@ def manage():
                 flash("Type the race's name.", "error")
             else:
                 db.execute("INSERT INTO races (name, seats, max_votes, created_at) VALUES (?, ?, ?, ?)",
-                           (name, max(1, min(seats, 20)), max(1, min(mv, 2)), now_iso()))
+                           (name, max(1, min(seats, 20)), max(1, min(mv, 4)), now_iso()))
                 audit.log("race_add", target=name, commit=False)
                 flash(f"{name} added. Now add its candidates.", "success")
         elif action == "edit_race":
@@ -344,7 +348,7 @@ def manage():
             mv = request.form.get("max_votes", type=int) or 2
             if name:
                 db.execute("UPDATE races SET name = ?, seats = ?, max_votes = ?, active = ? WHERE id = ?",
-                           (name, max(1, min(seats, 20)), max(1, min(mv, 2)), 1 if request.form.get("active") else 0, rid))
+                           (name, max(1, min(seats, 20)), max(1, min(mv, 4)), 1 if request.form.get("active") else 0, rid))
                 flash("Saved.", "success")
         elif action in ("t1_all_on", "t1_all_off"):
             from .warroom import tier_sql
@@ -603,19 +607,26 @@ def patterns(rid, box=None):
     partners = {c["id"]: {"alone": 0, "with": {}, "total": 0} for c in cands}
     for combo, n in pattern.items():
         if combo.startswith("p:"):
-            a, b = (int(x) for x in combo[2:].split("-"))
-            for me, other in ((a, b), (b, a)):
-                if me in partners:
-                    partners[me]["with"][other] = partners[me]["with"].get(other, 0) + n
-                    partners[me]["total"] += n
+            ids = [int(x) for x in combo[2:].split("-") if x.isdigit()]
+            for me in ids:
+                if me not in partners:
+                    continue
+                partners[me]["total"] += n
+                for other in ids:
+                    if other != me:
+                        partners[me]["with"][other] = partners[me]["with"].get(other, 0) + n
         elif combo.startswith("s:") and int(combo[2:]) in partners:
             partners[int(combo[2:])]["alone"] += n
             partners[int(combo[2:])]["total"] += n
     rows = [(key, text, ids, pattern.get(key, 0)) for key, text, ids in combos(cands, race["max_votes"])]
-    pairs = sum(n for key, _, _, n in rows if key.startswith("p:"))
-    singles = sum(n for key, _, _, n in rows if key.startswith("s:"))
+    by_size = {}
+    for key, _, ids, n in rows:
+        if key != "x":
+            by_size[len(ids)] = by_size.get(len(ids), 0) + n
+    sizes = [(k, by_size.get(k, 0)) for k in range(max(1, race["max_votes"]), 0, -1)]
     return {"rows": rows, "tallied": tallied, "max": max([n for *_, n in rows] or [0]), "partners": partners,
-            "pairs": pairs, "singles": singles, "invalid": pattern.get("x", 0), "box": box}
+            "sizes": sizes, "pairs": sum(n for k, n in sizes if k >= 2), "singles": by_size.get(1, 0),
+            "invalid": pattern.get("x", 0), "box": box}
 
 
 @bp.route("/atoll/<int:rid>/results", endpoint="results")

@@ -15,7 +15,7 @@
     <div class="row">
       <label>Race <input name="name" value="{{ r.name }}" maxlength="80" required></label>
       <label>Seats <input name="seats" type="number" min="1" max="20" value="{{ r.seats }}"></label>
-      <label>Votes per ballot <select name="max_votes"><option value="1" {{ 'selected' if r.max_votes == 1 }}>1</option><option value="2" {{ 'selected' if r.max_votes == 2 }}>Up to 2</option></select></label>
+      <label>Votes per ballot <select name="max_votes">{% for k in (1, 2, 3, 4) %}<option value="{{ k }}" {{ 'selected' if r.max_votes == k }}>{{ 'Up to ' ~ k if k > 1 else '1' }}</option>{% endfor %}</select></label>
     </div>
     <label class="check"><input type="checkbox" name="active" value="1" {{ 'checked' if r.active }}> Show this race</label>
     <button class="small" name="action" value="edit_race">Save race</button>
@@ -62,7 +62,7 @@
     <div class="row">
       <label>Race <input name="name" maxlength="80" required placeholder="GDh - Atoll GM Member"></label>
       <label>Seats <input name="seats" type="number" min="1" max="20" value="2"></label>
-      <label>Votes per ballot <select name="max_votes"><option value="2">Up to 2</option><option value="1">1</option></select></label>
+      <label>Votes per ballot <select name="max_votes"><option value="3">Up to 3</option><option value="2">Up to 2</option><option value="1">1</option><option value="4">Up to 4</option></select></label>
     </div>
     <button class="primary" name="action" value="add_race">Add race</button>
   </form>

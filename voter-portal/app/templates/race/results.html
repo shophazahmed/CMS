@@ -41,7 +41,7 @@
         {% for b in all_boxes %}<option {{ 'selected' if b == pbox }}>{{ b }}</option>{% endfor %}</select></label>
       <noscript><button class="small">Show</button></noscript></form></div>
   <p class="muted small-text">How the ballots were filled in, from the counters' taps{{ ' at ' ~ pbox if pbox }}: {{ pt.tallied }} ballots ·
-    {{ pt.pairs }} with two candidates · {{ pt.singles }} with one · {{ pt.invalid }} invalid or blank.</p>
+    {% for k, n in pt.sizes %}{{ n }} with {{ {1: 'one', 2: 'two', 3: 'three', 4: 'four'}[k] }}{{ ' candidates' if k > 1 }} · {% endfor %}{{ pt.invalid }} invalid or blank.</p>
   {% if pt.tallied %}
   <ul class="dist-list">
     {% for key, text, ids, n in pt.rows %}
@@ -72,6 +72,7 @@
   </div>
   {% endfor %}
   </div>
+  {% if r.race.max_votes > 2 %}<p class="muted small-text">A ballot with three candidates counts once for each of the other two, so a candidate's lines can add up to more than 100%.</p>{% endif %}
 </section>
 {% endif %}
 

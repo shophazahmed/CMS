@@ -183,3 +183,23 @@ def test_atoll_administrator_edits_their_race(app):
     assert adm.post("/atoll/manage", data={"csrf_token": tok, "action": "add_race", "name": "Y"}).status_code == 403
     assert adm.post("/atoll/manage", data={"csrf_token": tok, "action": "t1_all_on"}).status_code == 403
     assert adm.get("/admin/users").status_code in (302, 403) and adm.get("/war").status_code in (302, 403)
+
+
+def test_three_votes_per_ballot(app):
+    o, token, conn, rid, (c1, c2, c4, c6) = setup(app)
+    o.post("/atoll/manage", data={"csrf_token": token, "action": "edit_race", "race_id": rid, "name": "GDh - Atoll GM Member",
+                                  "seats": "2", "max_votes": "3", "active": "1"})
+    assert conn.execute("SELECT max_votes FROM races WHERE id = ?", (rid,)).fetchone()[0] == 3
+    page = o.get(f"/atoll/{rid}/count?box=Box+A").get_data(as_text=True)
+    assert 'data-max="3"' in page and "(up to 3)" in page
+    tok = csrf(o, f"/atoll/{rid}/count?box=Box+A")
+    tap = lambda combo, key: o.post(f"/atoll/{rid}/tap", data={"csrf_token": tok, "combo": combo, "key": key, "box": "Box A"},
+                                    headers={"X-Requested-With": "fetch"})
+    d = tap(f"p:{c1}-{c2}-{c6}", "t3").json                                  # three candidates on one ballot
+    assert d["ballots"] == 1 and d["votes"] == {str(c1): 1, str(c2): 1, str(c6): 1}
+    tap(f"p:{c1}-{c4}", "t2")
+    assert tap(f"p:{c1}-{c2}-{c4}-{c6}", "t4").status_code == 400            # four is too many
+    res = " ".join(o.get(f"/atoll/{rid}/results").get_data(as_text=True).split())
+    assert "2 ballots · 1 with three candidates · 1 with two candidates · 0 with one · 0 invalid or blank" in res
+    assert "#1 Candidate One + #2 Candidate Two + #6 Candidate Six" in res
+    assert "#1 Candidate One <span class=\"muted small-text\">· 2 ballots" in res
