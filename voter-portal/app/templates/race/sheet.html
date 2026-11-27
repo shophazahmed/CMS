@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}{{ race.name }} · {{ box }}{% endblock %}
+{% block content %}
+<div class="count-page" data-count data-outbox="race-{{ race.id }}" data-url="{{ url_for('racecount.tap', rid=race.id) }}" data-csrf="{{ csrf_token() }}"
+     data-box="{{ box if watch else '' }}" data-final="{{ '1' if row and row.status == 'final' else '' }}">
+{% if watch %}<a class="backlink" href="{{ url_for('racecount.results', rid=race.id) }}">{{ icon('back', 18) }} Results</a>{% endif %}
+<div class="page-head war-head">
+  <div>
+    <p class="war-eyebrow">{{ race.name }} · {{ race.seats }} seat{{ 's' if race.seats != 1 }}</p>
+    <h1>Count · {{ box or 'no box' }}</h1>
+    <p class="muted"><strong data-c-ballots>{{ ballots }}</strong> ballots counted</p>
+  </div>
+  <p class="war-sync" data-war-sync aria-live="polite"><span class="war-dot"></span><span data-war-sync-text>Live</span></p>
+</div>
+{% if watch and boxes %}
+<form class="war-boxpick" method="get"><label>Box
+  <select name="box" data-autosubmit>{% for b in boxes %}<option {{ 'selected' if b == box }}>{{ b }}</option>{% endfor %}</select></label></form>
+{% endif %}
+{% if not cands %}<p class="flash flash-error">No candidates for this race yet.</p>{% endif %}
+
+{% if row and row.status == 'final' %}
+<section class="card count-final">
+  <h2>{{ icon('check', 18) }} Final</h2>
+  <p class="muted small-text">Official result sheet entered {{ row.final_at|local }}. The count is closed.</p>
+  <table class="report-table">
+    <thead><tr><th>Candidate</th><th class="num">Official</th><th class="num">Tally</th></tr></thead>
+    <tbody>
+      {% for c in cands %}{% set o = official.get(c.id|string) %}
+      <tr class="{{ 'count-diff' if tal and o != votes.get(c.id, 0) }}"><th>{{ label(c) }}</th><td class="num">{{ o }}</td><td class="num">{{ votes.get(c.id, 0) if tal else '—' }}</td></tr>
+      {% endfor %}
+      <tr><th>Invalid / blank</th><td class="num">{{ official.invalid if official.invalid is not none else '—' }}</td><td class="num">{{ invalid if tal else '—' }}</td></tr>
+      <tr><th>Ballots</th><td class="num">{{ official.ballots if official.ballots is not none else '—' }}</td><td class="num">{{ ballots if tal else '—' }}</td></tr>
+    </tbody>
+  </table>
+  {% if diffs %}<p class="flash flash-error">The official sheet and the tally differ on {{ diffs|length }} line{{ 's' if diffs|length != 1 }}.</p>{% endif %}
+  {% if row.photo %}<p><a class="button small" href="{{ url_for('racecount.sheet_photo', rid=race.id, box=box) }}" target="_blank" rel="noopener">{{ icon('image', 16) }} Photo of the sheet</a></p>{% endif %}
+  {% if watch %}
+  <form method="post" action="{{ url_for('racecount.reopen', rid=race.id) }}" data-confirm="Reopen {{ box }} for counting?">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="box" value="{{ box }}">
+    <button class="small">Reopen for counting</button></form>
+  {% endif %}
+</section>
+{% else %}
+<p class="muted small-text">For each ballot read out: tap the candidate{{ 's' if race.max_votes != 1 }} marked on it (up to {{ race.max_votes }}),
+  then <strong>Count ballot</strong>. Wrong one? <strong>Undo last</strong>. Works without signal: ballots wait on the phone and are sent later.</p>
+<ol class="ballot-cards" data-ballot data-max="{{ race.max_votes }}">
+  {% for c in cands %}
+  <li><button type="button" class="ballot-card" data-pick="{{ c.id }}" data-order="{{ loop.index0 }}" aria-pressed="false">
+    <span class="bc-no">{{ c.ballot_no or loop.index }}</span>
+    {% if c.photo_path %}<img class="bc-photo" src="{{ url_for('racecount.candidate_photo', rid=race.id, cid=c.id) }}" alt="">
+    {% else %}<span class="bc-photo bc-initial" aria-hidden="true">{{ c.name[:1] }}</span>{% endif %}
+    <span class="bc-who"><strong>{{ c.name }}</strong>{% if c.place %}<span class="muted">{{ c.place }}</span>{% endif %}
+      <span class="bc-count"><b data-v="{{ c.id }}">{{ votes.get(c.id, 0) }}</b> votes</span></span>
+    <span class="bc-tick" aria-hidden="true">✓</span>
+  </button></li>
+  {% endfor %}
+</ol>
+<div class="ballot-bar">
+  <p class="ballot-picked" data-picked aria-live="polite">Tap the candidates on this ballot</p>
+  <div class="ballot-actions">
+    <button type="button" class="primary big" data-ballot-save disabled>Count ballot</button>
+    <button type="button" class="big" data-combo="x">Invalid / blank <strong class="count-n" data-n="x">{{ tal.get('x', 0) }}</strong></button>
+    <button type="button" class="big" data-count-undo>{{ icon('back', 18) }} Undo last</button>
+  </div>
+</div>
+
+<form class="card form" method="post" action="{{ url_for('racecount.final', rid=race.id) }}" enctype="multipart/form-data"
+      data-confirm="Enter the official sheet and make this box final? The count closes.">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  {% if watch %}<input type="hidden" name="box" value="{{ box }}">{% endif %}
+  <h2>{{ icon('check', 18) }} When the count ends: the official result sheet</h2>
+  <p class="muted small-text">Copy the numbers from the official sheet. The portal compares them with your tally.</p>
+  <div class="count-official">
+    {% for c in cands %}<label>{{ label(c) }} <input type="number" name="c{{ c.id }}" min="0" inputmode="numeric" required></label>{% endfor %}
+    <label>Invalid / blank <input type="number" name="invalid" min="0" inputmode="numeric"></label>
+    <label>Ballots in the box <input type="number" name="ballots" min="0" inputmode="numeric"></label>
+  </div>
+  <label>Photo of the official sheet <input type="file" name="photo" accept="image/*" capture="environment"></label>
+  <label>Note <span class="muted">(optional)</span> <input name="note" maxlength="500"></label>
+  <button class="primary big">Box final</button>
+</form>
+{% endif %}
+</div>
+{% endblock %}

@@ -185,6 +185,23 @@
       {% endif %}
       {% endif %}
 
+      {% if races and u.can_login and u.role != 'admin' and not is_own %}
+      <div class="access-row">
+        <span class="access-label">Atoll count</span>
+        <form method="post" action="{{ url_for('admin.update_user', user_id=u.id) }}" class="inline">
+          {{ hidden('set_race') }}
+          <select name="race_role" aria-label="Atoll count role for {{ u.username }}">
+            {% for k, lab in race_roles.items() %}<option value="{{ k }}" {{ 'selected' if (u.race_role or '') == k }}>{{ lab }}</option>{% endfor %}</select>
+          <select name="race_id" aria-label="Race for {{ u.username }}">
+            {% for r in races %}<option value="{{ r.id }}" {{ 'selected' if u.race_id == r.id }}>{{ r.name }}</option>{% endfor %}</select>
+          <select name="race_box" aria-label="Box {{ u.username }} counts">
+            <option value="">Box (box counter) —</option>{% for b in race_boxes %}<option {{ 'selected' if u.race_box == b }}>{{ b }}</option>{% endfor %}</select>
+          <button class="small">Save</button>
+        </form>
+        {% if u.race_role %}<span class="muted small-text">Sees only the atoll count</span>{% endif %}
+      </div>
+      {% endif %}
+
       {% if not is_own %}
       <div class="access-row">
         <span class="access-label">Election day</span>

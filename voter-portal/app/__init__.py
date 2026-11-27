@@ -8,7 +8,7 @@ from flask import Flask, g, render_template
 from werkzeug.middleware.proxy_fix import ProxyFix
 
 from . import (admin, agentlink, agentsheet, announce, auth, campaign, canvass, confirmed, fonts, imports, islandmap,
-               officiallist, publicboard,
+               officiallist, publicboard, racecount,
                personal, pledges, reports, share, superpledge, visits, votecount, voters, warroom)
 from .db import close_db, connect, init_schema, now_iso
 
@@ -62,6 +62,7 @@ def create_app(test_config=None):
     app.before_request(auth.pledge_only_guard)
     app.before_request(warroom.field_guard)
     app.before_request(warroom.view_guard)
+    app.before_request(racecount.race_guard)
     app.register_blueprint(auth.bp)
     app.register_blueprint(voters.bp)
     app.register_blueprint(admin.bp)
@@ -85,6 +86,7 @@ def create_app(test_config=None):
     app.register_blueprint(votecount.bp)
     app.register_blueprint(officiallist.bp)
     app.register_blueprint(publicboard.bp)
+    app.register_blueprint(racecount.bp)
     app.jinja_env.globals["dhivehi_font"] = fonts.font_file
     app.jinja_env.globals["dhivehi_font_name"] = fonts.font_name
     app.jinja_env.globals["share_people"] = share.people
@@ -108,7 +110,7 @@ def create_app(test_config=None):
                 "can_view_cf": auth.can_view_confirmed(), "can_mark_cf": auth.can_mark_confirmed(),
                 "can_view_pledges": auth.can_view_pledges(),
                 "can_view_super": auth.can_view_super() and auth.can_view_pledges(),
-                "war_tier": warroom.tier(), "war_tiers": warroom.tiers(), "war_views": warroom.views(), "war_field": warroom.is_field(), "war_link": g.get("war_link"), "agent_options": pledges.agent_options, "connector_options": pledges.connector_options, "pledge_only": auth.is_pledge_only(),
+                "war_tier": warroom.tier(), "war_tiers": warroom.tiers(), "race_only": racecount.is_race_only(), "race_role": racecount.race_role(), "race_nav": racecount.nav_races(), "war_views": warroom.views(), "war_field": warroom.is_field(), "war_link": g.get("war_link"), "agent_options": pledges.agent_options, "connector_options": pledges.connector_options, "pledge_only": auth.is_pledge_only(),
                 "confirmed_metrics": confirmed.metrics,
                 "campaign_banner": campaign.banner, "whatsapp_url": campaign.whatsapp_url,
                 "sms_url": campaign.sms_url, "viber_url": campaign.viber_url, "campaign_message": campaign.message,
@@ -158,6 +160,7 @@ def create_app(test_config=None):
         warroom.init_schema(conn)
         votecount.init_schema(conn)
         officiallist.init_schema(conn)
+        racecount.init_schema(conn)
         bootstrap_admin(conn)
         conn.close()
     return app

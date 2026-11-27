@@ -183,6 +183,9 @@ def _add_user_columns(conn):
         ("war_tier", "war_tier TEXT NOT NULL DEFAULT ''"),
         ("war_box", "war_box TEXT NOT NULL DEFAULT ''"),
         ("war_views", "war_views TEXT NOT NULL DEFAULT ''"),   # War Room views ('' = all of them)
+        ("race_role", "race_role TEXT NOT NULL DEFAULT ''"),   # another race's count only: count / watch
+        ("race_id", "race_id INTEGER"),
+        ("race_box", "race_box TEXT NOT NULL DEFAULT ''"),
     ):
         if name in columns:
             continue

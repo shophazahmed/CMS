@@ -328,6 +328,10 @@ def home_url(user=None):
     user = user or g.get("user")
     if user is None:
         return url_for("voters.search")
+    from .racecount import is_race_only
+
+    if is_race_only(user):
+        return url_for("racecount.home")
     have = stored_tiers(user)
     if user["role"] != "admin" and "room" not in have and any(t in FIELD_TIERS for t in have):
         return url_for("warroom.home")

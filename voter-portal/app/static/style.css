@@ -1610,3 +1610,12 @@ body.has-tabbar .ballot-bar { bottom: calc(76px + env(safe-area-inset-bottom)); 
 .war-assign select { width: auto; min-height: 0; padding: .3rem .5rem; }
 .war-assign label { display: inline-flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: 0; font-weight: 500; }
 .war-assign label strong { display: inline; }
+.race-list { list-style: none; padding: 0; display: grid; gap: .7rem; }
+.race-list li { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; justify-content: space-between; }
+.race-places li.win { border-color: var(--accent); background: var(--accent-soft); }
+.race-places { max-width: 46rem; }
+.cand-add .row { display: grid; grid-template-columns: minmax(4rem, 6rem) minmax(0, 1fr) minmax(0, 1fr); gap: .6rem; }
+@media (max-width: 560px) { .cand-add .row { grid-template-columns: 1fr; } }
+.cand-add { margin-top: .8rem; }
+.bc-who > * { overflow-wrap: anywhere; }
+.bc-who .muted { overflow-wrap: anywhere; }

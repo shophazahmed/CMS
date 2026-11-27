@@ -43,13 +43,15 @@ def users():
     logins = [u for u in rows if u["can_login"]]
     people = [u for u in rows if u["role"] in ("agent", "user", "admin")]
     owner_id = next((u["id"] for u in logins if is_owner(u)), None)
-    from . import warroom
+    from . import racecount, warroom
 
     boxes = [r[0] for r in get_db().execute("SELECT DISTINCT location FROM voters WHERE location != '' ORDER BY location")]
     everyone = sorted(rows, key=lambda u: (not u["is_active"], u["id"] != owner_id, u["username"].casefold()))
     return render_template("admin/users.html", agents=agents, users=logins, people=people, owner_id=owner_id,
                            everyone=everyone, cf_access=CONFIRMED_ACCESS, roles=("user", "admin"), role_labels=ROLE_LABELS,
                            stiers=warroom.stored_tiers, boxes=boxes, slug=_slug, view_names=warroom.VIEWS,
+                           races=get_db().execute("SELECT id, name FROM races ORDER BY id").fetchall(),
+                           race_roles=racecount.ROLES, race_boxes=racecount.boxes(),
                            uviews=lambda u: [v for v in (u["war_views"] or "").split(",") if v in warroom.VIEWS] or list(warroom.VIEWS))
 
 
@@ -399,6 +401,30 @@ def update_user(user_id):
             db.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
             audit.log("user_role", target=user["username"], detail={"from": user["role"], "to": role})
             flash(f"{user['username']} is now {role}.", "success")
+
+    elif action == "set_race":
+        # another race's count only (e.g. the atoll count): box counter at one box, or results viewer
+        from .racecount import ROLES as RACE_ROLES
+
+        role = request.form.get("race_role", "")
+        if role not in RACE_ROLES:
+            abort(400)
+        if role and (user["role"] == "admin" or is_owner(user) or not user["can_login"]):
+            flash("Atoll count access is for sign-in accounts that aren't admins (allow sign-in first).", "error")
+            return redirect(url_for("admin.users"))
+        rid = request.form.get("race_id", type=int)
+        if role and not db.execute("SELECT 1 FROM races WHERE id = ?", (rid,)).fetchone():
+            flash("Choose the race.", "error")
+            return redirect(url_for("admin.users"))
+        box = request.form.get("race_box", "")[:200] if role == "count" else ""
+        if role == "count" and not box:
+            flash("Choose the box they count.", "error")
+            return redirect(url_for("admin.users"))
+        db.execute("UPDATE users SET race_role = ?, race_id = ?, race_box = ? WHERE id = ?",
+                   (role, rid if role else None, box, user_id))
+        audit.log("race_access", target=user["username"], detail={"role": role, "race": rid, "box": box}, commit=False)
+        flash(f"{user['username']}: " + (f"{RACE_ROLES[role]}{' · ' + box if box else ''} (sees only the atoll count)."
+                                         if role else "no atoll count access."), "success")
 
     elif action == "set_password":
         # the admin chooses the password and gives it to the person; they keep it unless asked to change it

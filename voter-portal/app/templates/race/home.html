@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Atoll count{% endblock %}
+{% block content %}
+<div class="page-head"><h1>Atoll count</h1>
+  <p class="muted">Other races counted on election night at the same ballot boxes, apart from the island council count.</p></div>
+{% if manage %}<p><a class="button small primary" href="{{ url_for('racecount.manage') }}">Races &amp; candidates</a></p>{% endif %}
+<ul class="race-list">
+  {% for r in races %}
+  <li class="card"><strong>{{ r.name }}</strong> <span class="muted small-text">{{ r.seats }} seat{{ 's' if r.seats != 1 }} · up to {{ r.max_votes }} per ballot{{ ' · hidden' if not r.active }}</span>
+    <span class="list-links"><a class="button small primary" href="{{ url_for('racecount.results', rid=r.id) }}">{{ icon('chart', 16) }} Results</a>
+      <a class="button small" href="{{ url_for('racecount.sheet', rid=r.id) }}">Count a box</a></span></li>
+  {% else %}<li class="muted">No races yet.{% if manage %} Add one on Races &amp; candidates.{% endif %}</li>{% endfor %}
+</ul>
+{% endblock %}

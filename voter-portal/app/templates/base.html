@@ -23,7 +23,7 @@
 <body class="{{ 'shell has-tabbar' if current_user }}{{ ' nav-rail' if current_user and request.cookies.get('nav') == 'rail' }}">
   {% if current_user %}
   {% set ep = request.endpoint or '' %}
-  {% set home = url_for('warroom.home') if war_field else url_for('pledges.sheet') if pledge_only
+  {% set home = url_for('racecount.home') if race_only else url_for('warroom.home') if war_field else url_for('pledges.sheet') if pledge_only
      else url_for('canvass.dashboard') if role == 'admin' else url_for('canvass.my_houses') %}
   <aside class="sidebar" id="sidebar" aria-label="Menu">
     <div class="side-head">
@@ -43,6 +43,13 @@
       {% if 't2' in war_tiers %}{{ nav(url_for('warroom.field'), 'My supporters', 'users', ep == 'warroom.field') }}
       {{ nav(url_for('warroom.transport'), 'Transport', 'home', ep == 'warroom.transport') }}{% endif %}
       {% if 't3' in war_tiers %}{{ nav(url_for('warroom.calls'), 'My calls', 'check', ep == 'warroom.calls') }}{% endif %}
+      {% elif race_only %}
+      <p class="side-label">Atoll count</p>
+      {% for r in race_nav %}
+      {% if race_role == 'count' %}{{ nav(url_for('racecount.sheet', rid=r.id), 'Count · ' ~ r.name, 'clipboard', ep == 'racecount.sheet') }}
+      {% else %}{{ nav(url_for('racecount.results', rid=r.id), r.name, 'chart', ep == 'racecount.results') }}
+      {{ nav(url_for('racecount.sheet', rid=r.id), 'Boxes', 'clipboard', ep == 'racecount.sheet') }}{% endif %}
+      {% endfor %}
       {% elif pledge_only %}
       <p class="side-label">Pledges</p>
       {{ nav(url_for('pledges.sheet'), 'Pledge sheet', 'clipboard', ep == 'pledges.sheet') }}
@@ -80,6 +87,7 @@
       {% if 'supporters' in war_views %}{{ nav(url_for('warroom.supporters'), 'Our supporters', 'users', ep in ('warroom.supporters', 'warroom.field', 'warroom.calls', 'warroom.transport')) }}{% endif %}
       {% if 'voters' in war_views %}{{ nav(url_for('warroom.voters'), 'Voters & agents', 'search', ep == 'warroom.voters') }}{% endif %}
       {% if 'count' in war_views %}{{ nav(url_for('votecount.results_page'), 'Vote count', 'chart', ep.startswith('votecount.')) }}{% endif %}
+      {% if race_nav or is_admin %}{{ nav(url_for('racecount.home'), 'Atoll count', 'chart', ep.startswith('racecount.')) }}{% endif %}
       {% if is_admin %}{{ nav(url_for('warroom.team'), 'War Room team', 'users', ep == 'warroom.team') }}{% endif %}
       {% endif %}
 
@@ -101,7 +109,7 @@
         <summary>
           <span class="account-avatar">{{ current_user.username[:1]|upper }}</span>
           <span class="side-who"><strong>{{ current_user.username }}</strong>
-            <span class="muted small-text">{{ war_tiers|map('replace', 't1', 'Box agent')|map('replace', 't2', 'Field runner')|map('replace', 't3', 'Call centre')|join(' + ') if war_field else 'Pledge sheet' if pledge_only else {'admin': 'Admin', 'agent': 'Agent', 'user': 'Read-only user'}[role] }}</span></span>
+            <span class="muted small-text">{{ war_tiers|map('replace', 't1', 'Box agent')|map('replace', 't2', 'Field runner')|map('replace', 't3', 'Call centre')|join(' + ') if war_field else ('Atoll count · ' ~ ('box counter' if race_role == 'count' else 'results')) if race_only else 'Pledge sheet' if pledge_only else {'admin': 'Admin', 'agent': 'Agent', 'user': 'Read-only user'}[role] }}</span></span>
           {{ icon('chevron', 16) }}
         </summary>
         <div class="side-account-menu">
@@ -177,6 +185,8 @@
     {% if 't2' in war_tiers %}<a href="{{ url_for('warroom.field') }}" {{ 'aria-current=page' if ep == 'warroom.field' }}>{{ icon('users') }}<span>Supporters</span></a>
     <a href="{{ url_for('warroom.transport') }}" {{ 'aria-current=page' if ep == 'warroom.transport' }}>{{ icon('home') }}<span>Transport</span></a>{% endif %}
     {% if 't3' in war_tiers %}<a href="{{ url_for('warroom.calls') }}" {{ 'aria-current=page' if ep == 'warroom.calls' }}>{{ icon('check') }}<span>My calls</span></a>{% endif %}
+    {% elif race_only %}
+    {% for r in race_nav %}<a href="{{ url_for('racecount.sheet' if race_role == 'count' else 'racecount.results', rid=r.id) }}" aria-current="page">{{ icon('clipboard') }}<span>Atoll count</span></a>{% endfor %}
     {% elif pledge_only %}
     <a href="{{ url_for('pledges.sheet') }}" {{ 'aria-current=page' if ep == 'pledges.sheet' }}>{{ icon('clipboard') }}<span>Pledges</span></a>
     <a href="{{ url_for('pledges.distribution') }}" {{ 'aria-current=page' if ep == 'pledges.distribution' }}>{{ icon('chart') }}<span>Distribution</span></a>

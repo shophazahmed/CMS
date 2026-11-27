@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Races and candidates{% endblock %}
+{% block content %}
+<a class="backlink" href="{{ url_for('racecount.home') }}">{{ icon('back', 18) }} Atoll count</a>
+<div class="page-head"><h1>Races and candidates</h1>
+  <p class="muted">A race is counted at the same ballot boxes as the island council, with its own candidates. People who count it
+    get access on the <a href="{{ url_for('admin.users') }}">Users</a> page (Atoll count row): they see only this count.</p></div>
+
+{% for r in races %}
+<section class="card form">
+  <form method="post" class="race-edit">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="race_id" value="{{ r.id }}">
+    <div class="row">
+      <label>Race <input name="name" value="{{ r.name }}" maxlength="80" required></label>
+      <label>Seats <input name="seats" type="number" min="1" max="20" value="{{ r.seats }}"></label>
+      <label>Votes per ballot <select name="max_votes"><option value="1" {{ 'selected' if r.max_votes == 1 }}>1</option><option value="2" {{ 'selected' if r.max_votes == 2 }}>Up to 2</option></select></label>
+    </div>
+    <label class="check"><input type="checkbox" name="active" value="1" {{ 'checked' if r.active }}> Show this race</label>
+    <button class="small" name="action" value="edit_race">Save race</button>
+  </form>
+  <h3>Candidates</h3>
+  <ul class="cand-list">
+    {% for c in cands[r.id] %}
+    <li class="cand-row">
+      <form method="post" class="cand-edit">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="cand_id" value="{{ c.id }}">
+        <input class="ballot-no" name="ballot_no" value="{{ c.ballot_no or '' }}" inputmode="numeric" maxlength="2" placeholder="No." aria-label="Ballot number">
+        <input name="name" value="{{ c.name }}" maxlength="80" aria-label="Full name">
+        <input name="place" value="{{ c.place }}" maxlength="80" placeholder="Island, house" aria-label="Island and house">
+        <button class="small" name="action" value="edit_cand">Save</button>
+        <button class="small" name="action" value="remove_cand" data-confirm-click="Remove {{ c.name }}?">Remove</button>
+      </form>
+      <form class="cand-photo" method="post" enctype="multipart/form-data">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="cand_id" value="{{ c.id }}">
+        {% if c.photo_path %}<img class="cand-thumb" src="{{ url_for('racecount.candidate_photo', rid=r.id, cid=c.id) }}" alt="">{% endif %}
+        <label class="small-text">Photo <input type="file" name="photo" accept="image/*"></label>
+        <button name="action" value="photo" class="small">Upload</button>
+        {% if c.photo_path %}<button name="action" value="photo_remove" class="small">Remove photo</button>{% endif %}
+      </form>
+    </li>
+    {% else %}<li class="muted">No candidates yet.</li>{% endfor %}
+  </ul>
+  <form method="post" class="cand-add">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="race_id" value="{{ r.id }}">
+    <div class="row">
+      <label>No. <input name="ballot_no" inputmode="numeric" maxlength="2" size="3"></label>
+      <label>Full name <input name="name" maxlength="80" required></label>
+      <label>Island, house <input name="place" maxlength="80" placeholder="Gadhdhoo, Banafusaage"></label>
+    </div>
+    <button class="primary small" name="action" value="add_cand">Add candidate</button>
+  </form>
+</section>
+{% endfor %}
+
+<section class="card form">
+  <h2>Add a race</h2>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="row">
+      <label>Race <input name="name" maxlength="80" required placeholder="GDh - Atoll GM Member"></label>
+      <label>Seats <input name="seats" type="number" min="1" max="20" value="2"></label>
+      <label>Votes per ballot <select name="max_votes"><option value="2">Up to 2</option><option value="1">1</option></select></label>
+    </div>
+    <button class="primary" name="action" value="add_race">Add race</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Who counts</h2>
+  {% if people %}
+  <ul class="small-text">{% for p in people %}<li><strong>{{ p.username }}</strong> · {{ roles[p.race_role] }}{% if p.race_box %} · {{ p.race_box }}{% endif %}</li>{% endfor %}</ul>
+  {% else %}<p class="muted">Nobody yet. Create sign-in accounts for them on Users, then choose their Atoll count role there.</p>{% endif %}
+</section>
+{% endblock %}

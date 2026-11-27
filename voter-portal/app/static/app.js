@@ -786,7 +786,7 @@ document.addEventListener("focusin", (e) => { if (e.target.matches("[data-select
 (() => {
   const page = document.querySelector("[data-count]");
   if (!page || page.dataset.final) return;
-  const OUTBOX = "count-outbox";
+  const OUTBOX = "count-outbox" + (page.dataset.outbox ? "-" + page.dataset.outbox : "");  // one queue per count
   const sync = page.querySelector("[data-war-sync]");
   const syncText = page.querySelector("[data-war-sync-text]");
   const load = () => { try { return JSON.parse(localStorage.getItem(OUTBOX) || "[]"); } catch (e) { return []; } };
