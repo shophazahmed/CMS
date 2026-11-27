@@ -128,3 +128,34 @@ def test_atoll_voting_patterns(app):
     assert ["#1 Candidate One + #4 Candidate Four", 2, 40.0] in [r[:3] for r in rows]
     cand = next(r for r in rows if r[0] == "#1 Candidate One")
     assert cand[:3] == ["#1 Candidate One", 4, 1]
+
+
+def test_tier1_box_agents_count_the_atoll_race(app):
+    from tests.test_warroom import make
+
+    o, token, conn, rid, (c1, c2, c4, c6) = setup(app)
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    t1, uid = make(app, o, token, "boxagent", "t1", "Box A")
+    assert t1.get(f"/atoll/{rid}/count").status_code == 403                    # not given yet
+    o.post("/war/team", data={"csrf_token": token, "action": "set", "user_id": uid, "tiers": ["t1"], "war_box": "Box A",
+                              "race_t1_shown": "1", "race_t1": "1"})
+    assert conn.execute("SELECT race_t1 FROM users WHERE id = ?", (uid,)).fetchone()[0] == 1
+    page = t1.get(f"/atoll/{rid}/count").get_data(as_text=True)
+    assert "Count · Box A" in page and "Candidate One" in page and 'name="box"' not in page    # their box only
+    assert f"/atoll/{rid}/count" in t1.get("/war/box").get_data(as_text=True)                   # in their menu
+    tok = csrf(t1, f"/atoll/{rid}/count")
+    r = t1.post(f"/atoll/{rid}/tap", data={"csrf_token": tok, "combo": f"p:{c1}-{c2}", "key": "t1a", "box": "Box B"},
+                headers={"X-Requested-With": "fetch"})
+    assert r.json["ballots"] == 1
+    assert conn.execute("SELECT box FROM race_tally WHERE client_key = 't1a'").fetchone()[0] == "Box A"   # never another box
+    assert t1.get(f"/atoll/{rid}/results").status_code in (302, 403)          # results stay with the War Room
+    assert t1.get("/pledges").status_code == 302
+    # the War Room closes: no counting
+    o.post("/war/team", data={"csrf_token": token, "action": "close"})
+    assert t1.post(f"/atoll/{rid}/tap", data={"csrf_token": tok, "combo": "x", "key": "t1b"},
+                   headers={"X-Requested-With": "fetch"}).status_code == 423
+    # take it from every box agent at once
+    o.post("/atoll/manage", data={"csrf_token": token, "action": "t1_all_off"})
+    assert conn.execute("SELECT race_t1 FROM users WHERE id = ?", (uid,)).fetchone()[0] == 0
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    assert t1.get(f"/atoll/{rid}/count").status_code == 403

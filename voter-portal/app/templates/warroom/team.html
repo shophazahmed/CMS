@@ -48,6 +48,7 @@
           {% elif 'room' in have %}<input type="hidden" name="tiers" value="room"><span class="agent-badge">War Room</span>{% endif %}
           {% if u.role != 'admin' %}
             <label class="check"><input type="checkbox" name="tiers" value="t1" {{ 'checked' if 't1' in have }}> Tier 1 box</label>
+            <input type="hidden" name="race_t1_shown" value="1"><label class="check" title="Also counts the atoll races at their box"><input type="checkbox" name="race_t1" value="1" {{ 'checked' if u.race_t1 }}> + Atoll count</label>
             <label class="check"><input type="checkbox" name="tiers" value="t2" {{ 'checked' if 't2' in have }}> Tier 2 field</label>
             <label class="check"><input type="checkbox" name="tiers" value="t3" {{ 'checked' if 't3' in have }}> Tier 3 calls</label>
           {% endif %}

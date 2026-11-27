@@ -66,6 +66,19 @@
   </form>
 </section>
 
+<section class="card form">
+  <h2>Our box agents (tier 1)</h2>
+  <p class="muted small-text">Box agents with the atoll count tick also count every shown race at their own box (while the
+    War Room is open), next to the island council count. Tick it one by one on Users (Election day row), or for all here.</p>
+  {% if t1 %}
+  <ul class="small-text">{% for a in t1 %}<li><strong>{{ a.username }}</strong> · {{ a.war_box or 'no box' }} ·
+    {{ 'counts the atoll races' if a.race_t1 else 'island count only' }}</li>{% endfor %}</ul>
+  <form method="post" class="inline"><input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button class="small primary" name="action" value="t1_all_on">Give every box agent the atoll count</button>
+    <button class="small" name="action" value="t1_all_off">Take it from every box agent</button></form>
+  {% else %}<p class="muted">No tier 1 box agents yet (War Room team).</p>{% endif %}
+</section>
+
 <section class="card">
   <h2>Who counts</h2>
   {% if people %}

@@ -43,6 +43,7 @@
       {% if 't2' in war_tiers %}{{ nav(url_for('warroom.field'), 'My supporters', 'users', ep == 'warroom.field') }}
       {{ nav(url_for('warroom.transport'), 'Transport', 'home', ep == 'warroom.transport') }}{% endif %}
       {% if 't3' in war_tiers %}{{ nav(url_for('warroom.calls'), 'My calls', 'check', ep == 'warroom.calls') }}{% endif %}
+      {% if 't1' in war_tiers and current_user.race_t1 %}{% for r in race_nav %}{{ nav(url_for('racecount.sheet', rid=r.id), r.name, 'clipboard', ep == 'racecount.sheet') }}{% endfor %}{% endif %}
       {% elif race_only %}
       <p class="side-label">Atoll count</p>
       {% for r in race_nav %}
@@ -185,6 +186,7 @@
     {% if 't2' in war_tiers %}<a href="{{ url_for('warroom.field') }}" {{ 'aria-current=page' if ep == 'warroom.field' }}>{{ icon('users') }}<span>Supporters</span></a>
     <a href="{{ url_for('warroom.transport') }}" {{ 'aria-current=page' if ep == 'warroom.transport' }}>{{ icon('home') }}<span>Transport</span></a>{% endif %}
     {% if 't3' in war_tiers %}<a href="{{ url_for('warroom.calls') }}" {{ 'aria-current=page' if ep == 'warroom.calls' }}>{{ icon('check') }}<span>My calls</span></a>{% endif %}
+    {% if 't1' in war_tiers and current_user.race_t1 and race_nav %}<a href="{{ url_for('racecount.sheet', rid=race_nav[0].id) }}" {{ 'aria-current=page' if ep == 'racecount.sheet' }}>{{ icon('clipboard') }}<span>Atoll</span></a>{% endif %}
     {% elif race_only %}
     {% for r in race_nav %}<a href="{{ url_for('racecount.sheet' if race_role == 'count' else 'racecount.results', rid=r.id) }}" aria-current="page">{{ icon('clipboard') }}<span>Atoll count</span></a>{% endfor %}
     {% elif pledge_only %}

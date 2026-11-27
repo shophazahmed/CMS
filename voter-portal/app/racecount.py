@@ -124,8 +124,20 @@ def can_watch(race_id):
     return is_owner() or has_view("count")
 
 
+def t1_box():
+    """A tier 1 box agent given the atoll count: their box (else '')."""
+    from .warroom import tiers
+
+    user = g.get("user")
+    if user is None or is_race_only() or "t1" not in tiers() or not user["race_t1"]:
+        return ""
+    return user["war_box"] or ""
+
+
 def my_box(race_id):
-    """The box this request counts: a box counter's own box, or ?box= for those who watch."""
+    """The box this request counts: a box counter's or tier 1 box agent's own box, or ?box= for those who watch."""
+    from .warroom import is_open
+
     user = g.get("user")
     if is_race_only() and race_role() == "count":
         if user["race_id"] != race_id:
@@ -133,7 +145,19 @@ def my_box(race_id):
         return user["race_box"] or ""
     if can_watch(race_id):
         return (request.values.get("box") or "")[:200]
+    if t1_box():
+        if not is_open():
+            abort(423)  # like their island count: only while the War Room is open
+        race = get_db().execute("SELECT active FROM races WHERE id = ?", (race_id,)).fetchone()
+        if not race or not race["active"]:
+            abort(403)
+        return t1_box()
     abort(403)
+
+
+def may_count(race_id):
+    """Counts (or watches) this race in some way: for photos and the menu."""
+    return can_watch(race_id) or (is_race_only() and g.user["race_id"] == race_id) or bool(t1_box())
 
 
 def can_manage():
@@ -150,7 +174,7 @@ def nav_races():
         return []
     if is_race_only():
         return [r for r in rows if r["id"] == g.user["race_id"]]
-    return [r for r in rows if can_watch(r["id"])]
+    return [r for r in rows if can_watch(r["id"]) or t1_box()]
 
 
 # --- data -----------------------------------------------------------------------------------------
@@ -261,6 +285,10 @@ def home():
     if is_race_only():
         rid = g.user["race_id"]
         return redirect(url_for("racecount.sheet" if race_role() == "count" else "racecount.results", rid=rid))
+    if t1_box() and not can_manage():
+        first = get_db().execute("SELECT id FROM races WHERE active = 1 ORDER BY id").fetchone()
+        if first:
+            return redirect(url_for("racecount.sheet", rid=first[0]))
     races = get_db().execute("SELECT * FROM races ORDER BY active DESC, id").fetchall()
     visible = [r for r in races if can_watch(r["id"])]
     if not visible and not can_manage():
@@ -298,6 +326,14 @@ def manage():
                 db.execute("UPDATE races SET name = ?, seats = ?, max_votes = ?, active = ? WHERE id = ?",
                            (name, max(1, min(seats, 20)), max(1, min(mv, 2)), 1 if request.form.get("active") else 0, rid))
                 flash("Saved.", "success")
+        elif action in ("t1_all_on", "t1_all_off"):
+            from .warroom import tier_sql
+
+            n = db.execute(f"UPDATE users SET race_t1 = ? WHERE {tier_sql('t1')} AND deleted_at IS NULL",
+                           (1 if action == "t1_all_on" else 0,)).rowcount
+            audit.log("race_t1_all", detail={"on": action == "t1_all_on", "n": n}, commit=False)
+            flash(f"{n} box agent{'s' if n != 1 else ''} " + ("now count the atoll races at their box." if action == "t1_all_on"
+                                                              else "no longer count the atoll races."), "success")
         elif action == "add_cand":
             race_or_404(rid)
             name = clean_text(request.form.get("name", ""))[:80]
@@ -344,8 +380,12 @@ def manage():
     races = db.execute("SELECT * FROM races ORDER BY id").fetchall()
     people = db.execute("SELECT id, username, race_role, race_id, race_box FROM users WHERE race_role != ''"
                         " AND deleted_at IS NULL ORDER BY username COLLATE NOCASE").fetchall()
+    from .warroom import tier_sql
+
+    t1 = db.execute(f"SELECT username, war_box, race_t1 FROM users WHERE {tier_sql('t1')} AND deleted_at IS NULL"
+                    " ORDER BY username COLLATE NOCASE").fetchall()
     return render_template("race/manage.html", races=races, cands={r["id"]: candidates(r["id"]) for r in races},
-                           people=people, roles=ROLES)
+                           people=people, roles=ROLES, t1=t1)
 
 
 def _ballot(value):
@@ -375,7 +415,7 @@ def _save_photo(upload, prefix, size):
 @bp.route("/atoll/<int:rid>/candidate/<int:cid>.jpg")
 @login_required
 def candidate_photo(rid, cid):
-    if not (can_watch(rid) or (is_race_only() and g.user["race_id"] == rid) or can_manage()):
+    if not (may_count(rid) or can_manage()):
         abort(403)
     row = get_db().execute("SELECT photo_path FROM race_candidates WHERE id = ? AND race_id = ?", (cid, rid)).fetchone()
     if not row or not row["photo_path"]:
@@ -514,7 +554,8 @@ def reopen(rid):
 @bp.route("/atoll/<int:rid>/sheet-photo/<path:box>")
 @login_required
 def sheet_photo(rid, box):
-    if not can_watch(rid) and not (race_role() == "count" and g.user["race_id"] == rid and g.user["race_box"] == box):
+    if not can_watch(rid) and not (race_role() == "count" and g.user["race_id"] == rid and g.user["race_box"] == box) \
+            and not (t1_box() and t1_box() == box):
         abort(403)
     row, _ = box_state(rid, box)
     if not row or not row["photo"]:

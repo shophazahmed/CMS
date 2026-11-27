@@ -130,6 +130,8 @@ FIELD_ENDPOINTS = {
     "warroom.link_open", "warroom.field_export", "warroom.calls_export", "voters.photo",
     "votecount.sheet", "votecount.tap", "votecount.final", "votecount.photo", "votecount.export", "pledges.candidate_photo",
     "warroom.box_export", "theme.theme_css", "theme.set_appearance",
+    "racecount.home", "racecount.sheet", "racecount.tap", "racecount.final", "racecount.sheet_photo",
+    "racecount.candidate_photo",
     "fonts.stylesheet", "fonts.serve", "auth.login", "auth.logout", "auth.change_password", "static",
 }
 
@@ -149,6 +151,8 @@ ENDPOINT_TIER = {
     "warroom.field": "t2", "warroom.field_export": "t2", "warroom.contact": "t2", "warroom.transport": "t2",
     "warroom.transport_action": "t2",
     "warroom.calls": "t3", "warroom.call": "t3", "warroom.calls_export": "t3",
+    "racecount.home": "t1", "racecount.sheet": "t1", "racecount.tap": "t1", "racecount.final": "t1",
+    "racecount.sheet_photo": "t1", "racecount.candidate_photo": "t1",
 }
 
 
@@ -1560,6 +1564,9 @@ def team():
             b = request.form.get("war_box", "")[:200] if "t1" in picked else ""
             level = ",".join(picked)
             db.execute("UPDATE users SET war_tier = ?, war_box = ? WHERE id = ?", (level, b, uid))
+            if request.form.get("race_t1_shown") == "1":  # tier 1: also count the atoll races at their box
+                db.execute("UPDATE users SET race_t1 = ? WHERE id = ?",
+                           (1 if "t1" in picked and request.form.get("race_t1") == "1" else 0, uid))
             if owner and request.form.get("views_shown") == "1":  # the owner's War Room view ticks
                 vs = [v for v in VIEWS if v in request.form.getlist("views")] if "room" in picked else []
                 if "room" in picked and not vs:

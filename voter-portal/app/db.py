@@ -186,6 +186,7 @@ def _add_user_columns(conn):
         ("race_role", "race_role TEXT NOT NULL DEFAULT ''"),   # another race's count only: count / watch
         ("race_id", "race_id INTEGER"),
         ("race_box", "race_box TEXT NOT NULL DEFAULT ''"),
+        ("race_t1", "race_t1 INTEGER NOT NULL DEFAULT 0"),     # a tier 1 box agent also counts the other races
     ):
         if name in columns:
             continue
