@@ -196,7 +196,7 @@ VIEW_ENDPOINTS = {
     "supporters": {"warroom.supporters", "warroom.field", "warroom.field_export", "warroom.calls", "warroom.calls_export",
                    "warroom.call", "warroom.contact", "warroom.transport", "warroom.transport_action"},
     "voters": {"warroom.voters", "warroom.voters_export"},
-    "count": {"votecount.sheet", "votecount.tap", "votecount.final", "votecount.reopen", "votecount.photo",
+    "count": {"countimport.replace", "votecount.sheet", "votecount.tap", "votecount.final", "votecount.reopen", "votecount.photo",
               "votecount.results_page", "votecount.results_xlsx", "votecount.export"},
 }
 VIEW_OF = {ep: v for v, eps in VIEW_ENDPOINTS.items() for ep in eps}

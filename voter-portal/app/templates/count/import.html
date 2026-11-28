@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% from "_macros.html" import icon %}
+{% block title %}Replace a box's count{% endblock %}
+{% block content %}
+<a class="backlink" href="{{ url_for('votecount.results_page') }}">{{ icon('back', 18) }} Vote count</a>
+<div class="page-head"><h1>Replace a box's count from Excel</h1>
+  <p class="muted">When a box was counted wrongly: upload the correct ballots (one row per ballot, a 1 under each candidate
+    marked). Check first: nothing is saved. Replace cancels every earlier tap at the box (kept in the history as undone)
+    and saves these ballots. The official result sheet, if entered, stays.</p></div>
+
+<form class="card form" method="post" enctype="multipart/form-data">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <label>Box <select name="box" required><option value="">Choose…</option>
+    {% for b in boxes %}<option {{ 'selected' if b == box }}>{{ b }}</option>{% endfor %}</select></label>
+  <label>Excel file <input type="file" name="sheet" accept=".xlsx,.xlsm,.csv" required></label>
+  {% if result %}
+  <fieldset class="import-map"><legend>Columns in the sheet → candidates</legend>
+    {% for h in result.parsed.headers %}{% set k = loop.index0 %}
+    <label>{{ h }} <select name="map{{ k }}">{% for c in cands %}<option value="{{ c.id }}" {{ 'selected' if result.mapping[k] == c.id }}>{{ label(c) }}</option>{% endfor %}</select></label>
+    {% endfor %}
+  </fieldset>
+  <p class="muted small-text">Choose the same file again to check with these columns, or to replace.</p>
+  {% endif %}
+  <div class="actions">
+    <button class="primary" name="apply" value="0">Check only</button>
+    {% if result and not result.errors and not result.applied %}
+    <button class="danger" name="apply" value="1" data-confirm="Replace the whole count at {{ box }} with these {{ result.records }} ballots? Earlier taps there are cancelled.">Replace {{ box }}'s count</button>{% endif %}
+  </div>
+</form>
+
+{% if result %}
+<section class="card">
+  <h2>{{ 'Saved: ' ~ box if result.applied else 'Check (nothing saved yet)' }}</h2>
+  <p class="small-text">{{ result.file }} · <strong>{{ result.records }}</strong> ballots ({{ result.parsed.invalid }} blank or rejected){% if result.parsed.bad %} ·
+    rows {{ result.parsed.bad|join(', ') }} have something written but no candidate marked: left out{% endif %}</p>
+  {% for e in result.errors %}<p class="flash flash-error">{{ e }}</p>{% endfor %}
+  <table class="report-table">
+    <thead><tr><th>Candidate</th><th class="num">From the sheet</th><th class="num">Count {{ 'before' if result.applied else 'now' }}</th>{% if result.final %}<th class="num">Official sheet</th>{% endif %}</tr></thead>
+    <tbody>
+      {% for c in cands %}<tr><th>{{ label(c) }}</th><td class="num"><strong>{{ result.votes.get(c.id, 0) }}</strong></td>
+        <td class="num">{{ result.before[0].get(c.id, 0) }}</td>{% if result.final %}<td class="num">{{ result.official.get(c.id|string, '—') }}</td>{% endif %}</tr>{% endfor %}
+      <tr><th>Invalid / blank</th><td class="num">{{ result.parsed.invalid }}</td><td class="num">{{ result.before[1] }}</td>{% if result.final %}<td class="num">{{ result.official.invalid if result.official.invalid is not none else '—' }}</td>{% endif %}</tr>
+      <tr><th>Ballots</th><td class="num">{{ result.records }}</td><td class="num">{{ result.before[2] }}</td>{% if result.final %}<td class="num">{{ result.official.ballots if result.official.ballots is not none else '—' }}</td>{% endif %}</tr>
+    </tbody>
+  </table>
+  <h3>Voting pattern in the sheet</h3>
+  <ul class="small-text">{% for key, n in result.pattern %}<li>{{ result.labels.get(key, key) }}: <strong>{{ n }}</strong></li>{% endfor %}</ul>
+  {% if result.final %}<p class="muted small-text">This box is final: its official result sheet is kept. If the sheet was wrong too, reopen the box and enter it again.</p>{% endif %}
+</section>
+{% endif %}
+{% endblock %}
