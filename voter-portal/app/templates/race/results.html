@@ -21,6 +21,12 @@
     {% if can_edit %}<a class="button small" href="{{ url_for('racecount.manage') }}">Edit race &amp; candidates</a>{% endif %}</p>
 </div>
 
+<form class="war-boxpick" method="get"><label>Box
+  <select name="box" data-autosubmit><option value="">Every box</option>
+    {% for b in all_boxes %}<option {{ 'selected' if b == pbox }}>{{ b }}</option>{% endfor %}</select></label>
+  <noscript><button class="small">Show</button></noscript></form>
+{% if pbox %}<p class="flash flash-info small-text">Showing <strong>{{ pbox }}</strong> only: totals, pattern and table are this box's.
+  <a href="{{ url_for('racecount.results', rid=r.race.id) }}">Every box</a></p>{% endif %}
 <ol class="pb-places race-places">
   {% for p in r.places %}
   <li class="{{ 'win' if p.wins and r.started }}"><span class="pb-place">{{ p.place if r.started else (p.c.ballot_no or loop.index) }}</span>
@@ -35,11 +41,7 @@
 <p class="muted small-text">Ballots {{ r.ballots }} · invalid or blank {{ r.invalid }}</p>
 
 <section class="card race-pattern" id="pattern">
-  <div class="list-head"><h2>Voting pattern</h2>
-    <form method="get" class="inline"><label class="small-text">Box
-      <select name="pbox" data-autosubmit><option value="">Every box</option>
-        {% for b in all_boxes %}<option {{ 'selected' if b == pbox }}>{{ b }}</option>{% endfor %}</select></label>
-      <noscript><button class="small">Show</button></noscript></form></div>
+  <div class="list-head"><h2>Voting pattern{{ ' · ' ~ pbox if pbox }}</h2></div>
   <p class="muted small-text">How the ballots were filled in, from the counters' taps{{ ' at ' ~ pbox if pbox }}: {{ pt.tallied }} ballots ·
     {% for k, n in pt.sizes %}{{ n }} with {{ {1: 'one', 2: 'two', 3: 'three', 4: 'four'}[k] }}{{ ' candidates' if k > 1 }} · {% endfor %}{{ pt.invalid }} invalid or blank.</p>
   {% if pt.tallied %}

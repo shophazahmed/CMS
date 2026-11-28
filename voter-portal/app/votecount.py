@@ -369,7 +369,8 @@ def photo(box):
 
 # --- results -------------------------------------------------------------------------------------
 
-def results():
+def results(only=None):
+    """The count, all boxes (or only=one box)."""
     from . import superpledge
 
     db = get_db()
@@ -379,6 +380,9 @@ def results():
     states = {r["box"]: r for r in db.execute("SELECT * FROM count_box")}
     boxes = [r[0] for r in db.execute("SELECT location FROM voters WHERE location != '' AND deceased = 0"
                                       " GROUP BY location ORDER BY COUNT(*) DESC")]
+    all_boxes = list(boxes)
+    if only:
+        boxes = [b for b in boxes if b == only]
     voted = dict(db.execute("SELECT v.location, COUNT(*) FROM war_voted w JOIN voters v ON v.national_id = w.national_id"
                             " GROUP BY v.location").fetchall())
     registered = dict(db.execute("SELECT location, COUNT(*) FROM voters WHERE deceased = 0 GROUP BY location").fetchall())
@@ -436,7 +440,8 @@ def results():
             "invalid": total_invalid, "ballots": total_ballots, "pattern": pattern, "tallied": tallied,
             "combos": combos(cands), "ours": ours, "with_ours": with_ours, "seats": seats,
             "final_boxes": sum(1 for r in rows if r["status"] == "final"), "boxes": len(rows),
-            "expected": {c: sum(e.get(c, 0) for e in expected.values()) for c in ids},
+            "expected": {c: sum(expected.get(b, {}).get(c, 0) for b in boxes) for c in ids},
+            "all_boxes": all_boxes, "only": only if boxes else None,
             "now": (datetime.now(timezone.utc)).isoformat(timespec="seconds")}
 
 
@@ -445,7 +450,8 @@ def results():
 def results_page():
     if not _watch():
         abort(403)
-    return render_template("count/results.html", r=results(), label=pledges.label)
+    only = (request.args.get("box") or "")[:200] or None
+    return render_template("count/results.html", r=results(only), label=pledges.label)
 
 
 @bp.route("/count/results.xlsx")

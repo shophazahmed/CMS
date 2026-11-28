@@ -94,3 +94,23 @@ def test_counted_by_shows_who_entered_ballots(app):
                         ).fetchone()[0] == 1                                              # the owner's one stays
     assert t1.post("/count/remove-counter", data={"csrf_token": tok, "box": "Box A", "user_id": uid}).status_code in (302, 403)
     assert "Counted by" not in t1.get("/count").get_data(as_text=True)             # the War Room's view only
+
+
+def test_results_filtered_by_box(app):
+    o, token, ids = owner(app)
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Box A'")
+    conn.execute("UPDATE voters SET location = 'Box B' WHERE national_id = 'A200003'")
+    conn.commit()
+    s, j = ids["Sofhaz"], ids["Jawid"]
+    tok = csrf(o, "/count?box=Box+A")
+    tap = lambda box, combo, key: o.post("/count/tap", data={"csrf_token": tok, "combo": combo, "key": key, "box": box},
+                                         headers={"X-Requested-With": "fetch"})
+    for n in range(3):
+        tap("Box A", f"s:{s}", f"a{n}")
+    tap("Box B", f"s:{j}", "b1")
+    every = " ".join(o.get("/count/results").get_data(as_text=True).split())
+    assert "4 ballots" in every
+    only = " ".join(o.get("/count/results?box=Box+B").get_data(as_text=True).split())
+    assert "Showing <strong>Box B</strong> only" in only and "1 ballots" in only
+    assert '<option selected>Box B</option>' in only

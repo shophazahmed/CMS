@@ -257,14 +257,15 @@ def box_state(rid, box):
     return row, (json.loads(row["official"]) if row and row["official"] else {})
 
 
-def results(rid):
+def results(rid, only=None):
+    """The race's count, all boxes (or only=one box)."""
     race = race_or_404(rid)
     cands = candidates(rid)
     ids = [c["id"] for c in cands]
     tal_all = tally(rid)
     states = {r["box"]: r for r in get_db().execute("SELECT * FROM race_box WHERE race_id = ?", (rid,))}
     rows, total, invalid_all, ballots_all = [], {c: 0 for c in ids}, 0, 0
-    for box in boxes():
+    for box in [b for b in boxes() if not only or b == only]:
         tal = tal_all.get(box, {})
         t_votes, t_invalid, t_ballots = totals_from(tal)
         st = states.get(box)
@@ -640,10 +641,11 @@ def patterns(rid, box=None):
 def results_page(rid):
     if not can_watch(rid):
         abort(403)
-    pbox = (request.args.get("pbox") or "")[:200]
     all_boxes = boxes()
-    return render_template("race/results.html", r=results(rid), label=label, all_boxes=all_boxes, can_edit=can_manage(rid),
-                           pt=patterns(rid, pbox if pbox in all_boxes else None), pbox=pbox if pbox in all_boxes else "")
+    pbox = (request.args.get("box") or request.args.get("pbox") or "")[:200]
+    pbox = pbox if pbox in all_boxes else ""
+    return render_template("race/results.html", r=results(rid, pbox or None), label=label, all_boxes=all_boxes,
+                           can_edit=can_manage(rid), pt=patterns(rid, pbox or None), pbox=pbox)
 
 
 @bp.route("/atoll/<int:rid>/results.xlsx")

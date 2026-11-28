@@ -24,8 +24,15 @@
   </span>
 </div>
 
+<form class="war-boxpick" method="get"><label>Box
+  <select name="box" data-autosubmit><option value="">Every box</option>
+    {% for b in r.all_boxes %}<option {{ 'selected' if b == r.only }}>{{ b }}</option>{% endfor %}</select></label>
+  <noscript><button class="small">Show</button></noscript></form>
+{% if r.only %}<p class="flash flash-info small-text">Showing <strong>{{ r.only }}</strong> only: the result, pattern and table below are this box's.
+  <a href="{{ url_for('votecount.results_page') }}">Every box</a></p>{% endif %}
+
 <section class="card war-projection">
-  <h2>Result</h2>
+  <h2>Result{{ ' · ' ~ r.only if r.only }}</h2>
   {% if r.verdict %}<p class="scen-verdict {{ 'win' if r.verdict.wins else 'lose' }}">{% if r.verdict.wins %}Wins · {{ r.verdict.margin }} ahead of {{ r.verdict.vs }}{% else %}Behind · needs {{ r.verdict.margin }} more to pass {{ r.verdict.vs }}{% endif %}</p>{% endif %}
   <ul class="dist-list">
     {% for p in r.places %}
