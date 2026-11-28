@@ -40,18 +40,18 @@ def test_replace_a_box_count_from_excel(app):
     for n in range(3):
         o.post("/count/tap", data={"csrf_token": tok, "combo": f"s:{t_}", "key": f"w{n}", "box": "Box A"},
                headers={"X-Requested-With": "fetch"})
-    rows = [((0, 1), None), ((0, 1), None), ((3,), None), ((0, 2), None), ((), "Blank")]
+    rows = [((0, 1), None), ((0, 1), None), ((), None), ((3,), None), ((0, 2), None), ((), "Blank")]   # 3rd: empty
     page = " ".join(o.post("/count/import", data={"csrf_token": token, "box": "Box A", "apply": "0",
                                                   "sheet": (sheet(rows), "Box_A_Vote_Count.xlsm")},
                            content_type="multipart/form-data").get_data(as_text=True).split())
-    assert "Check (nothing saved yet)" in page and "<strong>5</strong> ballots (1 blank or rejected)" in page
+    assert "Check (nothing saved yet)" in page and "<strong>6</strong> ballots (2 invalid, blank or rejected)" in page and "1 ballot with nothing marked" in page
     assert f'<option value="{r_}" selected>' in page and f'<option value="{j_}" selected>' in page   # Rayan, Javiz matched
     assert conn.execute("SELECT COUNT(*) FROM count_tally WHERE voided_at IS NULL").fetchone()[0] == 3   # nothing saved
     o.post("/count/import", data={"csrf_token": token, "box": "Box A", "apply": "1",
                                   "sheet": (sheet(rows), "Box_A_Vote_Count.xlsm")}, content_type="multipart/form-data")
     live = conn.execute("SELECT combo, COUNT(*) FROM count_tally WHERE box = 'Box A' AND voided_at IS NULL"
                         " GROUP BY combo").fetchall()
-    assert dict(live) == {f"p:{r_}-{s_}": 2, f"s:{t_}": 1, f"p:{r_}-{j_}": 1, "x": 1}
+    assert dict(live) == {f"p:{r_}-{s_}": 2, f"s:{t_}": 1, f"p:{r_}-{j_}": 1, "x": 2}   # the trailing empty row ignored
     assert conn.execute("SELECT COUNT(*) FROM count_tally WHERE voided_at IS NOT NULL").fetchone()[0] == 3   # old kept, undone
     res = o.get("/count/results").get_data(as_text=True)
     assert "Replace a box&#39;s count from Excel" in res or "Replace a box's count from Excel" in res
@@ -60,7 +60,7 @@ def test_replace_a_box_count_from_excel(app):
     page = o.post("/count/import", data={"csrf_token": token, "box": "Box A", "apply": "1",
                                          "sheet": (sheet(bad), "bad.xlsx")}, content_type="multipart/form-data").get_data(as_text=True)
     assert "has 3 candidates" in page
-    assert conn.execute("SELECT COUNT(*) FROM count_tally WHERE box = 'Box A' AND voided_at IS NULL").fetchone()[0] == 5
+    assert conn.execute("SELECT COUNT(*) FROM count_tally WHERE box = 'Box A' AND voided_at IS NULL").fetchone()[0] == 6
     # not for others
     b = app.test_client()
     login(b, "viewer", "user-pass-1234")

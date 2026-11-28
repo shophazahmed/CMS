@@ -56,22 +56,35 @@ def parse(upload):
     if len(cols) < 2:
         raise ValueError("The header row needs a column for each candidate.")
     names = {head[j].casefold() for j in cols}
-    ballots, invalid, bad = [], 0, []
+    # every numbered ballot row in order: its marks, or "x" for blank / rejected, or None for nothing marked
+    entries = []
     for n, r in enumerate(rows[head_at + 1:], start=head_at + 2):
         r = r + [""] * (len(head) - len(r))
         cells = [r[j] for j in cols]
         if any(c.casefold() in names for c in cells if c):
             continue  # a repeated header row
+        if not r[0] and not any(cells):
+            continue  # not a ballot row
         marked = [k for k, c in enumerate(cells) if c.casefold() in TICKS]
         status = (r[status_col] if status_col is not None else "").lower()
+        label = f"#{r[0][:-2] if r[0].endswith('.0') else r[0]}" if r[0] else f"row {n}"
         if status and any(w in status for w in ("blank", "reject", "invalid", "spoil")):
+            entries.append((label, "x"))
+        elif marked:
+            entries.append((label, marked))
+        else:
+            entries.append((label, None))
+    # an empty ballot among the entered ones is invalid; the unused numbered rows after the last ballot aren't ballots
+    last = max((i for i, (_, e) in enumerate(entries) if e is not None), default=-1)
+    ballots, invalid, bad = [], 0, []
+    for n, e in entries[:last + 1]:
+        if e is None:
             invalid += 1
-            continue
-        if not marked:
-            if any(cells):
-                bad.append(n)
-            continue
-        ballots.append(marked)
+            bad.append(n)
+        elif e == "x":
+            invalid += 1
+        else:
+            ballots.append(e)
     return {"headers": [head[j] for j in cols], "ballots": ballots, "invalid": invalid, "bad": bad}
 
 

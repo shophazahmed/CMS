@@ -5,7 +5,7 @@
 <a class="backlink" href="{{ url_for('votecount.results_page') }}">{{ icon('back', 18) }} Vote count</a>
 <div class="page-head"><h1>Replace a box's count from Excel</h1>
   <p class="muted">When a box was counted wrongly: upload the correct ballots (one row per ballot, a 1 under each candidate
-    marked). Check first: nothing is saved. Replace cancels every earlier tap at the box (kept in the history as undone)
+    marked; a ballot with nothing marked is invalid; numbered rows left empty after the last ballot are ignored). Check first: nothing is saved. Replace cancels every earlier tap at the box (kept in the history as undone)
     and saves these ballots. The official result sheet, if entered, stays.</p></div>
 
 <form class="card form" method="post" enctype="multipart/form-data">
@@ -31,8 +31,8 @@
 {% if result %}
 <section class="card">
   <h2>{{ 'Saved: ' ~ box if result.applied else 'Check (nothing saved yet)' }}</h2>
-  <p class="small-text">{{ result.file }} · <strong>{{ result.records }}</strong> ballots ({{ result.parsed.invalid }} blank or rejected){% if result.parsed.bad %} ·
-    rows {{ result.parsed.bad|join(', ') }} have something written but no candidate marked: left out{% endif %}</p>
+  <p class="small-text">{{ result.file }} · <strong>{{ result.records }}</strong> ballots ({{ result.parsed.invalid }} invalid, blank or rejected){% if result.parsed.bad %} ·
+    {{ result.parsed.bad|length }} ballot{{ 's' if result.parsed.bad|length != 1 }} with nothing marked ({{ result.parsed.bad|join(', ') }}) counted as invalid{% endif %}</p>
   {% for e in result.errors %}<p class="flash flash-error">{{ e }}</p>{% endfor %}
   <table class="report-table">
     <thead><tr><th>Candidate</th><th class="num">From the sheet</th><th class="num">Count {{ 'before' if result.applied else 'now' }}</th>{% if result.final %}<th class="num">Official sheet</th>{% endif %}</tr></thead>
