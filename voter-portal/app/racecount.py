@@ -71,7 +71,7 @@ MAX_PHOTO = 12 * 1024 * 1024
 # What an atoll-count-only account may open
 RACE_ENDPOINTS = {
     "racecount.home", "racecount.sheet", "racecount.tap", "racecount.final", "racecount.reopen", "racecount.sheet_photo",
-    "racecount.results", "racecount.results_xlsx", "racecount.candidate_photo", "racecount.manage",
+    "racecount.results", "racecount.results_xlsx", "racecount.candidate_photo", "racecount.manage", "racecount.remove_counter",
     "theme.theme_css", "theme.set_appearance", "fonts.stylesheet", "fonts.serve", "auth.login", "auth.logout",
     "auth.change_password", "static",
 }
@@ -469,7 +469,13 @@ def sheet(rid):
     diffs = differences(votes, invalid, ballots, official, cands) if row and row["status"] == "final" else []
     return render_template("race/sheet.html", race=race, box=box, boxes=all_boxes, cands=cands, tal=tal, votes=votes,
                            invalid=invalid, ballots=ballots, row=row, official=official, watch=watch, diffs=diffs,
-                           label=label)
+                           label=label, counters=_counted_by("race_tally", box, " AND t.race_id = ?", (rid,)) if watch else [])
+
+
+def _counted_by(*a, **k):
+    from .votecount import counted_by
+
+    return counted_by(*a, **k)
 
 
 def differences(votes, invalid, ballots, official, cands):
@@ -694,3 +700,24 @@ def results_xlsx(rid):
     name = f"atoll-count-{datetime.now().strftime('%Y%m%d-%H%M')}.xlsx"
     return Response(out.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{name}"'})
+
+
+@bp.post("/atoll/<int:rid>/remove-counter")
+@login_required
+def remove_counter(rid):
+    """Delete one account's ballots at a box (kept as undone)."""
+    from .votecount import remove_counter as _remove
+
+    race_or_404(rid)
+    if not can_watch(rid):
+        abort(403)
+    box = (request.form.get("box") or "")[:200]
+    raw = request.form.get("user_id", "")
+    uid = int(raw) if raw.isdigit() else None
+    n = _remove("race_tally", box, uid, " AND race_id = ?", (rid,))
+    who = get_db().execute("SELECT username FROM users WHERE id = ?", (uid,)).fetchone() if uid else None
+    audit.log("race_remove_counter", target=box, detail={"race": rid, "user": uid, "ballots": n}, commit=False)
+    get_db().commit()
+    flash(f"{n} ballot{'s' if n != 1 else ''} entered by {who[0] if who else 'that account'} at {box} deleted from the count.",
+          "success")
+    return redirect(url_for("racecount.sheet", rid=rid, box=box))

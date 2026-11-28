@@ -203,3 +203,18 @@ def test_three_votes_per_ballot(app):
     assert "2 ballots · 1 with three candidates · 1 with two candidates · 0 with one · 0 invalid or blank" in res
     assert "#1 Candidate One + #2 Candidate Two + #6 Candidate Six" in res
     assert "#1 Candidate One <span class=\"muted small-text\">· 2 ballots" in res
+
+
+def test_atoll_counted_by_and_delete_their_ballots(app):
+    o, token, conn, rid, (c1, c2, c4, c6) = setup(app)
+    counter, uid = person(app, o, token, conn, "atollbox", "count", rid, "Box A")
+    tok = csrf(counter, f"/atoll/{rid}/count")
+    for n in range(4):
+        counter.post(f"/atoll/{rid}/tap", data={"csrf_token": tok, "combo": f"s:{c1}", "key": f"c{n}"},
+                     headers={"X-Requested-With": "fetch"})
+    page = " ".join(o.get(f"/atoll/{rid}/count?box=Box+A").get_data(as_text=True).split())
+    assert "1 account entered ballots at Box A" in page and '<th>atollbox</th><td class="num"><strong>4</strong>' in page
+    otok = csrf(o, f"/atoll/{rid}/count?box=Box+A")
+    o.post(f"/atoll/{rid}/remove-counter", data={"csrf_token": otok, "box": "Box A", "user_id": uid})
+    assert conn.execute("SELECT COUNT(*) FROM race_tally WHERE voided_at IS NULL").fetchone()[0] == 0
+    assert counter.post(f"/atoll/{rid}/remove-counter", data={"csrf_token": tok, "box": "Box A", "user_id": uid}).status_code == 403

@@ -158,7 +158,8 @@ def sheet():
     return render_template("count/sheet.html", box=box, boxes=boxes, cands=cands, combos=combos(cands), tal=tal,
                            votes=votes, invalid=invalid, ballots=ballots, row=row, official=official, voted=voted,
                            registered=registered, watch=_watch(), label=pledges.label, max_votes=pledges.max_votes() or 2,
-                           diffs=differences(votes, invalid, ballots, official, cands) if row and row["status"] == "final" else [])
+                           diffs=differences(votes, invalid, ballots, official, cands) if row and row["status"] == "final" else [],
+                           counters=counted_by("count_tally", box) if _watch() else [])
 
 
 @bp.post("/count/tap")
@@ -490,3 +491,43 @@ def results_xlsx():
     audit.log("count_export")
     return Response(out.getvalue(), mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="vote-count-{datetime.now().strftime("%Y%m%d-%H%M")}.xlsx"'})
+
+
+def counted_by(table, box, extra_where="", params=()):
+    """Who entered ballots at this box: [{name, ballots (live), undone, first, last}], most first. Imported sheets
+    and taps both count; an undo record itself isn't a ballot."""
+    from .warroom import _hm
+
+    rows = get_db().execute(
+        f"SELECT t.by_user AS uid, u.username AS name, SUM(t.voided_at IS NULL) AS live, SUM(t.voided_at IS NOT NULL) AS undone,"
+        f" MIN(t.at) AS first, MAX(t.at) AS last FROM {table} t LEFT JOIN users u ON u.id = t.by_user"
+        f" WHERE t.box = ? AND t.combo != 'undo'{extra_where} GROUP BY t.by_user ORDER BY live DESC",
+        (box,) + tuple(params)).fetchall()
+    return [{"uid": r["uid"], "name": r["name"] or "(removed account)", "ballots": r["live"] or 0, "undone": r["undone"] or 0,
+             "first": _hm(r["first"]), "last": _hm(r["last"])} for r in rows]
+
+
+def remove_counter(table, box, uid, extra_where="", params=()):
+    """Cancel every ballot one account entered at this box (kept as undone). Returns how many."""
+    cond = "by_user IS NULL" if uid is None else "by_user = ?"
+    args = [now_iso(), box] + ([] if uid is None else [uid]) + list(params)
+    return get_db().execute(f"UPDATE {table} SET voided_at = ? WHERE box = ? AND {cond} AND voided_at IS NULL"
+                            f" AND combo != 'undo'{extra_where}", args).rowcount
+
+
+@bp.post("/count/remove-counter")
+@login_required
+def remove_counter_route():
+    """The War Room deletes one account's ballots at a box (a counter who counted wrongly)."""
+    if not _watch():
+        abort(403)
+    box = (request.form.get("box") or "")[:200]
+    raw = request.form.get("user_id", "")
+    uid = int(raw) if raw.isdigit() else None
+    n = remove_counter("count_tally", box, uid)
+    who = get_db().execute("SELECT username FROM users WHERE id = ?", (uid,)).fetchone() if uid else None
+    audit.log("count_remove_counter", target=box, detail={"user": uid, "ballots": n}, commit=False)
+    get_db().commit()
+    flash(f"{n} ballot{'s' if n != 1 else ''} entered by {who[0] if who else 'that account'} at {box} deleted from the count.",
+          "success")
+    return redirect(url_for("votecount.sheet", box=box))

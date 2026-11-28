@@ -65,3 +65,32 @@ def test_replace_a_box_count_from_excel(app):
     b = app.test_client()
     login(b, "viewer", "user-pass-1234")
     assert b.get("/count/import").status_code == 403
+
+
+def test_counted_by_shows_who_entered_ballots(app):
+    o, token, ids = owner(app)
+    conn = connect(app.config["DATABASE"])
+    conn.execute("UPDATE voters SET location = 'Box A'")
+    conn.commit()
+    from tests.test_warroom import make
+
+    o.post("/war/team", data={"csrf_token": token, "action": "open"})
+    t1, _ = make(app, o, token, "boxagent", "t1", "Box A")
+    tok = csrf(t1, "/count")
+    s = ids["Sofhaz"]
+    for n in range(3):
+        t1.post("/count/tap", data={"csrf_token": tok, "combo": f"s:{s}", "key": f"a{n}"}, headers={"X-Requested-With": "fetch"})
+    t1.post("/count/tap", data={"csrf_token": tok, "undo": "1", "key": "u"}, headers={"X-Requested-With": "fetch"})
+    otok = csrf(o, "/count?box=Box+A")
+    o.post("/count/tap", data={"csrf_token": otok, "combo": "x", "key": "o1", "box": "Box A"}, headers={"X-Requested-With": "fetch"})
+    page = " ".join(o.get("/count?box=Box+A").get_data(as_text=True).split())
+    assert "Counted by" in page and "2 accounts entered ballots at Box A" in page
+    assert '<th>boxagent</th><td class="num"><strong>2</strong></td><td class="num">1</td>' in page
+    # delete that agent's ballots at the box
+    uid = conn.execute("SELECT id FROM users WHERE username = 'boxagent'").fetchone()[0]
+    r = o.post("/count/remove-counter", data={"csrf_token": otok, "box": "Box A", "user_id": uid}, follow_redirects=True)
+    assert "2 ballots entered by boxagent at Box A deleted" in r.get_data(as_text=True)
+    assert conn.execute("SELECT COUNT(*) FROM count_tally WHERE box = 'Box A' AND voided_at IS NULL AND combo != 'undo'"
+                        ).fetchone()[0] == 1                                              # the owner's one stays
+    assert t1.post("/count/remove-counter", data={"csrf_token": tok, "box": "Box A", "user_id": uid}).status_code in (302, 403)
+    assert "Counted by" not in t1.get("/count").get_data(as_text=True)             # the War Room's view only

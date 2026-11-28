@@ -24,6 +24,25 @@
   <select name="box" data-autosubmit>{% for b in boxes %}<option {{ 'selected' if b == box }}>{{ b }}</option>{% endfor %}</select></label></form>
 {% endif %}
 
+{% if watch %}
+<section class="card counted-by">
+  <h2>Counted by</h2>
+  {% if counters %}
+  <p class="muted small-text">{{ counters|length }} account{{ 's' if counters|length != 1 }} entered ballots at {{ box }}.</p>
+  <table class="report-table">
+    <thead><tr><th>Account</th><th class="num">Ballots in the count</th><th class="num">Undone / deleted</th><th>First</th><th>Last</th><th></th></tr></thead>
+    <tbody>{% for c in counters %}<tr><th>{{ c.name }}</th><td class="num"><strong>{{ c.ballots }}</strong></td><td class="num">{{ c.undone }}</td>
+      <td class="small-text">{{ c.first }}</td><td class="small-text">{{ c.last }}</td>
+      <td>{% if c.ballots %}<form method="post" action="{{ url_for('votecount.remove_counter_route') }}" class="inline"
+          data-confirm="Delete all {{ c.ballots }} ballots {{ c.name }} entered at {{ box }}? The count goes down by that many.">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}"><input type="hidden" name="box" value="{{ box }}">
+        <input type="hidden" name="user_id" value="{{ c.uid if c.uid is not none else '' }}">
+        <button class="small danger">Delete their ballots</button></form>{% endif %}</td></tr>{% endfor %}</tbody>
+  </table>
+  {% else %}<p class="muted small-text">Nobody has entered ballots at {{ box }} yet.</p>{% endif %}
+</section>
+{% endif %}
+
 {% if row and row.status == 'final' %}
 <section class="card count-final">
   <h2>{{ icon('check', 18) }} Final</h2>
